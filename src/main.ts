@@ -64,7 +64,7 @@ app.innerHTML = `
     <canvas id="world" aria-label="Làng Khởi Đầu và Vườn Hoa Tri Thức 3D. Di chuyển bằng WASD, phím mũi tên hoặc chạm xuống đất."></canvas>
     <div id="loading" class="loading"><span class="loading-crown">${icon('crown')}</span><strong>Đang mở cánh cổng…</strong></div>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
+      <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
       <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
