@@ -64,12 +64,12 @@ app.innerHTML = `
     <canvas id="world" aria-label="Làng Khởi Đầu và Vườn Hoa Tri Thức 3D. Di chuyển bằng WASD, phím mũi tên hoặc chạm xuống đất."></canvas>
     <div id="loading" class="loading"><span class="loading-crown">${icon('crown')}</span><strong>Đang mở cánh cổng…</strong></div>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Vương Quốc Cửu Chương"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>CỬU CHƯƠNG <b>3D</b></small></span></a>
+      <a class="brand" href="/" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
       <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
       <div class="chapter"><span></span> MỘT CUỘC PHIÊU LƯU NHỎ</div>
-      <h1>Vương Quốc<br><span>Cửu Chương</span><sup>3D</sup></h1>
+      <h1>Vương Quốc<br><span>Học Toán</span><sup>3D</sup></h1>
       <p>Mỗi phép nhân, một điều kỳ diệu.<br>Cùng Milo xây cầu và khám phá Vườn Hoa Tri Thức!</p>
       <div class="choose-label">Chọn người bạn đồng hành</div>
       <div class="avatar-options" role="group" aria-label="Chọn nhân vật"><button id="boy" class="avatar-option" aria-pressed="true"><span>👦</span>Nhà thám hiểm</button><button id="girl" class="avatar-option" aria-pressed="false"><span>👧</span>Nhà khám phá</button></div>
@@ -748,8 +748,8 @@ $('travel').onclick = () => {
     world.teleport(-6, 5);
     toast('Đã trở về Làng Khởi Đầu!');
   } else if (world.spatial.isInGarden()) {
-    world.teleport(65, 0);
-    toast('Chào mừng bạn đến Vùng Đất Archimedes!');
+    world.teleport(60, 0);
+    toast('Chào mừng bạn đến Đền Cổng Archimedes!');
   } else {
     world.teleport(13, 0);
     toast('Chào mừng bạn đến với Vườn Hoa Tri Thức!');
@@ -906,14 +906,38 @@ try {
     nearFlower = nearFlowerIdx;
     nearPortal = isNearPortal;
     nearMonolith = nearMonolithIdx;
+
+    if (world.active && !world.paused) {
+      const transit = world.spatial.checkPortalTransit(0.016);
+      if (transit) {
+        audio.playCue('jump');
+        world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
+        toast(`✨ ${transit.name}!`);
+      }
+    }
+
     if (++frameTick % 3 !== 0) return;
 
+    const locName = world.spatial.getCurrentLocationName();
     const inArchimedes = world.spatial.isInArchimedesRealm();
     const inGarden = world.spatial.isInGarden();
-    $('village-status-text').textContent = inArchimedes ? 'Vùng Đất Archimedes' : inGarden ? 'Vườn Hoa Tri Thức' : 'Làng Khởi Đầu';
-    $('area-label-text').textContent = inArchimedes ? 'Vùng Đất Archimedes' : inGarden ? 'Vườn Hoa Tri Thức' : 'Làng Khởi Đầu';
-    $('area-label-sub').textContent = inArchimedes ? '40 BIA ĐÁ TRI THỨC' : inGarden ? '10 THỬ THÁCH HOA NỞ' : 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
-    $('travel-text').textContent = inArchimedes ? 'Về Làng Khởi Đầu' : inGarden ? 'Đến Vùng Archimedes' : 'Đến Vườn Hoa';
+    $('village-status-text').textContent = locName;
+    $('area-label-text').textContent = locName;
+
+    let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
+    if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
+    else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
+    else if (locName === 'Thung Lũng Tính Toán') subLabel = 'CHUYÊN ĐỀ 1: PHÉP TÍNH NHANH (BÀI 306 - 313)';
+    else if (locName === 'Suối Nguồn Dãy Số') subLabel = 'CHUYÊN ĐỀ 2: QUY LUẬT DÃY SỐ (BÀI 314 - 321)';
+    else if (locName === 'Đồi Thời Gian') subLabel = 'CHUYÊN ĐỀ 3: THỜI GIAN & ĐO LƯỜNG (BÀI 322 - 329)';
+    else if (locName === 'Rừng Hình Học') subLabel = 'CHUYÊN ĐỀ 4: HÌNH HỌC TRỰC QUAN (BÀI 330 - 337)';
+    else if (locName === 'Đỉnh Núi Tư Duy Sao') subLabel = 'CHUYÊN ĐỀ 5: TỔNG HỢP & NÂNG CAO (BÀI 338 - 345)';
+    else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
+
+    $('area-label-sub').textContent = subLabel;
+    $('travel-text').textContent = inArchimedes ? 'Về Làng Khởi Đầu' : inGarden ? 'Đến Đền Archimedes' : 'Đến Vườn Hoa';
+
+    const nearPortalObj = world.spatial.getNearPortal();
 
     if (nearMonolith !== -1) {
       const m = ARCHIMEDES_MONOLITHS[nearMonolith];
@@ -921,7 +945,7 @@ try {
       $('interact').innerHTML = `⚡ <b>Bia Đá ${m.id}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearPortal) {
-      $('interact').innerHTML = `🏛️ <b>Cổng Archimedes</b> (Bấm E để mở Bản Đồ) ${icon('arrow')}`;
+      $('interact').innerHTML = `🏛️ <b>${nearPortalObj?.name || 'Cổng Archimedes'}</b> (Bấm E để mở Bản Đồ) ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearFlower !== -1) {
       const bloomed = adventure.getState().flowers[nearFlower];
@@ -936,7 +960,8 @@ try {
 
     const m = world.project(new Vector3(-3, 3.5, 1.5)),
       b = world.project(new Vector3(7, .8, 0)),
-      p = world.project(world.portalPos.clone().add(new Vector3(0, 4.4, 0)));
+      portalTargetPos = nearPortalObj ? new Vector3(nearPortalObj.source.x, 3.8, nearPortalObj.source.z) : world.portalPos.clone().add(new Vector3(0, 4.4, 0)),
+      p = world.project(portalTargetPos);
     $('milo-label').style.transform = `translate(${m.x}px,${m.y}px) translate(-50%,-100%)`;
     $('bridge-label').style.transform = `translate(${b.x}px,${b.y}px) translate(-50%,15px)`;
     $('portal-label').style.transform = `translate(${p.x}px,${p.y}px) translate(-50%,-100%)`;

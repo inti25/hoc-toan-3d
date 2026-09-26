@@ -22,6 +22,40 @@ export interface PlayerPose {
   speed: number;
 }
 
+export interface PortalLink {
+  id: string;
+  name: string;
+  source: { x: number; z: number };
+  target: { x: number; z: number };
+  triggerRadius: number;
+}
+
+export const PORTAL_LINKS: PortalLink[] = [
+  // Garden <-> Hub
+  { id: 'garden_to_hub', name: 'Đến Đền Cổng Archimedes', source: { x: 32, z: 0 }, target: { x: 55, z: 0 }, triggerRadius: 1.5 },
+  { id: 'hub_to_garden', name: 'Về Vườn Hoa Tri Thức', source: { x: 52, z: 0 }, target: { x: 30, z: 0 }, triggerRadius: 1.5 },
+
+  // Hub <-> Zone 1 (Thung Lũng Tính Toán)
+  { id: 'hub_to_z1', name: 'Đến Thung Lũng Tính Toán', source: { x: 68, z: -8 }, target: { x: 102, z: -60 }, triggerRadius: 1.5 },
+  { id: 'z1_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 100, z: -60 }, target: { x: 65, z: -8 }, triggerRadius: 1.5 },
+
+  // Hub <-> Zone 2 (Suối Nguồn Dãy Số)
+  { id: 'hub_to_z2', name: 'Đến Suối Nguồn Dãy Số', source: { x: 70, z: -4 }, target: { x: 142, z: -60 }, triggerRadius: 1.5 },
+  { id: 'z2_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 140, z: -60 }, target: { x: 67, z: -4 }, triggerRadius: 1.5 },
+
+  // Hub <-> Zone 3 (Đồi Thời Gian)
+  { id: 'hub_to_z3', name: 'Đến Đồi Thời Gian', source: { x: 70, z: 0 }, target: { x: 102, z: 60 }, triggerRadius: 1.5 },
+  { id: 'z3_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 100, z: 60 }, target: { x: 67, z: 0 }, triggerRadius: 1.5 },
+
+  // Hub <-> Zone 4 (Rừng Hình Học)
+  { id: 'hub_to_z4', name: 'Đến Rừng Hình Học', source: { x: 70, z: 4 }, target: { x: 140, z: 60 }, triggerRadius: 1.5 },
+  { id: 'z4_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 138, z: 60 }, target: { x: 67, z: 4 }, triggerRadius: 1.5 },
+
+  // Hub <-> Zone 5 (Đỉnh Núi Tư Duy Sao)
+  { id: 'hub_to_z5', name: 'Đến Đỉnh Núi Tư Duy Sao', source: { x: 68, z: 8 }, target: { x: 183, z: 0 }, triggerRadius: 1.5 },
+  { id: 'z5_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 181, z: 0 }, target: { x: 65, z: 8 }, triggerRadius: 1.5 }
+];
+
 export const FLOWER_COORDS: [number, number][] = [
   [14, -6.0], [18, -6.0], [22, -8.5], [26, -6.0], [30, -6.0],
   [14, 6.0], [18, 6.0], [22, 8.5], [26, 6.0], [30, 6.0]
@@ -34,6 +68,7 @@ export class SpatialWorld {
   private rotation = 0;
   private jumpVelocity = 0;
   private bridgeCount = 0;
+  private portalCooldown = 0;
   private obstacles: Obstacle[] = [];
   readonly miloPos = { x: -3, z: 1.5 };
 
@@ -84,23 +119,44 @@ export class SpatialWorld {
     this.obstacles.push(obstacle);
   }
 
-  canMove(x: number, z: number): boolean {
-    if (x < -21 || x > 218) return false;
-    // Starter village and flower garden
-    if (x <= 34 && (z < -18.8 || z > 18.8)) return false;
-    // Connecting avenue between flower garden and Archimedes realm
-    if (x > 34 && x <= 42 && (z < -6.5 || z > 6.5)) return false;
-    // Archimedes plateau
-    if (x > 42 && (z < -72 || z > 54)) return false;
+  isWithinLand(x: number, z: number): boolean {
+    // 1. Starter Village
+    if (x >= -21 && x <= 4 && Math.abs(z) <= 18.8) return true;
+    // 2. Friendship Bridge (requires bridge completed)
+    if (x > 4 && x < 10 && this.bridgeCount >= BRIDGE_PARTS && Math.abs(z) <= 1.25) return true;
+    // 3. Flower Garden
+    if (x >= 10 && x <= 34 && Math.abs(z) <= 18.8) return true;
+    // 4. Gatehouse Hub (Đền Cổng Archimedes)
+    if (x >= 49 && x <= 71 && Math.abs(z) <= 11) return true;
+    // 5. Sanctuary 1 (Thung Lũng Tính Toán)
+    if (x >= 98 && x <= 122 && z >= -76 && z <= -44) return true;
+    // 6. Sanctuary 2 (Suối Nguồn Dãy Số)
+    if (x >= 138 && x <= 162 && z >= -76 && z <= -44) return true;
+    // 7. Sanctuary 3 (Đồi Thời Gian)
+    if (x >= 98 && x <= 122 && z >= 44 && z <= 76) return true;
+    // 8. Sanctuary 4 (Rừng Hình Học)
+    if (x >= 136 && x <= 164 && z >= 43 && z <= 77) return true;
+    // 9. Sanctuary 5 (Đỉnh Núi Tư Duy Sao)
+    if (x >= 179 && x <= 201 && z >= -12 && z <= 12) return true;
 
-    if (
-      x > WORLD.riverMin - .3 &&
-      x < WORLD.riverMax + .3 &&
-      (this.bridgeCount < BRIDGE_PARTS || Math.abs(z) > 1.25)
-    ) {
-      return false;
-    }
+    return false;
+  }
+
+  canMove(x: number, z: number): boolean {
+    if (!this.isWithinLand(x, z)) return false;
     return !this.obstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
+  }
+
+  getCurrentLocationName(): string {
+    if (this.x <= 4) return 'Làng Khởi Đầu';
+    if (this.x <= 34) return 'Vườn Hoa Tri Thức';
+    if (this.x >= 49 && this.x <= 71 && Math.abs(this.z) <= 11) return 'Đền Cổng Archimedes';
+    if (this.x >= 98 && this.x <= 122 && this.z >= -76 && this.z <= -44) return 'Thung Lũng Tính Toán';
+    if (this.x >= 138 && this.x <= 162 && this.z >= -76 && this.z <= -44) return 'Suối Nguồn Dãy Số';
+    if (this.x >= 98 && this.x <= 122 && this.z >= 44 && this.z <= 76) return 'Đồi Thời Gian';
+    if (this.x >= 136 && this.x <= 164 && this.z >= 43 && this.z <= 77) return 'Rừng Hình Học';
+    if (this.x >= 179 && this.x <= 201 && Math.abs(this.z) <= 12) return 'Đỉnh Núi Tư Duy Sao';
+    return 'Vùng Đất Archimedes';
   }
 
   floorHeight(): number {
@@ -163,8 +219,29 @@ export class SpatialWorld {
     return -1;
   }
 
+  checkPortalTransit(dt = 0): PortalLink | null {
+    if (this.portalCooldown > 0) {
+      this.portalCooldown = Math.max(0, this.portalCooldown - dt);
+      if (this.portalCooldown > 0) return null;
+    }
+
+    for (const portal of PORTAL_LINKS) {
+      const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
+      if (dist <= portal.triggerRadius) {
+        this.teleport(portal.target.x, portal.target.z);
+        this.portalCooldown = 1.2;
+        return portal;
+      }
+    }
+    return null;
+  }
+
+  getNearPortal(): PortalLink | null {
+    return PORTAL_LINKS.find(p => Math.hypot(this.x - p.source.x, this.z - p.source.z) < 3.2) || null;
+  }
+
   isNearPortal(): boolean {
-    return Math.hypot(this.x - 35, this.z - 0) < 3.5;
+    return this.getNearPortal() !== null;
   }
 
   hasCrossedRiver(): boolean {
@@ -180,6 +257,9 @@ export class SpatialWorld {
   }
 
   tick(dt: number, input: SpatialInput, cameraYaw = 0.57): PlayerPose {
+    if (this.portalCooldown > 0) {
+      this.portalCooldown = Math.max(0, this.portalCooldown - dt);
+    }
     let sx =
       (input.keys.has('d') || input.keys.has('arrowright') ? 1 : 0) -
       (input.keys.has('a') || input.keys.has('arrowleft') ? 1 : 0) +

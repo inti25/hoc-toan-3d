@@ -38,8 +38,8 @@ export const ARCHIMEDES_ZONES: ArchimedesZone[] = [
     "title": "Khu 1: Phép Tính & Đo Lường",
     "description": "Rèn luyện đặt tính cộng trừ 3 chữ số, đại lượng kg, cm, lít và tìm thành phần chưa biết.",
     "center": {
-      "x": 120,
-      "z": -50
+      "x": 110,
+      "z": -60
     },
     "color": 4367861,
     "badge": "🏆 Huy Chương Thung Lũng Tính Toán"
@@ -50,8 +50,8 @@ export const ARCHIMEDES_ZONES: ArchimedesZone[] = [
     "title": "Khu 2: Tính Nhanh & Quy Luật Số",
     "description": "Chinh phục nghệ thuật nhóm số tròn chục tròn trăm và giải mã các dãy số bí ẩn.",
     "center": {
-      "x": 155,
-      "z": -35
+      "x": 150,
+      "z": -60
     },
     "color": 2533018,
     "badge": "⚡ Huy Chương Dãy Số Ma Thuật"
@@ -62,8 +62,8 @@ export const ARCHIMEDES_ZONES: ArchimedesZone[] = [
     "title": "Khu 3: Đồng Hồ, Lịch & Cân Đĩa",
     "description": "Khám phá thế giới thời gian 24h, lịch ngày trong tuần và bài toán cân đĩa thăng bằng.",
     "center": {
-      "x": 135,
-      "z": 25
+      "x": 110,
+      "z": 60
     },
     "color": 16754470,
     "badge": "⏳ Huy Chương Người Quản Thời Gian"
@@ -74,8 +74,8 @@ export const ARCHIMEDES_ZONES: ArchimedesZone[] = [
     "title": "Khu 4: Hình Học & Đường Gấp Khúc",
     "description": "Quan sát các hình tam giác, tứ giác, trung điểm đoạn thẳng và tính độ dài đường gấp khúc.",
     "center": {
-      "x": 175,
-      "z": 15
+      "x": 150,
+      "z": 60
     },
     "color": 6732650,
     "badge": "📐 Huy Chương Bậc Thầy Hình Học"
@@ -86,8 +86,8 @@ export const ARCHIMEDES_ZONES: ArchimedesZone[] = [
     "title": "Khu 5: Thử Thách Tư Duy Đỉnh Cao",
     "description": "Thử thách trí tuệ với các bài toán sao nâng cao: ma trận ô số, số ma thuật và logic tối ưu.",
     "center": {
-      "x": 195,
-      "z": -55
+      "x": 190,
+      "z": 0
     },
     "color": 11225020,
     "badge": "👑 Đại Vương Miện Archimedes"
@@ -103,8 +103,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 306: Đặt tính rồi tính",
     "subtitle": "Cộng trừ các số có 3 chữ số",
     "position": {
-      "x": 110,
-      "z": -60
+      "x": 104,
+      "z": -65
     },
     "color": 4367861,
     "badge": "Bia Đá 306: Đặt Tính Chuẩn",
@@ -167,8 +167,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 307: Tính kèm đơn vị đo",
     "subtitle": "Thực hiện phép tính với kg, cm, lít",
     "position": {
-      "x": 114,
-      "z": -56
+      "x": 107,
+      "z": -65
     },
     "color": 4367861,
     "badge": "Bia Đá 307: Cân Đo Đong Đếm",
@@ -231,8 +231,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 308: Điền dấu so sánh thích hợp",
     "subtitle": "So sánh số và giá trị biểu thức",
     "position": {
-      "x": 118,
-      "z": -52
+      "x": 110,
+      "z": -65
     },
     "color": 4367861,
     "badge": "Bia Đá 308: Cán Cân So Sánh",
@@ -295,8 +295,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 309: So sánh biểu thức tổng",
     "subtitle": "So sánh cấu tạo số và phép cộng",
     "position": {
-      "x": 122,
-      "z": -48
+      "x": 113,
+      "z": -65
     },
     "color": 4367861,
     "badge": "Bia Đá 309: Cấu Tạo Số Học",
@@ -359,8 +359,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 310: Sơ đồ chuỗi phép tính",
     "subtitle": "Điền số theo sơ đồ hình học liên hoàn",
     "position": {
-      "x": 126,
-      "z": -52
+      "x": 116,
+      "z": -65
     },
     "color": 4367861,
     "badge": "Bia Đá 310: Chuỗi Ngọc Phép Tính",
@@ -423,8 +423,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 311: Tìm y (thành phần chưa biết)",
     "subtitle": "Giải phương trình đơn giản lớp 2",
     "position": {
-      "x": 130,
-      "z": -56
+      "x": 104,
+      "z": -55
     },
     "color": 4367861,
     "badge": "Bia Đá 311: Giải Mã Biến Số y",
@@ -487,8 +487,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 312: Tính nhanh nhóm tròn trăm",
     "subtitle": "Ghép cặp số có tổng tròn chục tròn trăm",
     "position": {
-      "x": 150,
-      "z": -40
+      "x": 145,
+      "z": -65
     },
     "color": 2533018,
     "badge": "Bia Đá 312: Nhóm Cặp Thông Minh",
@@ -527,8 +527,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 313: Tính nhanh cộng trừ kết hợp",
     "subtitle": "Ghép cặp triệt tiêu hàng chục hàng đơn vị",
     "position": {
-      "x": 154,
-      "z": -36
+      "x": 150,
+      "z": -65
     },
     "color": 2533018,
     "badge": "Bia Đá 313: Triệt Tiêu Tuyệt Diệu",
@@ -591,8 +591,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 314: Dãy số cách đều",
     "subtitle": "Tìm số hạng còn thiếu theo bước nhảy",
     "position": {
-      "x": 158,
-      "z": -32
+      "x": 155,
+      "z": -65
     },
     "color": 2533018,
     "badge": "Bia Đá 314: Bậc Thang Cách Đều",
@@ -655,8 +655,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 315: Dãy số tăng tiến & Fibonacci",
     "subtitle": "Quy luật khoảng cách tăng dần và tổng 2 số liền trước",
     "position": {
-      "x": 162,
-      "z": -36
+      "x": 145,
+      "z": -55
     },
     "color": 2533018,
     "badge": "Bia Đá 315: Dòng Chảy Fibonacci",
@@ -719,8 +719,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 316: Số liền trước và số liền sau",
     "subtitle": "Tính tổng hai số hạng theo quy ước vị trí",
     "position": {
-      "x": 120,
-      "z": -64
+      "x": 107,
+      "z": -55
     },
     "color": 4367861,
     "badge": "Bia Đá 316: Nhịp Cầu Liền Kề",
@@ -759,8 +759,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 317: Tìm Số bị trừ đặc biệt",
     "subtitle": "Mối quan hệ giữa Số bị trừ, Số trừ và Hiệu",
     "position": {
-      "x": 124,
-      "z": -62
+      "x": 110,
+      "z": -55
     },
     "color": 4367861,
     "badge": "Bia Đá 317: Ẩn Số Phép Trừ",
@@ -799,8 +799,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 318: Đọc và vẽ kim đồng hồ",
     "subtitle": "Xem giờ chính xác theo hệ 12h và 24h",
     "position": {
-      "x": 130,
-      "z": 15
+      "x": 104,
+      "z": 56
     },
     "color": 16754470,
     "badge": "Bia Đá 318: Bánh Răng Thời Khắc",
@@ -863,8 +863,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 319: Lịch ngày trong tuần",
     "subtitle": "Tính thứ trong tuần bằng chu kỳ 7 ngày",
     "position": {
-      "x": 134,
-      "z": 20
+      "x": 107,
+      "z": 54
     },
     "color": 16754470,
     "badge": "Bia Đá 319: Vòng Xoay Năm Tháng",
@@ -903,8 +903,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 320 (*): Chủ nhật đầu và cuối tháng",
     "subtitle": "Xác định số ngày trong tháng và các ngày Chủ nhật",
     "position": {
-      "x": 138,
-      "z": 25
+      "x": 110,
+      "z": 53
     },
     "color": 16754470,
     "badge": "Bia Đá 320: Ngôi Sao Chủ Nhật (*)",
@@ -943,8 +943,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 321: Thời gian tàu hoả lăn bánh",
     "subtitle": "Tính khoảng thời gian trôi qua trong ngày",
     "position": {
-      "x": 142,
-      "z": 28
+      "x": 113,
+      "z": 54
     },
     "color": 16754470,
     "badge": "Bia Đá 321: Chuyến Tàu Thời Gian",
@@ -983,8 +983,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 322: So sánh tốc độ di chuyển",
     "subtitle": "Đổi đơn vị giờ – phút để so sánh thời gian",
     "position": {
-      "x": 136,
-      "z": 34
+      "x": 116,
+      "z": 56
     },
     "color": 16754470,
     "badge": "Bia Đá 322: Đường Đua Tốc Độ",
@@ -1023,8 +1023,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 323 (*): Dãy 9 ô tổng 4 ô liền nhau bằng 600",
     "subtitle": "Bài toán suy luận chu kỳ số học (*)",
     "position": {
-      "x": 195,
-      "z": -62
+      "x": 186,
+      "z": -4
     },
     "color": 11225020,
     "badge": "Bia Đá 323: Ma Trận Bốn Số Tuần Hoàn (*)",
@@ -1063,8 +1063,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 324 (*): Ghép chữ số có tổng bé nhất",
     "subtitle": "Tối ưu hoá giá trị chữ số theo hàng (*)",
     "position": {
-      "x": 198,
-      "z": -58
+      "x": 194,
+      "z": -4
     },
     "color": 11225020,
     "badge": "Bia Đá 324: Tinh Hoa Ghép Số (*)",
@@ -1103,8 +1103,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 325 (**): Tô màu lưới 24 ô vuông",
     "subtitle": "Bài toán hiệu và tổng số ô tô màu (**)",
     "position": {
-      "x": 202,
-      "z": -54
+      "x": 186,
+      "z": 4
     },
     "color": 11225020,
     "badge": "Bia Đá 325: Lưới Màu Kỳ Ảo (**)",
@@ -1143,8 +1143,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 326: Điểm thẳng hàng & Đếm đoạn thẳng",
     "subtitle": "Nhận biết điểm nằm giữa và đếm hình tam giác",
     "position": {
-      "x": 170,
-      "z": 0
+      "x": 158,
+      "z": 60
     },
     "color": 6732650,
     "badge": "Bia Đá 326: Tọa Độ Thẳng Hàng",
@@ -1207,8 +1207,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 327: Vẽ thêm 1 đoạn thẳng",
     "subtitle": "Tạo thêm số hình chữ nhật và hình tam giác yêu cầu",
     "position": {
-      "x": 174,
-      "z": 4
+      "x": 157,
+      "z": 64
     },
     "color": 6732650,
     "badge": "Bia Đá 327: Đường Kẻ Diệu Kỳ",
@@ -1247,8 +1247,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 328: Đếm số hình tam giác phức hợp",
     "subtitle": "Đếm hình đơn và hình ghép chính xác",
     "position": {
-      "x": 178,
-      "z": 8
+      "x": 154,
+      "z": 68
     },
     "color": 6732650,
     "badge": "Bia Đá 328: Mắt Thần Đếm Hình",
@@ -1287,8 +1287,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 329: Trung điểm đoạn thẳng",
     "subtitle": "Tính độ dài đoạn thẳng khi biết một nửa",
     "position": {
-      "x": 182,
-      "z": 12
+      "x": 150,
+      "z": 69
     },
     "color": 6732650,
     "badge": "Bia Đá 329: Tâm Điểm Cân Bằng",
@@ -1327,8 +1327,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 330: Tổng độ dài 3 đoạn thẳng",
     "subtitle": "Phép cộng các số đo độ dài",
     "position": {
-      "x": 186,
-      "z": 16
+      "x": 145,
+      "z": 68
     },
     "color": 6732650,
     "badge": "Bia Đá 330: Thước Đo Tam Khúc",
@@ -1367,8 +1367,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 331: Đường gấp khúc 3 đoạn có lời văn",
     "subtitle": "Giải bài toán hai bước tính độ dài đường gấp khúc",
     "position": {
-      "x": 190,
-      "z": 20
+      "x": 142,
+      "z": 64
     },
     "color": 6732650,
     "badge": "Bia Đá 331: Chặng Đường Ba Khúc",
@@ -1407,8 +1407,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 332: Đường gấp khúc ABCDE 4 đoạn",
     "subtitle": "Tính tổng độ dài theo hình vẽ minh họa",
     "position": {
-      "x": 188,
-      "z": 24
+      "x": 142,
+      "z": 56
     },
     "color": 6732650,
     "badge": "Bia Đá 332: Khúc Nhạc Quanh Co",
@@ -1447,8 +1447,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 333: Đếm đoạn thẳng & hình chữ nhật",
     "subtitle": "Phân tích hình chữ nhật chia đôi theo chiều dọc",
     "position": {
-      "x": 184,
-      "z": 28
+      "x": 145,
+      "z": 52
     },
     "color": 6732650,
     "badge": "Bia Đá 333: Khung Tranh Đôi Lớp",
@@ -1487,8 +1487,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 334: Đếm tam giác & tứ giác trong HCN",
     "subtitle": "Đếm hình hình học từ các đường chéo và đoạn nối",
     "position": {
-      "x": 180,
-      "z": 32
+      "x": 150,
+      "z": 51
     },
     "color": 6732650,
     "badge": "Bia Đá 334: Mạng Lưới Đa Giác",
@@ -1527,8 +1527,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 335: Tam giác có đường cắt song song",
     "subtitle": "Đếm số hình tam giác và tứ giác tạo bởi đường song song",
     "position": {
-      "x": 176,
-      "z": 26
+      "x": 154,
+      "z": 52
     },
     "color": 6732650,
     "badge": "Bia Đá 335: Tháp Cắt Tầng",
@@ -1567,8 +1567,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 336: Đếm điểm và tứ giác hình thang vuông",
     "subtitle": "Phân tích điểm, đoạn thẳng trong hình thang vuông",
     "position": {
-      "x": 172,
-      "z": 20
+      "x": 157,
+      "z": 56
     },
     "color": 6732650,
     "badge": "Bia Đá 336: Điểm Mốc Đồ Hình",
@@ -1607,8 +1607,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 337: Đường gấp khúc MNPQ",
     "subtitle": "Bài toán lời văn so sánh hơn kém đường gấp khúc",
     "position": {
-      "x": 168,
-      "z": 14
+      "x": 148,
+      "z": 57
     },
     "color": 6732650,
     "badge": "Bia Đá 337: Nhịp Cầu MNPQ",
@@ -1647,8 +1647,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 338: Đường gấp khúc 3 đoạn dài hơn",
     "subtitle": "Tìm đoạn thứ ba qua quan hệ so sánh dài hơn",
     "position": {
-      "x": 164,
-      "z": 8
+      "x": 152,
+      "z": 63
     },
     "color": 6732650,
     "badge": "Bia Đá 338: Thử Thách Uốn Lượn",
@@ -1687,8 +1687,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 339: Tính nhanh nhóm tròn chục tròn trăm",
     "subtitle": "Kết hợp giao hoán và kết hợp thông minh",
     "position": {
-      "x": 166,
-      "z": -40
+      "x": 150,
+      "z": -55
     },
     "color": 2533018,
     "badge": "Bia Đá 339: Vòng Ghép Hoàn Hảo",
@@ -1751,8 +1751,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 340: Dãy số giảm dần và số tam giác",
     "subtitle": "Giải mã dãy số có quy luật biến thiên",
     "position": {
-      "x": 170,
-      "z": -34
+      "x": 155,
+      "z": -55
     },
     "color": 2533018,
     "badge": "Bia Đá 340: Vũ Điệu Các Con Số",
@@ -1815,8 +1815,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 341: Điền số thích hợp vào ô trống",
     "subtitle": "Xác định thành phần trong biểu thức kết hợp",
     "position": {
-      "x": 128,
-      "z": -44
+      "x": 113,
+      "z": -55
     },
     "color": 4367861,
     "badge": "Bia Đá 341: Khung Ô Thần Kỳ",
@@ -1879,8 +1879,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 342: Tìm x biểu thức nhiều bước",
     "subtitle": "Tìm x với hai vế biểu thức phong phú",
     "position": {
-      "x": 132,
-      "z": -40
+      "x": 116,
+      "z": -55
     },
     "color": 4367861,
     "badge": "Bia Đá 342: Vòng Quay Tìm x",
@@ -1943,8 +1943,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 343: Cân đĩa thăng bằng",
     "subtitle": "Chọn túi quả cân thích hợp để cân thăng bằng",
     "position": {
-      "x": 140,
-      "z": 38
+      "x": 106,
+      "z": 66
     },
     "color": 16754470,
     "badge": "Bia Đá 343: Cân Đĩa Cân Bằng",
@@ -1983,8 +1983,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 344 (*): Khối lượng khuyên tròn & khối hộp",
     "subtitle": "Bài toán suy luận cân đĩa 2 trạng thái (*)",
     "position": {
-      "x": 144,
-      "z": 42
+      "x": 114,
+      "z": 66
     },
     "color": 16754470,
     "badge": "Bia Đá 344: Cân Đĩa Bí Ẩn (*)",
@@ -2047,8 +2047,8 @@ export const ARCHIMEDES_MONOLITHS: ArchimedesMonolith[] = [
     "title": "Bài 345 (**): Tam giác số ma thuật",
     "subtitle": "Điền các số 1 đến 6 vào 3 cạnh tam giác (**)",
     "position": {
-      "x": 206,
-      "z": -50
+      "x": 194,
+      "z": 4
     },
     "color": 11225020,
     "badge": "Bia Đá 345: Tam Giác Ma Thuật Tối Thượng (**)",

@@ -1,4 +1,4 @@
-# Vương Quốc Cửu Chương 3D
+# Vương Quốc Học Toán 3D
 
 MVP theo mục 38 của kịch bản: một ngôi làng 3D, NPC Milo, bảng ×2/×5/×10 và mini-game xây cầu. Three.js + TypeScript + Vite, không backend, không asset trả phí.
 

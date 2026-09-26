@@ -1,4 +1,4 @@
-# Vương Quốc Cửu Chương 3D
+# Vương Quốc Học Toán 3D
 
 Thế giới 3D học toán tương tác cho học sinh tiểu học, kết hợp khám phá không gian và rèn luyện bảng cửu chương cùng NPC Milo qua nhiệm vụ xây cầu và đánh thức Vườn Hoa Tri Thức.
 
@@ -53,12 +53,17 @@ Hệ thống cấu trúc dữ liệu ánh xạ toàn bộ bài toán, thông s�
 _Avoid_: Bảng câu hỏi, Danh sách bài tập
 
 **Ốc Đảo Chuyên Đề (Thematic Zone Sanctuary)**:
-Khu vực cảnh quan trung tâm của mỗi vùng chuyên đề tại Vùng Đất Archimedes, bao bọc cụm Bia Đá Tri Thức cùng chủ đề quanh một đài biểu tượng.
+Một trong 5 hòn đảo luyện tập compact biệt lập (diện tích tương đương Vườn Hoa Tri Thức), bao bọc cụm Bia Đá Tri Thức cùng chủ đề quanh một đài biểu tượng và nối với nhau qua Cổng Dịch Chuyển.
 _Avoid_: Phân vùng, Cụm level, Bãi quái
+
+**Đền Cổng Archimedes (Archimedes Gatehouse)**:
+Quảng trường trung chuyển kiến trúc đá cổ kính chứa các Cổng Dịch Chuyển ánh sáng nối trực tiếp tới 5 Ốc Đảo Chuyên Đề và Vườn Hoa Tri Thức.
+_Avoid_: Sảnh chờ, Điểm dịch chuyển chung
 
 **Tinh Thể Phong Ấn (Rune Crystal Beacon)**:
 Khối đá ma thuật lơ lửng trên đỉnh mỗi Bia Đá Tri Thức, phát sáng rực rỡ hào quang chuyên đề khi người chơi hoàn thành bài toán.
 _Avoid_: Cục ngọc, Điểm sáng, Hạt particle
+
 
 
 

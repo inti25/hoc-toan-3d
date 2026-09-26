@@ -75,7 +75,7 @@ export class World {
   onMonolithClick?: (index: number) => void;
   onPortalClick?: () => void;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
-  private portalGroup?: THREE.Group;
+  private portalGroups: THREE.Group[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -97,7 +97,7 @@ export class World {
       foam.userData.ripple = true;
     }
     this.village();
-    this.createPlayer(); this.createMilo(); this.createBridge(); this.createFlowers(); this.createArchimedesPortal(); this.createArchimedesMonoliths(); this.decorate();
+    this.createPlayer(); this.createMilo(); this.createBridge(); this.createFlowers(); this.createArchimedesPortals(); this.createArchimedesMonoliths(); this.decorate();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -130,38 +130,79 @@ export class World {
   }
 
   private terrain() {
-    for (const [x, w, h, grassColor] of [
-      [-9, 26, 40, 0x8ec963],
-      [22, 24, 40, 0x8ec963],
-      [125, 180, 130, 0x76b852]
-    ]) {
-      const shape = new THREE.Shape(); const left = -w / 2, right = w / 2, t = -h / 2, b = h / 2, r = 2;
-      shape.moveTo(left + r, t); shape.lineTo(right - r, t); shape.quadraticCurveTo(right, t, right, t + r); shape.lineTo(right, b - r); shape.quadraticCurveTo(right, b, right - r, b); shape.lineTo(left + r, b); shape.quadraticCurveTo(left, b, left, b - r); shape.lineTo(left, t + r); shape.quadraticCurveTo(left, t, left + r, t);
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.5, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .35, bevelThickness: .2 }); geo.rotateX(-Math.PI / 2);
-      const soil = new THREE.Mesh(geo, [this.material(x > 35 ? 0x6e964b : 0x88bb52), this.material(0xb7976d)]); soil.position.set(x, -2.5, 0); soil.receiveShadow = true; soil.castShadow = true; this.scene.add(soil);
-      const grass = new THREE.ShapeGeometry(shape); grass.rotateX(-Math.PI / 2); const top = new THREE.Mesh(grass, this.material(grassColor)); top.position.set(x, .025, 0); top.receiveShadow = true; this.scene.add(top);
+    const islands: { cx: number; cz: number; w: number; d: number; grassColor: number; soilColor?: number }[] = [
+      // 1. Starter Village
+      { cx: -9, cz: 0, w: 26, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d },
+      // 2. Flower Garden (Vườn Hoa Tri Thức)
+      { cx: 22, cz: 0, w: 24, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d },
+      // 3. Archimedes Gatehouse Hub (Đền Cổng Archimedes)
+      { cx: 60, cz: 0, w: 22, d: 22, grassColor: 0x85c158, soilColor: 0x93a388 },
+      // 4. Sanctuary 1 (Thung Lũng Tính Toán)
+      { cx: 110, cz: -60, w: 24, d: 32, grassColor: 0x94c973, soilColor: 0xc49a6c },
+      // 5. Sanctuary 2 (Suối Nguồn Dãy Số)
+      { cx: 150, cz: -60, w: 24, d: 32, grassColor: 0x82c47c, soilColor: 0x769fb6 },
+      // 6. Sanctuary 3 (Đồi Thời Gian)
+      { cx: 110, cz: 60, w: 24, d: 32, grassColor: 0x8ec963, soilColor: 0x94a3b8 },
+      // 7. Sanctuary 4 (Rừng Hình Học)
+      { cx: 150, cz: 60, w: 28, d: 34, grassColor: 0x78ba65, soilColor: 0x5a8f6e },
+      // 8. Sanctuary 5 (Đỉnh Núi Tư Duy Sao)
+      { cx: 190, cz: 0, w: 22, d: 24, grassColor: 0x6aa85b, soilColor: 0x64748b }
+    ];
+
+    for (const isl of islands) {
+      const shape = new THREE.Shape();
+      const left = -isl.w / 2, right = isl.w / 2, t = -isl.d / 2, b = isl.d / 2, r = 2;
+      shape.moveTo(left + r, t);
+      shape.lineTo(right - r, t);
+      shape.quadraticCurveTo(right, t, right, t + r);
+      shape.lineTo(right, b - r);
+      shape.quadraticCurveTo(right, b, right - r, b);
+      shape.lineTo(left + r, b);
+      shape.quadraticCurveTo(left, b, left, b - r);
+      shape.lineTo(left, t + r);
+      shape.quadraticCurveTo(left, t, left + r, t);
+
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.5, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .35, bevelThickness: .2 });
+      geo.rotateX(-Math.PI / 2);
+      const soil = new THREE.Mesh(geo, [this.material(isl.cx > 35 ? (isl.soilColor || 0x6e964b) : 0x88bb52), this.material(isl.soilColor || 0xb7976d)]);
+      soil.position.set(isl.cx, -2.5, isl.cz);
+      soil.receiveShadow = true;
+      soil.castShadow = true;
+      this.scene.add(soil);
+
+      const grass = new THREE.ShapeGeometry(shape);
+      grass.rotateX(-Math.PI / 2);
+      const top = new THREE.Mesh(grass, this.material(isl.grassColor));
+      top.position.set(isl.cx, .025, isl.cz);
+      top.receiveShadow = true;
+      this.scene.add(top);
     }
+
     // Paths in starter village
     this.box(this.scene, -7, .055, 1, 21, .08, 3.2, 0xead5a3);
     this.box(this.scene, -10, .055, -4, 3.1, .08, 20, 0xead5a3);
-    const plaza = this.cylinder(this.scene, -6, .07, 5, 4.5, 4.5, .1, 0xead5a3, 24); plaza.receiveShadow = true;
+    const plaza = this.cylinder(this.scene, -6, .07, 5, 4.5, 4.5, .1, 0xead5a3, 24);
+    plaza.receiveShadow = true;
 
     // Paths in Vườn Hoa Tri Thức (new land)
     this.box(this.scene, 21.5, .055, 0, 23, .08, 3.2, 0xead5a3);
     this.box(this.scene, 22, .055, 0, 3.2, .08, 18, 0xead5a3);
-    const gardenPlaza = this.cylinder(this.scene, 22, .07, 0, 4.5, 4.5, .1, 0xead5a3, 24); gardenPlaza.receiveShadow = true;
+    const gardenPlaza = this.cylinder(this.scene, 22, .07, 0, 4.5, 4.5, .1, 0xead5a3, 24);
+    gardenPlaza.receiveShadow = true;
 
-    for (let i = 0; i < 15; i++) { const stone = this.box(this.scene, -16 + i * 1.3, .12, 1 + Math.sin(i) * .8, .65, .08, .4, 0xf5e9ca); stone.rotation.y = i; }
+    for (let i = 0; i < 15; i++) {
+      const stone = this.box(this.scene, -16 + i * 1.3, .12, 1 + Math.sin(i) * .8, .65, .08, .4, 0xf5e9ca);
+      stone.rotation.y = i;
+    }
 
-    // Paths and Central Compass Plaza in Archimedes Realm
-    this.box(this.scene, 48, .055, 0, 26, .08, 3.8, 0xd5cbb2);
-    const archPlaza = this.cylinder(this.scene, 65, .07, 0, 6.2, 6.2, .1, 0xdfd6c0, 24);
-    archPlaza.receiveShadow = true;
-    this.cylinder(this.scene, 65, .15, 0, 4.8, 4.8, .06, 0x93a388, 8);
+    // Đền Cổng Archimedes (Gatehouse Hub at x: 60, z: 0)
+    const hubPlaza = this.cylinder(this.scene, 60, .07, 0, 7.5, 7.5, .1, 0xdfd6c0, 24);
+    hubPlaza.receiveShadow = true;
+    this.cylinder(this.scene, 60, .14, 0, 5.5, 5.5, .06, 0x93a388, 8);
 
-    // Central Compass Monument at x: 65, z: 0
+    // Central Compass Monument at x: 60, z: 0
     const monument = new THREE.Group();
-    monument.position.set(65, 0, 0);
+    monument.position.set(60, 0, 0);
     this.cylinder(monument, 0, 0.6, 0, 0.9, 1.1, 1.2, 0x76876c, 8);
     this.cylinder(monument, 0, 2.2, 0, 0.45, 0.55, 2.2, 0x93a388, 8);
     const globe = this.sphere(monument, 0, 3.6, 0, 0.6, 0xffd54f);
@@ -171,44 +212,77 @@ export class World {
       ring.rotation.x = a * Math.PI / 4;
     }
     this.scene.add(monument);
-    this.obstacles.push({ x: 65, z: 0, radius: 1.5 });
+    this.obstacles.push({ x: 60, z: 0, radius: 1.5 });
 
-    // Trails radiating from Central Plaza to the 5 Sanctuaries
-    this.createStoneTrail(65, 0, 120, -50, 12);
-    this.createStoneTrail(65, 0, 155, -35, 14);
-    this.createStoneTrail(65, 0, 135, 25, 12);
-    this.createStoneTrail(65, 0, 175, 15, 15);
-    this.createStoneTrail(155, -35, 195, -55, 10);
+    // Paths connecting Hub center to portals
+    this.box(this.scene, 56, .055, 0, 8, .08, 2.8, 0xd5cbb2);
+    this.createStoneTrail(60, 0, 68, -8, 5);
+    this.createStoneTrail(60, 0, 70, -4, 5);
+    this.createStoneTrail(60, 0, 70, 0, 5);
+    this.createStoneTrail(60, 0, 70, 4, 5);
+    this.createStoneTrail(60, 0, 68, 8, 5);
 
-    // Landmarks for 5 Sanctuaries:
-    // 1. Zone 1: Thung Lũng Tính Toán (Sandstone rune pillars)
-    this.cylinder(this.scene, 120, 1.5, -50, 0.7, 0.9, 3.0, 0xc49a6c, 6);
-    this.box(this.scene, 123, 0.5, -48, 1.2, 1.0, 1.2, 0x9a7b56);
-    this.obstacles.push({ x: 120, z: -50, radius: 1.2 });
+    // Landmarks and Paving for 5 Sanctuaries:
+    // 1. Zone 1: Thung Lũng Tính Toán (x: 110, z: -60)
+    this.cylinder(this.scene, 110, .07, -60, 4.5, 4.5, .1, 0xecd9b5, 16);
+    this.box(this.scene, 105, .055, -60, 10, .08, 2.5, 0xecd9b5);
+    this.cylinder(this.scene, 110, 1.6, -60, 0.7, 0.9, 3.2, 0xc49a6c, 6);
+    this.box(this.scene, 113, 0.6, -58, 1.4, 1.2, 1.4, 0x9a7b56);
+    this.obstacles.push({ x: 110, z: -60, radius: 1.3 });
 
-    // 2. Zone 2: Suối Nguồn Dãy Số (Crystal brook and stepping stones)
-    this.box(this.scene, 155, 0.03, -35, 18, 0.08, 3.2, 0x38bdf8);
+    // 2. Zone 2: Suối Nguồn Dãy Số (x: 150, z: -60)
+    this.cylinder(this.scene, 150, .07, -60, 4.5, 4.5, .1, 0xd8eaf4, 16);
+    this.box(this.scene, 145, .055, -60, 10, .08, 2.5, 0xd8eaf4);
+    this.box(this.scene, 150, 0.03, -60, 14, 0.08, 2.8, 0x38bdf8);
     for (let s = 0; s < 4; s++) {
-      this.cylinder(this.scene, 148 + s * 4, 0.1, -35, 0.75, 0.75, 0.12, 0xf8fafc, 8);
+      this.cylinder(this.scene, 144 + s * 4, 0.1 + s * 0.04, -60, 0.75, 0.75, 0.12, 0xf8fafc, 8);
     }
+    this.cylinder(this.scene, 154, 1.5, -55, 0.1, 0.5, 2.8, 0x7dd3fc, 5);
+    this.obstacles.push({ x: 154, z: -55, radius: 1.0 });
 
-    // 3. Zone 3: Đồi Thời Gian (Stone Sundial)
-    this.cylinder(this.scene, 135, 0.4, 25, 2.2, 2.4, 0.8, 0x94a3b8, 16);
-    const gnomon = this.box(this.scene, 135, 1.2, 25, 0.14, 1.2, 1.2, 0xd97706);
+    // 3. Zone 3: Đồi Thời Gian (x: 110, z: 60)
+    this.cylinder(this.scene, 110, .07, 60, 5.0, 5.0, .1, 0xe2e8f0, 24);
+    this.box(this.scene, 105, .055, 60, 10, .08, 2.5, 0xe2e8f0);
+    this.cylinder(this.scene, 110, 0.4, 60, 2.2, 2.4, 0.8, 0x94a3b8, 16);
+    const gnomon = this.box(this.scene, 110, 1.2, 60, 0.14, 1.2, 1.2, 0xd97706);
     gnomon.rotation.x = 0.5;
-    this.obstacles.push({ x: 135, z: 25, radius: 2.3 });
+    for (let h = 0; h < 12; h++) {
+      const a = h * Math.PI / 6;
+      this.box(this.scene, 110 + Math.cos(a) * 1.8, 0.45, 60 + Math.sin(a) * 1.8, 0.25, 0.08, 0.25, 0xf59e0b);
+    }
+    this.obstacles.push({ x: 110, z: 60, radius: 2.3 });
 
-    // 4. Zone 4: Rừng Hình Học (Geometric trees)
-    this.cylinder(this.scene, 175, 1.8, 15, 0, 1.6, 3.5, 0x10b981, 4);
-    this.box(this.scene, 171, 1.0, 12, 1.8, 1.8, 1.8, 0x059669);
-    this.cylinder(this.scene, 179, 1.0, 18, 1.0, 1.0, 2.0, 0x34d399, 3);
-    this.obstacles.push({ x: 175, z: 15, radius: 1.6 });
+    // 4. Zone 4: Rừng Hình Học (x: 150, z: 60)
+    this.cylinder(this.scene, 150, .07, 60, 5.0, 5.0, .1, 0xdcfce7, 16);
+    this.box(this.scene, 144, .055, 60, 12, .08, 2.5, 0xdcfce7);
+    this.cylinder(this.scene, 150, 1.8, 56, 0, 1.6, 3.5, 0x10b981, 4);
+    this.box(this.scene, 146, 1.0, 64, 1.8, 1.8, 1.8, 0x059669);
+    this.sphere(this.scene, 154, 1.5, 64, 1.1, 0x34d399);
+    this.obstacles.push({ x: 150, z: 56, radius: 1.6 });
 
-    // 5. Zone 5: Đỉnh Núi Tư Duy Sao (Stepped dais and crown star)
-    this.cylinder(this.scene, 195, 0.25, -55, 8.5, 8.8, 0.5, 0x64748b, 16);
-    this.cylinder(this.scene, 195, 1.8, -55, 0.6, 0.7, 2.5, 0xf59e0b, 8);
-    this.sphere(this.scene, 195, 3.4, -55, 0.55, 0xfef08a);
-    this.obstacles.push({ x: 195, z: -55, radius: 1.5 });
+    // 5. Zone 5: Đỉnh Núi Tư Duy Sao (x: 190, z: 0)
+    this.cylinder(this.scene, 190, 0.25, 0, 5.5, 5.8, 0.5, 0x334155, 16);
+    this.cylinder(this.scene, 190, 0.55, 0, 3.8, 4.0, 0.3, 0x475569, 8);
+    this.box(this.scene, 185.5, .055, 0, 9, .08, 2.5, 0xcbd5e1);
+    this.cylinder(this.scene, 190, 1.8, 0, 0.55, 0.65, 2.5, 0xf59e0b, 8);
+    this.sphere(this.scene, 190, 3.5, 0, 0.6, 0xfef08a);
+    for (let s = 0; s < 4; s++) {
+      const a = s * Math.PI / 2;
+      this.sphere(this.scene, 190 + Math.cos(a) * 2.2, 1.2, Math.sin(a) * 2.2, 0.3, 0x67e8f9);
+    }
+    this.obstacles.push({ x: 190, z: 0, radius: 1.5 });
+
+    // Celestial Sea of Clouds under void between islands
+    const cloudSea = new THREE.Group();
+    for (let c = 0; c < 36; c++) {
+      const cx = 35 + ((c * 19) % 170);
+      const cz = -75 + ((c * 23) % 150);
+      if (!this.spatial.isWithinLand(cx, cz)) {
+        const cloud = this.sphere(cloudSea, cx, -1.8 + Math.sin(c) * 0.7, cz, 4.5 + (c % 4), 0xffffff);
+        cloud.scale.set(1.4, 0.6, 1.4);
+      }
+    }
+    this.scene.add(cloudSea);
   }
 
 
@@ -373,32 +447,70 @@ export class World {
     });
   }
 
-  private createArchimedesPortal() {
-    this.portalGroup = new THREE.Group();
-    this.portalGroup.position.copy(this.portalPos);
+  private createPortalArch(x: number, z: number, color: number, rotationY = 0) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = rotationY;
 
     // Stone base with steps
-    this.cylinder(this.portalGroup, 0, .15, 0, 2.5, 2.7, .3, 0x8a927d, 12);
-    this.cylinder(this.portalGroup, 0, .35, 0, 2.0, 2.2, .15, 0x5a634e, 12);
+    this.cylinder(group, 0, .12, 0, 1.8, 2.0, .24, 0x8a927d, 12);
+    this.cylinder(group, 0, .26, 0, 1.5, 1.7, .12, 0x5a634e, 12);
 
     // Two ancient pillars wide enough for player to pass through center
-    this.cylinder(this.portalGroup, 0, 2.2, -2.1, .28, .36, 4.2, 0x93a388, 8);
-    this.cylinder(this.portalGroup, 0, 2.2, 2.1, .28, .36, 4.2, 0x93a388, 8);
+    this.cylinder(group, 0, 1.8, -1.5, .22, .28, 3.4, 0x93a388, 8);
+    this.cylinder(group, 0, 1.8, 1.5, .22, .28, 3.4, 0x93a388, 8);
 
     // Grand Arch top
-    this.box(this.portalGroup, 0, 4.3, 0, .8, .55, 4.6, 0x76876c);
+    this.box(group, 0, 3.5, 0, .6, .45, 3.6, 0x76876c);
 
     // Floating crystal prism above the arch
-    const crystal = this.sphere(this.portalGroup, 0, 5.2, 0, .38, 0xffca28);
+    const crystal = this.sphere(group, 0, 4.3, 0, .32, color);
     crystal.scale.set(0.7, 1.4, 0.7);
     crystal.userData.portalCrystal = true;
 
     // Glowing energy arch aura
-    const portalEnergy = this.box(this.portalGroup, 0, 2.2, 0, .05, 3.8, 3.6, 0x80deea);
+    const portalEnergy = this.box(group, 0, 1.8, 0, .05, 3.0, 2.7, color);
     portalEnergy.userData.portalEnergy = true;
 
-    this.scene.add(this.portalGroup);
-    this.obstacles.push({ x: 32, z: -2.1, radius: .6 }, { x: 32, z: 2.1, radius: .6 });
+    this.scene.add(group);
+    this.portalGroups.push(group);
+
+    const cos = Math.cos(rotationY);
+    const sin = Math.sin(rotationY);
+    this.obstacles.push({ x: x - (-1.5) * sin, z: z + (-1.5) * cos, radius: .45 });
+    this.obstacles.push({ x: x - 1.5 * sin, z: z + 1.5 * cos, radius: .45 });
+
+    return group;
+  }
+
+  private createArchimedesPortals() {
+    // 1. Garden -> Hub Portal
+    this.createPortalArch(32, 0, 0x38bdf8, 0);
+
+    // 2. Hub -> Garden Return Portal
+    this.createPortalArch(52, 0, 0x22c55e, 0);
+
+    // 3. Hub -> Zone 1 (Thung Lũng Tính Toán)
+    this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4);
+
+    // 4. Hub -> Zone 2 (Suối Nguồn Dãy Số)
+    this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6);
+
+    // 5. Hub -> Zone 3 (Đồi Thời Gian)
+    this.createPortalArch(70, 0, 0x8b5cf6, 0);
+
+    // 6. Hub -> Zone 4 (Rừng Hình Học)
+    this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6);
+
+    // 7. Hub -> Zone 5 (Đỉnh Núi Tư Duy Sao)
+    this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
+
+    // 8-12. Sanctuary Return Portals back to Hub
+    this.createPortalArch(100, -60, 0x38bdf8, 0);
+    this.createPortalArch(140, -60, 0x38bdf8, 0);
+    this.createPortalArch(100, 60, 0x38bdf8, 0);
+    this.createPortalArch(138, 60, 0x38bdf8, 0);
+    this.createPortalArch(181, 0, 0x38bdf8, 0);
   }
 
   private createArchimedesMonoliths() {
@@ -715,17 +827,17 @@ export class World {
 
     for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= dt; s.velocity.y -= dt * 6; s.mesh.position.addScaledVector(s.velocity, dt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
     this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += dt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
-    if (this.portalGroup) {
-      this.portalGroup.children.forEach(o => {
+    this.portalGroups.forEach(pg => {
+      pg.children.forEach(o => {
         if (o.userData.portalCrystal) {
           o.rotation.y += dt * 1.5;
-          o.position.y = 5.2 + Math.sin(this.time * 2.5) * .12;
+          o.position.y = 4.3 + Math.sin(this.time * 2.5) * .12;
         }
         if (o.userData.portalEnergy) {
           o.scale.z = 1.0 + Math.sin(this.time * 4) * 0.04;
         }
       });
-    }
+    });
     this.renderer.render(this.scene, this.camera);
     this.onFrame?.(this.spatial.isNearMilo(), this.spatial.hasCrossedRiver(), 1 / Math.max(dt, .001), this.spatial.nearFlowerIndex(), this.spatial.isNearPortal(), this.spatial.nearMonolithIndex());
   };
