@@ -59,4 +59,284 @@
 .archimedes-step-indicator{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:bold;background:#e6efe0;color:#336449;padding:4px 10px;border-radius:10px;margin-bottom:10px}
 .archimedes-diagram-box{background:#fdfefb;border:1px solid #dce8d3;border-radius:12px;padding:12px;margin:12px 0;display:flex;justify-content:center}
 
+/* Wheel Control & Tablet/Mobile Touch Navigation */
+.touch-controls {
+  display: none;
+  position: absolute;
+  bottom: 92px;
+  left: 28px;
+  right: 28px;
+  align-items: flex-end;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 25;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.show-touch-controls .touch-controls {
+  display: flex !important;
+}
+body.show-touch-controls .controls-hint {
+  display: none !important;
+}
+body.show-touch-controls .bottom-bar {
+  justify-content: flex-end;
+}
+
+@media (pointer: coarse), (max-width: 1024px) {
+  .touch-controls {
+    display: flex;
+  }
+  .controls-hint {
+    display: none;
+  }
+  .bottom-bar {
+    justify-content: flex-end;
+  }
+}
+
+/* Glassmorphic Wheel Control Outer Frame */
+.wheel-control {
+  position: relative;
+  width: 138px;
+  height: 138px;
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  background: radial-gradient(circle, rgba(255, 252, 240, 0.5) 0%, rgba(220, 240, 230, 0.4) 60%, rgba(25, 79, 66, 0.25) 100%);
+  border: 3.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 32px rgba(18, 62, 52, 0.26), inset 0 2px 8px rgba(255, 255, 255, 0.7), inset 0 -4px 12px rgba(20, 60, 50, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wheel-control:active {
+  box-shadow: 0 4px 18px rgba(18, 62, 52, 0.35), inset 0 2px 8px rgba(255, 255, 255, 0.8);
+}
+
+.wheel-outer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dashed Ring Track Rim */
+.wheel-ring-rim {
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(25, 79, 66, 0.25);
+  pointer-events: none;
+}
+
+/* 4 Directional Indicators ▲ ► ▼ ◄ */
+.wheel-dir {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #245849;
+  font-size: 15px;
+  font-weight: 900;
+  border-radius: 50%;
+  transition: transform 0.12s ease, color 0.12s ease, text-shadow 0.12s ease, opacity 0.12s ease;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.wheel-up {
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.wheel-right {
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.wheel-down {
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.wheel-left {
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Glowing active state when tilting joystick */
+.wheel-dir.active {
+  color: #e5901c;
+  opacity: 1;
+  text-shadow: 0 0 10px rgba(229, 144, 28, 0.85), 0 0 2px #fff;
+}
+
+.wheel-up.active {
+  transform: translateX(-50%) translateY(-2px) scale(1.25);
+}
+
+.wheel-right.active {
+  transform: translateY(-50%) translateX(2px) scale(1.25);
+}
+
+.wheel-down.active {
+  transform: translateX(-50%) translateY(2px) scale(1.25);
+}
+
+.wheel-left.active {
+  transform: translateY(-50%) translateX(-2px) scale(1.25);
+}
+
+/* Precision Knob Hub */
+.wheel-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  margin-top: -26px;
+  margin-left: -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #fff7e4 45%, #edd296 90%, #d8b46e 100%);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 6px 18px rgba(20, 60, 50, 0.35), inset 0 2px 4px rgba(255, 255, 255, 0.9), inset 0 -3px 5px rgba(160, 120, 40, 0.3);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.knob-core {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1b5749 0%, #297463 100%);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(255, 255, 255, 0.8);
+  border: 1.5px solid #ebd498;
+}
+
+/* Touch Action Buttons */
+.touch-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.jump-button {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #fff7e4 50%, #f7d287 100%);
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 20px rgba(22, 65, 54, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.9);
+  color: var(--green);
+  touch-action: manipulation;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.jump-button:active {
+  transform: scale(0.92) translateY(3px);
+  box-shadow: 0 2px 10px rgba(22, 65, 54, 0.25);
+  background: radial-gradient(circle at 35% 35%, #fceac2 0%, #eed083 60%, #e2be67 100%);
+}
+
+.jump-button svg {
+  width: 32px;
+  height: 32px;
+}
+
+/* Responsive Scaling on Phones (< 700px) */
+@media (max-width: 700px) {
+  .touch-controls {
+    bottom: 82px;
+    left: 18px;
+    right: 18px;
+  }
+  .wheel-control {
+    width: 118px;
+    height: 118px;
+  }
+  .wheel-dir {
+    font-size: 13px;
+    width: 24px;
+    height: 24px;
+  }
+  .wheel-knob {
+    width: 44px;
+    height: 44px;
+    margin-top: -22px;
+    margin-left: -22px;
+  }
+  .knob-core {
+    width: 18px;
+    height: 18px;
+  }
+  .jump-button {
+    width: 58px;
+    height: 58px;
+  }
+  .jump-button svg {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Sổ Cửu Chương (Bảng ×1 – ×10 Tabs) */
+.table-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 18px 0;
+}
+.table-tabs button {
+  background: #edf0e0;
+  border: 1px solid #d6dfc7;
+  border-radius: 10px;
+  padding: 10px 4px;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--green);
+  text-align: center;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.table-tabs button:hover:not(:disabled) {
+  background: #e3ebd4;
+  border-color: #9cb88d;
+  transform: translateY(-1px);
+}
+.table-tabs button[aria-pressed=true] {
+  color: #fffbeb;
+  background: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 4px 10px rgba(25, 79, 66, 0.28);
+  transform: translateY(-1px);
+}
+@media (max-width: 520px) {
+  .table-tabs {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+  }
+  .table-tabs button {
+    font-size: 11px;
+    padding: 8px 2px;
+    border-radius: 8px;
+  }
+}
+
+
+
 

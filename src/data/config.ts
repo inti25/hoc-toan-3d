@@ -1,4 +1,4 @@
-export const TABLES = [2, 5, 10] as const;
+export const TABLES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 export type Table = typeof TABLES[number];
 export const SAVE_KEY = 'aigame3d_multiplication_save';
 export const BRIDGE_PARTS = 6;

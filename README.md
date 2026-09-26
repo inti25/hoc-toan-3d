@@ -1,6 +1,6 @@
 # Vương Quốc Học Toán 3D
 
-MVP theo mục 38 của kịch bản: một ngôi làng 3D, NPC Milo, bảng ×2/×5/×10 và mini-game xây cầu. Three.js + TypeScript + Vite, không backend, không asset trả phí.
+MVP theo mục 38 của kịch bản: một ngôi làng 3D, NPC Milo, đầy đủ bảng cửu chương từ ×1 đến ×10 và mini-game xây cầu. Three.js + TypeScript + Vite, không backend, không asset trả phí.
 
 ## Chạy và build
 
@@ -19,11 +19,11 @@ npm run build
 - Kéo trên cảnh: xoay camera. Cuộn chuột: zoom.
 - Space: nhảy. E: nói chuyện với Milo khi đứng gần.
 - Phím 1 / 2 / 3: chọn đáp án. Esc: đóng hộp thoại / tạm dừng.
-- Màn hình cảm ứng: cần điều khiển, nút nhảy và nút tương tác.
+- Màn hình cảm ứng (mobile / tablet): bánh xe điều hướng 360° (Wheel Control), nút nhảy và nút tương tác.
 
 ## Vòng chơi
 
-Chọn nhân vật → đến gần Milo → nhận nhiệm vụ → 6 câu đúng xây 6 đoạn cầu → tự đi qua cầu sang vườn → hoàn thành nhiệm vụ. Mỗi câu đúng +10 XP, +5 xu; hoàn thành cầu và đi sang bờ bên kia +50 XP, +10 xu (một lần). Sai không mất điểm; gợi ý tăng dần; câu sai được đưa vào ôn lại. Sổ cửu chương hỗ trợ xem và luyện riêng từng bảng hoặc trộn cả ba.
+Chọn nhân vật → đến gần Milo → nhận nhiệm vụ → 6 câu đúng xây 6 đoạn cầu → tự đi qua cầu sang vườn → hoàn thành nhiệm vụ. Mỗi câu đúng +10 XP, +5 xu; hoàn thành cầu và đi sang bờ bên kia +50 XP, +10 xu (một lần). Sai không mất điểm; gợi ý tăng dần; câu sai được đưa vào ôn lại. Sổ cửu chương hỗ trợ xem và luyện riêng từng bảng (bảng ×1 đến ×10) hoặc trộn tất cả các bảng.
 
 ## Kiến trúc
 

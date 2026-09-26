@@ -58,3 +58,20 @@ test('SpatialWorld obstacle collision prevents moving through houses and objects
   // House at (-12, -6) has radius ~2.9
   assert.equal(world.canMove(-12, -6), false);
 });
+
+test('SpatialWorld responds accurately to mobile and tablet wheel joystick input', () => {
+  const world = new SpatialWorld(-6, 6);
+  const initialZ = world.getPose().z;
+
+  // Move forward with wheel joystick (y = -1) with zero camera yaw
+  const poseForward = world.tick(0.2, { keys: new Set(), joystick: { x: 0, y: -1 } }, 0);
+  assert.equal(poseForward.moving, true, 'Player moves with joystick active');
+  assert.ok(poseForward.z < initialZ, 'Player moves forward along -z');
+
+  // Move right with wheel joystick (x = 1)
+  const initialX = world.getPose().x;
+  const poseRight = world.tick(0.2, { keys: new Set(), joystick: { x: 1, y: 0 } }, 0);
+  assert.equal(poseRight.moving, true);
+  assert.ok(poseRight.x > initialX, 'Player moves right along +x');
+});
+

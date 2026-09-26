@@ -25,7 +25,7 @@ Một trong 10 thực thể hoa trong Vườn Hoa Tri Thức, chuyển từ tr�
 _Avoid_: Trạm câu hỏi, Điểm tương tác hoa
 
 **Bảng Cửu Chương (Multiplication Table)**:
-Tập hợp các phép nhân số học cần rèn luyện (hiện tại hỗ trợ bảng ×2, ×5, ×10 và chế độ trộn).
+Tập hợp các phép nhân số học cần rèn luyện (đầy đủ 10 bảng nhân từ bảng ×1 đến bảng ×10 và chế độ trộn tất cả các bảng).
 _Avoid_: Đề thi, Danh sách câu hỏi
 
 **Hàng Đợi Ôn Tập (Review Queue)**:

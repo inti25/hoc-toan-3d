@@ -77,7 +77,7 @@ app.innerHTML = `
       <button id="learn-welcome" class="text-button">${icon('book')} Khám phá bảng cửu chương</button>
       <div class="welcome-notes"><span>✦ Học qua những chuyến đi</span><span>Không giới hạn thời gian</span></div>
     </section>
-    <div id="world-caption" class="world-caption"><span>01</span><div>Làng Khởi Đầu<small>Bảng ×2 · ×5 · ×10 & Vườn Hoa</small></div></div>
+    <div id="world-caption" class="world-caption"><span>01</span><div>Làng Khởi Đầu<small>Bảng cửu chương ×1 – ×10 & Vườn Hoa</small></div></div>
     <div id="hud" class="hud" hidden>
       <div class="player-card"><span id="avatar-face" class="avatar-face">👦</span><div><strong>Nhà thám hiểm <span id="level">1</span></strong><div class="xp-track" role="progressbar" aria-label="Tiến độ cấp độ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="xp-fill"></i></div><small id="xp-text">0 / 100 XP</small></div></div>
       <div class="wallet">${icon('coin')}<strong id="coins">0</strong><span>xu</span></div>
@@ -119,7 +119,23 @@ app.innerHTML = `
         </div>
       </div>
       <button id="interact" class="interact" hidden><kbd>E</kbd> Tương tác ${icon('arrow')}</button>
-      <div id="touch-controls" class="touch-controls"><div id="joystick" class="joystick" role="group" aria-label="Cần điều khiển di chuyển"><div id="joystick-knob"></div></div><button id="jump" class="jump-button" aria-label="Nhảy">${icon('jump')}</button></div>
+      <div id="touch-controls" class="touch-controls">
+        <div id="joystick" class="wheel-control" role="group" aria-label="Bánh xe điều khiển di chuyển">
+          <div class="wheel-outer">
+            <div class="wheel-dir wheel-up" aria-hidden="true">▲</div>
+            <div class="wheel-dir wheel-right" aria-hidden="true">►</div>
+            <div class="wheel-dir wheel-down" aria-hidden="true">▼</div>
+            <div class="wheel-dir wheel-left" aria-hidden="true">◄</div>
+            <div class="wheel-ring-rim"></div>
+            <div id="joystick-knob" class="wheel-knob" aria-hidden="true">
+              <div class="knob-core"></div>
+            </div>
+          </div>
+        </div>
+        <div class="touch-actions">
+          <button id="jump" class="jump-button" aria-label="Nhảy">${icon('jump')}</button>
+        </div>
+      </div>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <footer id="menu-footer" class="menu-footer"><span><b>VƯƠNG QUỐC</b> HỌC TOÁN 3D</span><span>Một thế giới nhỏ. Những khám phá lớn.</span><span>Lưu trên thiết bị này ${icon('save')}</span></footer>
@@ -260,13 +276,16 @@ function talk() {
   const complete = state.bridge === BRIDGE_PARTS;
   openDialog(
     'Chào bạn, mình là Milo!',
-    `<div class="dialog-eyebrow">NGƯỜI DẪN ĐƯỜNG CỦA BẠN</div><p class="dialog-copy">${complete ? 'Cây cầu của chúng mình thật đẹp! ' + (state.questComplete ? 'Bạn muốn cùng mình luyện thêm phép nhân không?' : 'Bạn hãy đi qua cầu đến Vườn Hoa Tri Thức bên kia nhé. Mình cũng luôn sẵn sàng luyện tập cùng bạn!') : 'Vườn Hoa Tri Thức bên kia sông đang chờ chúng mình. Hãy giúp mình xây <strong>6 đoạn cầu</strong> bằng những viên đá phép thuật nhé!'}</p><div class="milo-tip"><span>✦</span><p>${complete ? 'Cứ thong thả, không cần vội. Mỗi lần thử là một lần bạn tiến bộ!' : 'Chọn phép nhân cho đúng số viên đá. Mỗi câu đúng: <b>+10 XP, +5 xu</b>. Nếu chưa đúng, chúng mình cùng đếm lại!'}</p></div><button id="accept-quest" class="primary wide">${complete ? 'Cùng luyện tập' : 'Cùng xây cầu nào!'} ${icon('arrow')}</button>`,
+    `<div class="dialog-eyebrow">NGƯỜI DẪN ĐƯỜNG CỦA BẠN</div><p class="dialog-copy">${complete ? 'Cây cầu của chúng mình thật đẹp! Bạn có thể chọn luyện bất kỳ bảng cửu chương nào từ <b>bảng ×1 đến bảng ×10</b> hoặc cùng mình xây thêm kiến thức nhé!' : 'Vườn Hoa Tri Thức bên kia sông đang chờ chúng mình. Hãy giúp mình xây <strong>6 đoạn cầu</strong> bằng những viên đá phép thuật nhé! Bạn có thể luyện tập đầy đủ từ <strong>bảng ×1 đến bảng ×10</strong>.'}</p><div class="milo-tip"><span>✦</span><p>${complete ? 'Sổ cửu chương có đầy đủ 10 bảng nhân (×1 đến ×10). Bạn có thể chọn riêng từng bảng để luyện tập hoặc trộn lẫn tất cả!' : 'Chọn phép nhân cho đúng số viên đá. Mỗi câu đúng: <b>+10 XP, +5 xu</b>. Nếu chưa nhớ, bạn hãy mở Sổ cửu chương để xem lại nhé!'}</p></div><button id="accept-quest" class="primary wide">${complete ? 'Cùng luyện tập phép nhân' : 'Cùng xây cầu nào!'} ${icon('arrow')}</button><button id="milo-open-book" class="secondary wide">${icon('book')} Mở Sổ cửu chương (Bảng ×1 – ×10)</button>`,
     'milo'
   );
   $('accept-quest').onclick = () => {
     adventure.acceptQuest();
     updateHUD();
     showQuestion(complete ? 'practice' : 'bridge');
+  };
+  $('milo-open-book').onclick = () => {
+    learn();
   };
 }
 $('milo-label').onclick = talk;
@@ -717,14 +736,14 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
   };
 }
 
-function learn(selected: Table = adventure.getState().table || 2) {
+function learn(selected: Table = adventure.getState().table || 1) {
   const state = adventure.getState();
   openDialog(
     'Sổ cửu chương',
     `<div class="dialog-eyebrow">HỌC TỪNG CHÚT, NHỚ THẬT LÂU</div><div class="table-tabs" role="group" aria-label="Chọn bảng cửu chương">${TABLES.map(t => `<button data-table="${t}" aria-pressed="${t === selected}">Bảng ×${t}</button>`).join('')}</div><div class="multiplication-grid">${Array.from({ length: 10 }, (_, i) => {
       const s = state.questionStats[`m${selected}_${i + 1}`];
       return `<div><span>${selected} × ${i + 1}</span><b>= ${selected * (i + 1)}</b><small>${s?.correct ? '✓' : ''}</small></div>`;
-    }).join('')}</div><p class="book-note">Dấu ✓ là phép nhân bạn đã trả lời đúng. Mình luyện thêm nhé?</p><button id="practice-table" class="primary wide">Luyện bảng ×${selected} ${icon('arrow')}</button><button id="practice-all" class="text-button centered">Trộn cả 3 bảng ×2, ×5, ×10</button>`,
+    }).join('')}</div><p class="book-note">Dấu ✓ là phép nhân bạn đã trả lời đúng. Mình luyện thêm nhé?</p><button id="practice-table" class="primary wide">Luyện bảng ×${selected} ${icon('arrow')}</button><button id="practice-all" class="text-button centered">Trộn tất cả các bảng (×1 đến ×10)</button>`,
     'book'
   );
   document
@@ -769,7 +788,36 @@ function help() {
   );
   $('understood').onclick = closeDialog;
 }
-$('help').onclick = help;
+function checkDeviceTouch(): boolean {
+  return (
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.innerWidth <= 1024
+  );
+}
+
+function isWheelControlEnabled(): boolean {
+  const pref = localStorage.getItem('wheel_control');
+  if (pref !== null) {
+    return pref === 'true';
+  }
+  return checkDeviceTouch();
+}
+
+function updateWheelControlVisibility() {
+  const enabled = isWheelControlEnabled();
+  document.body.classList.toggle('show-touch-controls', enabled);
+  const tc = $('touch-controls');
+  if (tc) {
+    tc.style.display = enabled ? 'flex' : 'none';
+  }
+}
+
+function setWheelControlEnabled(val: boolean) {
+  localStorage.setItem('wheel_control', String(val));
+  updateWheelControlVisibility();
+}
 
 function settings() {
   const state = adventure.getState();
@@ -778,7 +826,7 @@ function settings() {
     correct = stats.reduce((a, s) => a + s.correct, 0);
   openDialog(
     'Một chút cài đặt',
-    `<div class="settings-row"><span>Hiệu ứng âm thanh</span><button id="toggle-sound" class="switch" role="switch" aria-checked="${state.sound}" aria-label="Hiệu ứng âm thanh"><i></i></button></div><div class="settings-row"><span>Nhạc nền nhẹ nhàng</span><button id="toggle-music" class="switch" role="switch" aria-checked="${state.music}" aria-label="Nhạc nền"><i></i></button></div><div class="progress-summary"><span><strong>${state.xp}</strong>XP tích lũy</span><span><strong>${attempts}</strong>Lượt trả lời</span><span><strong>${attempts ? Math.round((correct / attempts) * 100) : 0}%</strong>Trả lời đúng</span></div><p class="book-note">Tiến trình tự lưu trên trình duyệt này, không cần tài khoản. Xóa dữ liệu trình duyệt sẽ xóa tiến trình.</p><button id="save-now" class="secondary wide">${icon('save')} Lưu tiến trình</button><button id="return-menu" class="text-button centered">Về màn hình chính</button><button id="reset-progress" class="text-button danger centered">${icon('reset')} Chơi lại từ đầu</button>`,
+    `<div class="settings-row"><span>Hiệu ứng âm thanh</span><button id="toggle-sound" class="switch" role="switch" aria-checked="${state.sound}" aria-label="Hiệu ứng âm thanh"><i></i></button></div><div class="settings-row"><span>Nhạc nền nhẹ nhàng</span><button id="toggle-music" class="switch" role="switch" aria-checked="${state.music}" aria-label="Nhạc nền"><i></i></button></div><div class="settings-row"><span>Bánh xe di chuyển (Wheel Control)</span><button id="toggle-wheel" class="switch" role="switch" aria-checked="${isWheelControlEnabled()}" aria-label="Bánh xe di chuyển"><i></i></button></div><div class="progress-summary"><span><strong>${state.xp}</strong>XP tích lũy</span><span><strong>${attempts}</strong>Lượt trả lời</span><span><strong>${attempts ? Math.round((correct / attempts) * 100) : 0}%</strong>Trả lời đúng</span></div><p class="book-note">Tiến trình tự lưu trên trình duyệt này, không cần tài khoản. Xóa dữ liệu trình duyệt sẽ xóa tiến trình.</p><button id="save-now" class="secondary wide">${icon('save')} Lưu tiến trình</button><button id="return-menu" class="text-button centered">Về màn hình chính</button><button id="reset-progress" class="text-button danger centered">${icon('reset')} Chơi lại từ đầu</button>`,
     'settings'
   );
   $('toggle-sound').onclick = () => {
@@ -790,6 +838,10 @@ function settings() {
   $('toggle-music').onclick = () => {
     adventure.setAudio(state.sound, !state.music);
     audio.music(!state.music);
+    settings();
+  };
+  $('toggle-wheel').onclick = () => {
+    setWheelControlEnabled(!isWheelControlEnabled());
     settings();
   };
   $('save-now').onclick = () => {
@@ -861,30 +913,98 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const joystick = $('joystick');
+const knob = $('joystick-knob');
+const dirUp = joystick.querySelector<HTMLElement>('.wheel-up');
+const dirRight = joystick.querySelector<HTMLElement>('.wheel-right');
+const dirDown = joystick.querySelector<HTMLElement>('.wheel-down');
+const dirLeft = joystick.querySelector<HTMLElement>('.wheel-left');
+
 let joystickId = -1;
+
+function updateDirectionHighlights(x: number, y: number) {
+  const threshold = 0.28;
+  dirUp?.classList.toggle('active', y < -threshold);
+  dirDown?.classList.toggle('active', y > threshold);
+  dirRight?.classList.toggle('active', x > threshold);
+  dirLeft?.classList.toggle('active', x < -threshold);
+}
+
 function joystickMove(e: PointerEvent) {
   if (e.pointerId !== joystickId) return;
   const r = joystick.getBoundingClientRect();
-  let x = (e.clientX - r.left - r.width / 2) / 34,
-    y = (e.clientY - r.top - r.height / 2) / 34;
-  const l = Math.max(1, Math.hypot(x, y));
-  x /= l;
-  y /= l;
-  world.joystick = { x, y };
-  $('joystick-knob').style.transform = `translate(${x * 30}px,${y * 30}px)`;
+  const centerX = r.left + r.width / 2;
+  const centerY = r.top + r.height / 2;
+  const dx = e.clientX - centerX;
+  const dy = e.clientY - centerY;
+  const dist = Math.hypot(dx, dy);
+
+  // Maximum radius knob can move within the wheel
+  const maxRadius = Math.max(26, r.width / 2 - 24);
+
+  if (dist <= 0.001) {
+    world.joystick = { x: 0, y: 0 };
+    knob.style.transform = '';
+    updateDirectionHighlights(0, 0);
+    return;
+  }
+
+  const intensity = Math.min(1, dist / maxRadius);
+  const normX = (dx / dist) * intensity;
+  const normY = (dy / dist) * intensity;
+
+  world.joystick = { x: normX, y: normY };
+
+  const knobDist = Math.min(dist, maxRadius);
+  const knobX = (dx / dist) * knobDist;
+  const knobY = (dy / dist) * knobDist;
+  knob.style.transform = `translate(${knobX}px,${knobY}px)`;
+
+  updateDirectionHighlights(normX, normY);
 }
+
 joystick.addEventListener('pointerdown', e => {
   joystickId = e.pointerId;
   joystick.setPointerCapture(e.pointerId);
+  knob.style.transition = 'none';
   joystickMove(e);
 });
+
 joystick.addEventListener('pointermove', joystickMove);
-for (const event of ['pointerup', 'pointercancel'])
-  joystick.addEventListener(event, () => {
-    joystickId = -1;
-    world.joystick = { x: 0, y: 0 };
-    $('joystick-knob').style.transform = '';
+
+for (const event of ['pointerup', 'pointercancel'] as const) {
+  joystick.addEventListener(event, (e: PointerEvent) => {
+    if (e.pointerId === joystickId || joystickId !== -1) {
+      joystickId = -1;
+      world.joystick = { x: 0, y: 0 };
+      knob.style.transition = 'transform 0.15s ease-out';
+      knob.style.transform = '';
+      updateDirectionHighlights(0, 0);
+    }
   });
+}
+
+$('jump').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (world?.active && !world.paused) world.jump();
+});
+
+updateWheelControlVisibility();
+window.addEventListener('resize', () => {
+  if (localStorage.getItem('wheel_control') === null) {
+    updateWheelControlVisibility();
+  }
+});
+window.addEventListener(
+  'pointerdown',
+  e => {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+      if (localStorage.getItem('wheel_control') === null && !isWheelControlEnabled()) {
+        setWheelControlEnabled(true);
+      }
+    }
+  },
+  { once: true }
+);
 
 try {
   world = new World($<HTMLCanvasElement>('world'));

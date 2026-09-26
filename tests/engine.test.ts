@@ -5,11 +5,11 @@ import { freshState, parseSave } from '../src/core/state.ts';
 import { TABLES, getLevel } from '../src/data/config.ts';
 import { FLOWER_QUESTIONS } from '../src/data/flowerQuestions.ts';
 
-test('all 30 MVP questions have three distinct valid answers in both modes',()=>{
+test('all 100 questions across tables 1 to 10 have three distinct valid answers in both modes',()=>{
   for(const a of TABLES)for(let b=1;b<=10;b++)for(const mode of ['bridge','practice'] as const){
     const q=makeQuestion(a,b,mode);assert.equal(q.options.length,3);assert.equal(new Set(q.options.map(o=>o.value)).size,3);
     assert.equal(q.options.filter(o=>validateAnswer(q,o.value)).length,1);assert(q.options.every(o=>o.value>=1&&o.value<=100));
-    if(mode==='bridge')for(const o of q.options){const [x,y]=o.label.split(' × ').map(Number);assert(x>=2&&x<=10);assert(y>=1&&y<=10);assert.equal(x*y,o.value);}
+    if(mode==='bridge')for(const o of q.options){const [x,y]=o.label.split(' × ').map(Number);assert(x>=1&&x<=10);assert(y>=1&&y<=10);assert.equal(x*y,o.value);}
   }
 });
 test('answer positions are shuffled rather than fixed',()=>{const positions=new Set<number>();for(let i=0;i<80;i++){const q=makeQuestion(5,5,'bridge');positions.add(q.options.findIndex(o=>o.value===25));}assert.equal(positions.size,3);});

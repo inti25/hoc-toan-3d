@@ -4,10 +4,10 @@
 
 - TypeScript strict: build thành công.
 - 8 bài kiểm thử logic qua Node test runner, tất cả đạt.
-- 30 phép nhân trong mỗi chế độ: luôn 3 lựa chọn riêng biệt, một đáp án đúng, kết quả trong 1–100.
+- 100 phép nhân trong mỗi chế độ (đầy đủ bảng ×1 đến ×10): luôn 3 lựa chọn riêng biệt, một đáp án đúng, kết quả trong 1–100.
 - Nhãn phép nhân của lựa chọn khớp giá trị; vị trí đáp án được đảo.
 - Ghi nhận đúng/sai, XP và xu không bị trừ khi sai, câu sai được lưu để ôn lại.
-- Bộ lọc bảng ×2/×5/×10 và các cấp gợi ý.
+- Bộ lọc bảng cửu chương ×1 đến ×10 và các cấp gợi ý.
 - Save/load roundtrip và xử lý dữ liệu lưu hỏng.
 - Các ngưỡng level theo tài liệu.
 

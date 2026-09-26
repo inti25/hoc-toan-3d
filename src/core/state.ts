@@ -25,14 +25,14 @@ export function parseSave(raw: string | null): SaveState {
     base.sound = d.sound !== false; base.music = d.music === true; base.started = d.started === true;
     base.combo = positive(d.combo, 10000);
     if (d.questionStats && typeof d.questionStats === 'object') {
-      for (const [id, value] of Object.entries(d.questionStats).slice(0, 30)) {
-        if (!/^m(2|5|10)_([1-9]|10)$/.test(id) || !value || typeof value !== 'object') continue;
+      for (const [id, value] of Object.entries(d.questionStats).slice(0, 100)) {
+        if (!/^m([1-9]|10)_([1-9]|10)$/.test(id) || !value || typeof value !== 'object') continue;
         const s = value as Record<string, unknown>;
         const correct = positive(s.correct), wrong = positive(s.wrong);
         base.questionStats[id] = { attempts: correct + wrong, correct, wrong, responseTime: positive(s.responseTime), lastAnsweredAt: typeof s.lastAnsweredAt === 'string' ? s.lastAnsweredAt.slice(0, 40) : '' };
       }
     }
-    if (Array.isArray(d.review)) base.review = [...new Set(d.review.filter((id): id is string => typeof id === 'string' && /^m(2|5|10)_([1-9]|10)$/.test(id)))].slice(0, 30);
+    if (Array.isArray(d.review)) base.review = [...new Set(d.review.filter((id): id is string => typeof id === 'string' && /^m([1-9]|10)_([1-9]|10)$/.test(id)))].slice(0, 100);
     if (Array.isArray(d.flowers)) {
       const fl = d.flowers;
       base.flowers = Array.from({ length: 10 }, (_, i) => fl[i] === true);
