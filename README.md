@@ -40,6 +40,6 @@ Save dùng key `aigame3d_multiplication_save`. Lưu tiến trình, không lưu v
 
 Chưa triển khai các giai đoạn 2–3: thế giới khác, đua xe, chiến đấu tinh thể, thú cưng, kho đồ, tài khoản, cloud save, phụ huynh, multiplayer. Chưa benchmark trên thiết bị phổ thông / tablet thực. Hiệu năng tùy GPU và độ phân giải. Chưa có gamepad, vật lý động hay tìm đường tự động: nếu chạm đích sau vật cản, hãy đi vòng bằng các điểm gần hơn.
 
-## Tích hợp aigame3d.com
+## Triển khai web độc lập
 
-Bản Sites là bản chơi thử độc lập, chưa sửa hoặc triển khai lên aigame3d.com. Có thể tích hợp bản build tĩnh vào website hiện tại. Để giữ tiến trình khi chuyển tên miền, cần bổ sung luồng xuất/nhập save hoặc đồng bộ tài khoản ở giai đoạn sau.
+Bản Sites là bản chơi thử độc lập. Có thể tích hợp bản build tĩnh vào website hiện tại. Để giữ tiến trình khi chuyển tên miền, cần bổ sung luồng xuất/nhập save hoặc đồng bộ tài khoản ở giai đoạn sau.

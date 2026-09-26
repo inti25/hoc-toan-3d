@@ -29,4 +29,4 @@ Trình duyệt kiểm thử bị chính sách truy cập chặn khi mở preview
 10. Tablet/mobile: joystick, nút nhảy, tương tác, hộp câu hỏi không tràn màn hình.
 11. Đo FPS và thời gian tải trên thiết bị mục tiêu trước phát hành rộng rãi.
 
-Bản này chưa được tích hợp vào aigame3d.com; không bao gồm Phase 2 hoặc Phase 3.
+Bản chơi thử độc lập; không bao gồm Phase 2 hoặc Phase 3.
