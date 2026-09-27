@@ -9,6 +9,7 @@ import {
   createFlowerChallenge,
   createArchimedesChallenge,
   ChallengeSession,
+  parseAnswer,
   type MultiplicationChallenge,
   type ArchimedesChallenge
 } from './quiz/session';
@@ -51,6 +52,7 @@ let world: World;
 let currentSession: ChallengeSession | undefined;
 let mode: 'bridge' | 'practice' = 'bridge';
 let currentDialog = '';
+let currentInputValue = '';
 let toastTimer = 0;
 let near = false;
 let nearFlower = -1;
@@ -226,6 +228,7 @@ $('dialog').addEventListener('close', () => {
   world.clearInput();
   currentDialog = '';
   currentSession = undefined;
+  currentInputValue = '';
 });
 
 $('close-dialog').onclick = closeDialog;
@@ -305,22 +308,132 @@ function interactAction() {
 
 $('interact').onclick = interactAction;
 
+function renderMathInputAndNumpad(unit = ''): string {
+  return `
+    <div class="math-input-container">
+      <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
+      ${unit ? `<span class="math-input-unit">${unit}</span>` : ''}
+    </div>
+    <div class="numpad-container">
+      <div class="numpad-grid">
+        <button type="button" class="numpad-btn" data-key="1">1</button>
+        <button type="button" class="numpad-btn" data-key="2">2</button>
+        <button type="button" class="numpad-btn" data-key="3">3</button>
+        <button type="button" class="numpad-btn" data-key="4">4</button>
+        <button type="button" class="numpad-btn" data-key="5">5</button>
+        <button type="button" class="numpad-btn" data-key="6">6</button>
+        <button type="button" class="numpad-btn" data-key="7">7</button>
+        <button type="button" class="numpad-btn" data-key="8">8</button>
+        <button type="button" class="numpad-btn" data-key="9">9</button>
+        <button type="button" class="numpad-btn numpad-action" data-key="clear" title="Xóa hết">C</button>
+        <button type="button" class="numpad-btn" data-key="0">0</button>
+        <button type="button" class="numpad-btn numpad-action" data-key="backspace" title="Xóa lùi">⌫</button>
+      </div>
+      <button type="button" id="numpad-submit" class="numpad-submit-btn">
+        ${icon('check')} Kiểm tra đáp án
+      </button>
+    </div>
+  `;
+}
+
+function updateMathInputDisplay(val: string) {
+  const box = $('math-input-box');
+  if (!box) return;
+  if (!val) {
+    box.textContent = '?';
+    box.classList.add('placeholder');
+  } else {
+    box.textContent = val;
+    box.classList.remove('placeholder');
+  }
+}
+
+function handleNumpadInput(key: string) {
+  if (!currentSession || currentSession.isSolved()) return;
+  const box = $('math-input-box');
+  if (box) box.classList.remove('shake', 'error');
+
+  if (key === 'backspace') {
+    if (currentInputValue.length > 0) {
+      currentInputValue = currentInputValue.slice(0, -1);
+      updateMathInputDisplay(currentInputValue);
+    }
+  } else if (key === 'clear') {
+    currentInputValue = '';
+    updateMathInputDisplay(currentInputValue);
+  } else if (/^[0-9]$/.test(key)) {
+    if (currentInputValue.length < 4) {
+      currentInputValue += key;
+      updateMathInputDisplay(currentInputValue);
+    }
+  }
+}
+
+function setupNumpadListeners(onSubmit: (val: string) => void) {
+  currentInputValue = '';
+  document.querySelectorAll<HTMLButtonElement>('.numpad-btn').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.key;
+      if (key) handleNumpadInput(key);
+    };
+  });
+
+  const submitBtn = $('numpad-submit');
+  if (submitBtn) {
+    submitBtn.onclick = () => {
+      if (!currentInputValue) {
+        const box = $('math-input-box');
+        if (box) {
+          box.classList.remove('shake');
+          void box.offsetWidth;
+          box.classList.add('shake');
+        }
+        return;
+      }
+      onSubmit(currentInputValue);
+    };
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.comp-btn').forEach(btn => {
+    btn.onclick = () => {
+      const val = btn.dataset.value ?? '';
+      currentInputValue = val;
+      updateMathInputDisplay(val);
+      onSubmit(val);
+    };
+  });
+}
+
 function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
   mode = nextMode;
   const state = adventure.getState();
   const q = generateQuestion(state, mode, last);
   const challenge = createMultiplicationChallenge(q.a, q.b, mode, Math.random, q.review);
   currentSession = new ChallengeSession(challenge);
+  currentInputValue = '';
+
+  const equationHtml = mode === 'bridge'
+    ? `${challenge.a} <span>×</span> <span class="missing-factor">[ ? ]</span> <span>=</span> ${challenge.answer} <small>viên đá</small>`
+    : `${challenge.a} <span>×</span> ${challenge.b} <span>=</span> ?`;
+
+  const introHtml = mode === 'bridge'
+    ? `Mình cần <strong>${challenge.answer} viên đá</strong> để xây cầu. Điền thừa số còn thiếu:`
+    : 'Bạn hãy tính và nhập kết quả phép nhân:';
 
   openDialog(
     mode === 'bridge' ? 'Cùng xây cây cầu!' : 'Mỗi ngày, giỏi hơn một chút',
-    `<div class="dialog-eyebrow">${mode === 'bridge' ? `ĐOẠN CẦU ${state.bridge + 1} / ${BRIDGE_PARTS}` : challenge.review ? 'ÔN LẠI PHÉP NHÂN' : 'LUYỆN TẬP CÙNG MILO'}</div><p class="question-intro">${mode === 'bridge' ? `Mình cần <strong>${challenge.answer} viên đá</strong>. Phép nhân nào đúng?` : 'Bạn tìm được kết quả không?'}</p><div class="equation">${mode === 'bridge' ? `<span class="stone-symbol">◆</span> ${challenge.answer} <small>viên đá</small>` : `${challenge.a} <span>×</span> ${challenge.b} <span>=</span> ?`}</div><div class="answers">${challenge.options.map((o, i) => `<button class="answer" data-value="${o.value}"><kbd>${i + 1}</kbd><span>${o.label}</span></button>`).join('')}</div><div id="feedback" class="feedback" aria-live="polite"></div><div id="hint-area" class="hint-area" hidden></div><div class="quiz-footer"><button id="hint" class="text-button">${icon('help')} Gợi ý cho mình</button><span>Không giới hạn thời gian</span></div><button id="next-question" class="primary wide" hidden>Tiếp tục ${icon('arrow')}</button>`,
+    `<div class="dialog-eyebrow">${mode === 'bridge' ? `ĐOẠN CẦU ${state.bridge + 1} / ${BRIDGE_PARTS}` : challenge.review ? 'ÔN LẠI PHÉP NHÂN' : 'LUYỆN TẬP CÙNG MILO'}</div>
+    <p class="question-intro">${introHtml}</p>
+    <div class="equation">${equationHtml}</div>
+    ${renderMathInputAndNumpad()}
+    <div id="feedback" class="feedback" aria-live="polite"></div>
+    <div id="hint-area" class="hint-area" hidden></div>
+    <div class="quiz-footer"><button id="hint" class="text-button">${icon('help')} Gợi ý cho mình</button><span>Không giới hạn thời gian</span></div>
+    <button id="next-question" class="primary wide" hidden>Tiếp tục ${icon('arrow')}</button>`,
     'quiz'
   );
 
-  document.querySelectorAll<HTMLButtonElement>('.answer').forEach(button =>
-    (button.onclick = () => submitAnswer(Number(button.dataset.value), button))
-  );
+  setupNumpadListeners(val => submitAnswer(Number(val)));
 
   $('hint').onclick = () => {
     if (!currentSession) return;
@@ -346,10 +459,11 @@ function renderHint(hintText: string) {
   area.innerHTML = `<p>${hintText}</p><div class="stone-groups" aria-label="${challenge.b} nhóm, mỗi nhóm có ${challenge.a} viên đá">${Array.from({ length: challenge.b }, () => `<div class="stone-group">${'<i></i>'.repeat(challenge.a)}</div>`).join('')}</div>`;
 }
 
-function submitAnswer(value: number, button: HTMLButtonElement) {
-  if (!currentSession || currentSession.isSolved() || button.disabled) return;
+function submitAnswer(value: number) {
+  if (!currentSession || currentSession.isSolved()) return;
   const challenge = currentSession.challenge as MultiplicationChallenge;
   const res = currentSession.submit(value);
+  const inputBox = $('math-input-box');
 
   if (res.isCorrect) {
     const delta = adventure.recordQuizResult({
@@ -363,8 +477,14 @@ function submitAnswer(value: number, button: HTMLButtonElement) {
     if (mode === 'bridge') {
       world.setBridge(delta.bridge, true);
     }
-    document.querySelectorAll<HTMLButtonElement>('.answer').forEach(b => (b.disabled = true));
-    button.classList.add('correct');
+    if (inputBox) {
+      inputBox.classList.remove('shake', 'error');
+      inputBox.classList.add('correct');
+    }
+    document.querySelectorAll<HTMLButtonElement>('.numpad-btn, #numpad-submit').forEach(b => (b.disabled = true));
+    const container = document.querySelector<HTMLElement>('.numpad-container');
+    if (container) container.style.display = 'none';
+
     $('feedback').className = 'feedback success';
     $('feedback').textContent = `✓ Chính xác! ${challenge.a} × ${challenge.b} = ${challenge.answer}. +10 XP · +5 xu${delta.combo >= 3 ? ` · Combo ${delta.combo}!` : ''}`;
     $('next-question').hidden = false;
@@ -387,8 +507,11 @@ function submitAnswer(value: number, button: HTMLButtonElement) {
       firstTry: false,
       responseTimeMs: currentSession.getDurationMs()
     });
-    button.classList.add('incorrect');
-    button.disabled = true;
+    if (inputBox) {
+      inputBox.classList.remove('shake');
+      void inputBox.offsetWidth;
+      inputBox.classList.add('shake', 'error');
+    }
     $('feedback').className = 'feedback gentle';
     $('feedback').textContent = '↻ Chưa đúng rồi. Mình cùng đếm lại nhé!';
     renderHint(res.hint);
@@ -400,8 +523,10 @@ function submitAnswer(value: number, button: HTMLButtonElement) {
 function openFlowerDialog(index: number) {
   const challenge = createFlowerChallenge(index);
   currentSession = new ChallengeSession(challenge);
+  currentInputValue = '';
   const q = challenge.flowerQuestion;
   const isBloomed = adventure.getState().flowers[index];
+  const parsed = parseAnswer(challenge.answer);
 
   function renderFlowerHint(hintText: string, explanation?: string) {
     const area = $('flower-hint-area');
@@ -410,6 +535,99 @@ function openFlowerDialog(index: number) {
     area.innerHTML = `
       <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
       ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
+    `;
+  }
+
+  function handleFlowerSubmit(choiceVal: string) {
+    if (!currentSession || currentSession.isSolved()) return;
+    const res = currentSession.submit(choiceVal);
+    const inputBox = $('math-input-box');
+
+    if (res.isCorrect) {
+      if (inputBox) {
+        inputBox.classList.remove('shake', 'error');
+        inputBox.classList.add('correct');
+      }
+      document.querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn').forEach(b => (b.disabled = true));
+      const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
+      if (numpadContainer) numpadContainer.style.display = 'none';
+
+      const feedback = $('flower-feedback');
+      feedback.className = 'feedback success';
+      const delta = adventure.bloomFlower(index);
+
+      if (!delta.alreadyBloomed) {
+        world.bloomFlower(index);
+        audio.playCue('celebrate');
+        feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
+        updateHUD();
+
+        if (delta.allFlowersCompleted) {
+          setTimeout(() => {
+            openDialog(
+              '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
+              `
+              <div class="completion-medal">${icon('crown')}</div>
+              <p class="dialog-copy centered">
+                Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
+                <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
+              </p>
+              <div class="completion-rewards">
+                <span>★ +100 XP</span><span>◉ +30 xu</span>
+              </div>
+              <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
+              `,
+              'complete'
+            );
+            updateHUD();
+            $('close-grand').onclick = closeDialog;
+          }, 1200);
+        }
+      } else {
+        audio.playCue('correct');
+        feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
+      }
+      $('flower-hint').hidden = true;
+      $('flower-close-btn').hidden = false;
+      $('flower-close-btn').onclick = closeDialog;
+      $('flower-close-btn').focus();
+    } else {
+      if (inputBox) {
+        inputBox.classList.remove('shake');
+        void inputBox.offsetWidth;
+        inputBox.classList.add('shake', 'error');
+      }
+      const feedback = $('flower-feedback');
+      feedback.className = 'feedback gentle';
+      feedback.textContent = '↻ Chưa đúng rồi. Hãy đọc gợi ý để cùng thử lại nhé!';
+      renderFlowerHint(res.hint, res.explanation);
+      audio.playCue('hint');
+    }
+  }
+
+  let bodyControls = '';
+  if (parsed.type === 'numeric') {
+    bodyControls = renderMathInputAndNumpad(parsed.unit);
+  } else if (parsed.type === 'comparison') {
+    bodyControls = `
+      <div class="math-input-container">
+        <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
+      </div>
+      <div class="comp-options">
+        <button type="button" class="comp-btn" data-value="<">&lt;</button>
+        <button type="button" class="comp-btn" data-value="=">=</button>
+        <button type="button" class="comp-btn" data-value=">">&gt;</button>
+      </div>
+    `;
+  } else {
+    bodyControls = `
+      <div class="answers flower-answers">
+        ${q.options.map((o, i) => `
+          <button class="answer flower-opt" data-value="${o.value}">
+            <kbd>${i + 1}</kbd><span>${o.label}</span>
+          </button>
+        `).join('')}
+      </div>
     `;
   }
 
@@ -424,13 +642,7 @@ function openFlowerDialog(index: number) {
       <div class="flower-question-title">${q.title}</div>
       <div class="flower-question-prompt">${q.question}</div>
     </div>
-    <div class="answers flower-answers">
-      ${q.options.map((o, i) => `
-        <button class="answer flower-opt" data-value="${o.value}">
-          <kbd>${i + 1}</kbd><span>${o.label}</span>
-        </button>
-      `).join('')}
-    </div>
+    ${bodyControls}
     <div id="flower-feedback" class="feedback" aria-live="polite"></div>
     <div id="flower-hint-area" class="hint-area" hidden></div>
     <div class="quiz-footer">
@@ -442,61 +654,10 @@ function openFlowerDialog(index: number) {
     'flowerQuiz'
   );
 
+  setupNumpadListeners(handleFlowerSubmit);
+
   document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach(btn => {
-    btn.onclick = () => {
-      if (!currentSession) return;
-      const res = currentSession.submit(btn.dataset.value ?? '');
-      if (res.isCorrect) {
-        document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach(b => (b.disabled = true));
-        btn.classList.add('correct');
-        const feedback = $('flower-feedback');
-        feedback.className = 'feedback success';
-        const delta = adventure.bloomFlower(index);
-
-        if (!delta.alreadyBloomed) {
-          world.bloomFlower(index);
-          audio.playCue('celebrate');
-          feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
-          updateHUD();
-
-          if (delta.allFlowersCompleted) {
-            setTimeout(() => {
-              openDialog(
-                '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
-                `
-                <div class="completion-medal">${icon('crown')}</div>
-                <p class="dialog-copy centered">
-                  Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
-                  <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
-                </p>
-                <div class="completion-rewards">
-                  <span>★ +100 XP</span><span>◉ +30 xu</span>
-                </div>
-                <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
-                `,
-                'complete'
-              );
-              updateHUD();
-              $('close-grand').onclick = closeDialog;
-            }, 1200);
-          }
-        } else {
-          audio.playCue('correct');
-          feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
-        }
-        $('flower-hint').hidden = true;
-        $('flower-close-btn').hidden = false;
-        $('flower-close-btn').onclick = closeDialog;
-      } else {
-        btn.classList.add('incorrect');
-        btn.disabled = true;
-        const feedback = $('flower-feedback');
-        feedback.className = 'feedback gentle';
-        feedback.textContent = '↻ Chưa đúng rồi. Hãy đọc gợi ý để cùng thử lại nhé!';
-        renderFlowerHint(res.hint, res.explanation);
-        audio.playCue('hint');
-      }
-    };
+    btn.onclick = () => handleFlowerSubmit(btn.dataset.value ?? '');
   });
 
   $('flower-hint').onclick = () => {
@@ -613,9 +774,11 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
 function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
   const challenge = createArchimedesChallenge(monolithIndex, stepIndex);
   currentSession = new ChallengeSession(challenge);
+  currentInputValue = '';
   const m = challenge.monolith;
   const step = challenge.step;
   const isDone = adventure.getState().monoliths[monolithIndex];
+  const parsed = parseAnswer(challenge.answer);
 
   function renderArchimedesHint(hintText: string, explanation?: string) {
     const area = $('arch-hint-area');
@@ -624,6 +787,111 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
     area.innerHTML = `
       <p><strong>💡 Gợi ý bước ${stage}:</strong> ${hintText}</p>
       ${explanation ? `<p class="hint-explanation"><em>Lời giải chi tiết: ${explanation}</em></p>` : ''}
+    `;
+  }
+
+  function handleArchSubmit(choiceVal: string) {
+    if (!currentSession || currentSession.isSolved()) return;
+    const res = currentSession.submit(choiceVal);
+    const inputBox = $('math-input-box');
+
+    if (res.isCorrect) {
+      if (inputBox) {
+        inputBox.classList.remove('shake', 'error');
+        inputBox.classList.add('correct');
+      }
+      document.querySelectorAll<HTMLButtonElement>('.arch-opt, .numpad-btn, #numpad-submit, .comp-btn').forEach(b => (b.disabled = true));
+      const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
+      if (numpadContainer) numpadContainer.style.display = 'none';
+
+      const feedback = $('arch-feedback');
+      feedback.className = 'feedback success';
+
+      const isLastStep = stepIndex + 1 >= challenge.totalSteps;
+      if (!isLastStep) {
+        audio.playCue('correct');
+        feedback.textContent = `✓ Chính xác! Bước ${stepIndex + 1} hoàn thành xuất sắc!`;
+        $('arch-hint').hidden = true;
+        $('arch-next-step').hidden = false;
+        $('arch-next-step').onclick = () => openArchimedesMonolithDialog(monolithIndex, stepIndex + 1);
+        $('arch-next-step').focus();
+      } else {
+        const delta = adventure.activateMonolith(monolithIndex);
+        world.activateMonolith(monolithIndex);
+        audio.playCue('celebrate');
+        world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
+
+        feedback.textContent = delta.alreadyActivated
+          ? `✓ Chính xác! Bạn đã ôn luyện lại Bia Đá ${m.id} thành công!`
+          : `✓ Xuất sắc! Kích hoạt thành công Bia Đá ${m.id}! +${delta.xpGained} XP · +${delta.coinsGained} xu`;
+
+        updateHUD();
+        $('arch-hint').hidden = true;
+        $('arch-finish-btn').hidden = false;
+        $('arch-finish-btn').focus();
+
+        if (delta.zoneCompleted) {
+          setTimeout(() => {
+            openDialog(
+              `🏆 HOÀN THÀNH: ${m.zoneName.toUpperCase()}! 🏆`,
+              `
+              <div class="completion-medal">${icon('crown')}</div>
+              <p class="dialog-copy centered">
+                Kỳ tích! Bạn đã giải trọn vẹn toàn bộ các Bia Đá trong<br>
+                <b>${m.zoneName}</b>!<br>
+                Đại Huy Chương Khu Vực đã thuộc về bạn!
+              </p>
+              <div class="completion-rewards">
+                <span>★ +50 XP</span><span>◉ +25 xu</span>
+              </div>
+              <button id="close-zone-grand" class="primary wide">Mở Bản Đồ Archimedes ${icon('arrow')}</button>
+              `,
+              'complete'
+            );
+            updateHUD();
+            $('close-zone-grand').onclick = () => openArchimedesMapDialog(m.zoneId);
+          }, 1200);
+        }
+
+        $('arch-finish-btn').onclick = () => openArchimedesMapDialog(m.zoneId);
+      }
+    } else {
+      if (inputBox) {
+        inputBox.classList.remove('shake');
+        void inputBox.offsetWidth;
+        inputBox.classList.add('shake', 'error');
+      }
+      const feedback = $('arch-feedback');
+      feedback.className = 'feedback gentle';
+      feedback.textContent = '↻ Chưa chính xác rồi. Hãy đọc gợi ý để làm lại nhé!';
+      renderArchimedesHint(res.hint, res.explanation);
+      audio.playCue('hint');
+    }
+  }
+
+  let bodyControls = '';
+  if (parsed.type === 'numeric') {
+    bodyControls = renderMathInputAndNumpad(parsed.unit);
+  } else if (parsed.type === 'comparison') {
+    bodyControls = `
+      <div class="math-input-container">
+        <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
+      </div>
+      <div class="comp-options">
+        <button type="button" class="comp-btn" data-value="<">&lt;</button>
+        <button type="button" class="comp-btn" data-value="=">=</button>
+        <button type="button" class="comp-btn" data-value=">">&gt;</button>
+      </div>
+    `;
+  } else {
+    bodyControls = `
+      <div class="answers flower-answers">
+        ${step.options.map((o, i) => `
+          <button class="answer arch-opt" data-value="${o.value}">
+            <kbd>${i + 1}</kbd><span>${o.label}</span>
+          </button>
+        `).join('')}
+      </div>
     `;
   }
 
@@ -640,13 +908,7 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
     <div class="flower-question-box">
       <div class="flower-question-prompt">${step.prompt}</div>
     </div>
-    <div class="answers flower-answers">
-      ${step.options.map((o, i) => `
-        <button class="answer arch-opt" data-value="${o.value}">
-          <kbd>${i + 1}</kbd><span>${o.label}</span>
-        </button>
-      `).join('')}
-    </div>
+    ${bodyControls}
     <div id="arch-feedback" class="feedback" aria-live="polite"></div>
     <div id="arch-hint-area" class="hint-area" hidden></div>
     <div class="quiz-footer">
@@ -661,72 +923,10 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
 
   $('back-map-btn').onclick = () => openArchimedesMapDialog(m.zoneId);
 
+  setupNumpadListeners(handleArchSubmit);
+
   document.querySelectorAll<HTMLButtonElement>('.arch-opt').forEach(btn => {
-    btn.onclick = () => {
-      if (!currentSession) return;
-      const res = currentSession.submit(btn.dataset.value ?? '');
-      if (res.isCorrect) {
-        document.querySelectorAll<HTMLButtonElement>('.arch-opt').forEach(b => (b.disabled = true));
-        btn.classList.add('correct');
-        const feedback = $('arch-feedback');
-        feedback.className = 'feedback success';
-
-        const isLastStep = stepIndex + 1 >= challenge.totalSteps;
-        if (!isLastStep) {
-          audio.playCue('correct');
-          feedback.textContent = `✓ Chính xác! Bước ${stepIndex + 1} hoàn thành xuất sắc!`;
-          $('arch-hint').hidden = true;
-          $('arch-next-step').hidden = false;
-          $('arch-next-step').onclick = () => openArchimedesMonolithDialog(monolithIndex, stepIndex + 1);
-        } else {
-          const delta = adventure.activateMonolith(monolithIndex);
-          world.activateMonolith(monolithIndex);
-          audio.playCue('celebrate');
-          world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
-
-          feedback.textContent = delta.alreadyActivated
-            ? `✓ Chính xác! Bạn đã ôn luyện lại Bia Đá ${m.id} thành công!`
-            : `✓ Xuất sắc! Kích hoạt thành công Bia Đá ${m.id}! +${delta.xpGained} XP · +${delta.coinsGained} xu`;
-
-          updateHUD();
-          $('arch-hint').hidden = true;
-          $('arch-finish-btn').hidden = false;
-
-          if (delta.zoneCompleted) {
-            setTimeout(() => {
-              openDialog(
-                `🏆 HOÀN THÀNH: ${m.zoneName.toUpperCase()}! 🏆`,
-                `
-                <div class="completion-medal">${icon('crown')}</div>
-                <p class="dialog-copy centered">
-                  Kỳ tích! Bạn đã giải trọn vẹn toàn bộ các Bia Đá trong<br>
-                  <b>${m.zoneName}</b>!<br>
-                  Đại Huy Chương Khu Vực đã thuộc về bạn!
-                </p>
-                <div class="completion-rewards">
-                  <span>★ +50 XP</span><span>◉ +25 xu</span>
-                </div>
-                <button id="close-zone-grand" class="primary wide">Mở Bản Đồ Archimedes ${icon('arrow')}</button>
-                `,
-                'complete'
-              );
-              updateHUD();
-              $('close-zone-grand').onclick = () => openArchimedesMapDialog(m.zoneId);
-            }, 1200);
-          }
-
-          $('arch-finish-btn').onclick = () => openArchimedesMapDialog(m.zoneId);
-        }
-      } else {
-        btn.classList.add('incorrect');
-        btn.disabled = true;
-        const feedback = $('arch-feedback');
-        feedback.className = 'feedback gentle';
-        feedback.textContent = '↻ Chưa chính xác rồi. Hãy đọc gợi ý để làm lại nhé!';
-        renderArchimedesHint(res.hint, res.explanation);
-        audio.playCue('hint');
-      }
-    };
+    btn.onclick = () => handleArchSubmit(btn.dataset.value ?? '');
   });
 
   $('arch-hint').onclick = () => {
@@ -881,10 +1081,52 @@ $('jump').onclick = () => world.jump();
 document.addEventListener('keydown', e => {
   if (e.repeat && ['e', ' ', 'Escape'].includes(e.key)) return;
   if ($<HTMLDialogElement>('dialog').open) {
-    if ((currentDialog === 'quiz' || currentDialog === 'flowerQuiz' || currentDialog === 'archimedesQuiz') && /^[123]$/.test(e.key)) {
-      const sel = currentDialog === 'flowerQuiz' ? '.flower-opt' : currentDialog === 'archimedesQuiz' ? '.arch-opt' : '.answer';
-      const b = document.querySelectorAll<HTMLButtonElement>(sel)[Number(e.key) - 1];
-      if (b && !b.disabled) b.click();
+    if (currentDialog === 'quiz' || currentDialog === 'flowerQuiz' || currentDialog === 'archimedesQuiz') {
+      const hasMathInput = !!document.getElementById('math-input-box');
+      if (hasMathInput && !currentSession?.isSolved()) {
+        if (/^[0-9]$/.test(e.key)) {
+          e.preventDefault();
+          handleNumpadInput(e.key);
+          return;
+        }
+        if (e.key === 'Backspace') {
+          e.preventDefault();
+          handleNumpadInput('backspace');
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const submitBtn = $<HTMLButtonElement>('numpad-submit');
+          if (submitBtn && !submitBtn.disabled) submitBtn.click();
+          return;
+        }
+        if (['<', '>', '='].includes(e.key)) {
+          const compBtn = document.querySelector<HTMLButtonElement>(`.comp-btn[data-value="${e.key}"]`);
+          if (compBtn && !compBtn.disabled) {
+            e.preventDefault();
+            compBtn.click();
+            return;
+          }
+        }
+      } else if (currentSession?.isSolved()) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          const nextBtn = [
+            $('next-question'),
+            $('flower-close-btn'),
+            $('arch-next-step'),
+            $('arch-finish-btn')
+          ].find(b => b && !b.hidden);
+          if (nextBtn) {
+            e.preventDefault();
+            nextBtn.click();
+            return;
+          }
+        }
+      } else if (/^[123]$/.test(e.key)) {
+        const sel = currentDialog === 'flowerQuiz' ? '.flower-opt' : currentDialog === 'archimedesQuiz' ? '.arch-opt' : '.answer';
+        const b = document.querySelectorAll<HTMLButtonElement>(sel)[Number(e.key) - 1];
+        if (b && !b.disabled) b.click();
+      }
     }
     return;
   }

@@ -4,7 +4,8 @@ import {
   createMultiplicationChallenge,
   createFlowerChallenge,
   createArchimedesChallenge,
-  ChallengeSession
+  ChallengeSession,
+  parseAnswer
 } from '../src/quiz/session';
 import { FLOWER_QUESTIONS } from '../src/data/flowerQuestions';
 
@@ -96,4 +97,76 @@ test('ArchimedesChallenge session supports multi-step monoliths, tiered hints, a
   assert.equal(session.isSolved(), true);
   assert.ok(resCorrect.explanation && resCorrect.explanation.includes('893'));
 });
+
+test('parseAnswer correctly separates numeric values, units, comparisons, and textual choices', () => {
+  // Pure numbers
+  assert.deepEqual(parseAnswer('100'), { type: 'numeric', raw: '100', expectedNumber: 100, unit: '' });
+  assert.deepEqual(parseAnswer(42), { type: 'numeric', raw: '42', expectedNumber: 42, unit: '' });
+
+  // Numbers with units
+  assert.deepEqual(parseAnswer('22kg'), { type: 'numeric', raw: '22kg', expectedNumber: 22, unit: 'kg' });
+  assert.deepEqual(parseAnswer('707 kg'), { type: 'numeric', raw: '707 kg', expectedNumber: 707, unit: 'kg' });
+  assert.deepEqual(parseAnswer('470 ℓ'), { type: 'numeric', raw: '470 ℓ', expectedNumber: 470, unit: 'ℓ' });
+  assert.deepEqual(parseAnswer('50 quyển'), { type: 'numeric', raw: '50 quyển', expectedNumber: 50, unit: 'quyển' });
+  assert.deepEqual(parseAnswer('12 cm'), { type: 'numeric', raw: '12 cm', expectedNumber: 12, unit: 'cm' });
+
+  // Comparison operators
+  assert.deepEqual(parseAnswer('<'), { type: 'comparison', raw: '<', expectedChar: '<' });
+  assert.deepEqual(parseAnswer('>'), { type: 'comparison', raw: '>', expectedChar: '>' });
+  assert.deepEqual(parseAnswer('='), { type: 'comparison', raw: '=', expectedChar: '=' });
+
+  // Textual choices
+  assert.equal(parseAnswer('Thứ Tư').type, 'choice');
+  assert.equal(parseAnswer('Anh Hiếu').type, 'choice');
+  assert.equal(parseAnswer('5 hình chữ nhật').type, 'choice');
+  assert.equal(parseAnswer('Ngày 28 tháng 5').type, 'choice');
+});
+
+test('Bridge mode validates missing factor as well as product', () => {
+  const challenge = createMultiplicationChallenge(3, 4, 'bridge');
+  assert.equal(challenge.a, 3);
+  assert.equal(challenge.b, 4);
+  assert.equal(challenge.answer, 12);
+  assert.equal(challenge.expectedInput, 4);
+
+  // Submitting the missing factor 4 is correct
+  const s1 = new ChallengeSession(challenge);
+  assert.equal(s1.submit(4).isCorrect, true);
+
+  // Submitting the product 12 is also accepted for backwards compatibility
+  const s2 = new ChallengeSession(challenge);
+  assert.equal(s2.submit(12).isCorrect, true);
+
+  // Submitting wrong number fails
+  const s3 = new ChallengeSession(challenge);
+  assert.equal(s3.submit(5).isCorrect, false);
+});
+
+test('FlowerChallenge accepts typed number for questions with units', () => {
+  const flower1 = createFlowerChallenge(1); // Bài 2: answer '22kg'
+  const session = new ChallengeSession(flower1);
+
+  // Typing pure number 22
+  assert.equal(session.submit('22').isCorrect, true);
+
+  const flower3 = createFlowerChallenge(3); // Bài 4: answer '50 quyển'
+  const session2 = new ChallengeSession(flower3);
+  assert.equal(session2.submit(50).isCorrect, true);
+});
+
+test('ArchimedesChallenge accepts comparison operators and typed numbers with units', () => {
+  // Bài 307 step 0: answer '707 kg'
+  const arch1 = createArchimedesChallenge(1, 0);
+  assert.equal(arch1.answer, '707 kg');
+  const s1 = new ChallengeSession(arch1);
+  assert.equal(s1.submit(707).isCorrect, true);
+
+  // Bài 308 step 0: answer '='
+  const archComp = createArchimedesChallenge(2, 0);
+  assert.equal(archComp.answer, '=');
+  const s2 = new ChallengeSession(archComp);
+  assert.equal(s2.submit('=').isCorrect, true);
+  assert.equal(s2.submit('>').isCorrect, false);
+});
+
 

@@ -4,6 +4,55 @@ import { ARCHIMEDES_MONOLITHS, type ArchimedesMonolith, type ArchimedesStep } fr
 
 export type ChallengeKind = 'multiplication' | 'flower' | 'archimedes';
 
+export type AnswerType = 'numeric' | 'comparison' | 'choice';
+
+export interface ParsedAnswer {
+  type: AnswerType;
+  raw: string;
+  expectedNumber?: number;
+  unit?: string;
+  expectedChar?: string;
+}
+
+export function parseAnswer(rawAnswer: string | number): ParsedAnswer {
+  const str = String(rawAnswer).trim();
+
+  if (/^[<>=]$/.test(str)) {
+    return {
+      type: 'comparison',
+      raw: str,
+      expectedChar: str
+    };
+  }
+
+  const singleNumberUnitMatch = str.match(/^(\d+)\s*([a-zA-ZÀ-ỹℓ]+.*)?$/);
+  if (
+    singleNumberUnitMatch &&
+    !str.includes(';') &&
+    !str.includes(',') &&
+    !str.includes('và') &&
+    !str.includes('=') &&
+    !str.includes('hình') &&
+    !str.includes('đoạn') &&
+    !str.includes('điểm') &&
+    !str.includes('Ngày')
+  ) {
+    const num = Number(singleNumberUnitMatch[1]);
+    const unit = (singleNumberUnitMatch[2] || '').trim();
+    return {
+      type: 'numeric',
+      raw: str,
+      expectedNumber: num,
+      unit
+    };
+  }
+
+  return {
+    type: 'choice',
+    raw: str
+  };
+}
+
 export interface ChallengeOption {
   value: string | number;
   label: string;
@@ -21,6 +70,7 @@ export interface MultiplicationChallenge extends BaseChallenge {
   a: number;
   b: number;
   answer: number;
+  expectedInput: number;
   mode: 'bridge' | 'practice';
   review: boolean;
   question: Question;
@@ -68,14 +118,16 @@ export function createMultiplicationChallenge(
 ): MultiplicationChallenge {
   const q = makeQuestion(a, b, mode, random);
   q.review = review;
+  const expectedInput = mode === 'bridge' ? b : q.answer;
   return {
     id: q.id,
     kind: 'multiplication',
-    prompt: mode === 'bridge' ? `${q.answer} viên đá` : `${a} × ${b} = ?`,
+    prompt: mode === 'bridge' ? `${a} × [ ? ] = ${q.answer} viên đá` : `${a} × ${b} = ?`,
     options: q.options,
     a,
     b,
     answer: q.answer,
+    expectedInput,
     mode,
     review,
     question: q
@@ -172,9 +224,26 @@ export class ChallengeSession {
     let isCorrect = false;
 
     if (this.challenge.kind === 'multiplication') {
-      isCorrect = Number(choice) === this.challenge.answer;
+      const num = Number(choice);
+      if (this.challenge.mode === 'bridge') {
+        isCorrect = num === this.challenge.expectedInput || num === this.challenge.answer;
+      } else {
+        isCorrect = num === this.challenge.answer;
+      }
     } else {
-      isCorrect = String(choice) === this.challenge.answer;
+      const parsed = parseAnswer(this.challenge.answer);
+      if (parsed.type === 'numeric') {
+        const cleanChoice = String(choice).trim();
+        const numOnly = Number(cleanChoice.replace(/[^0-9]/g, ''));
+        isCorrect =
+          cleanChoice === parsed.raw ||
+          Number(choice) === parsed.expectedNumber ||
+          (cleanChoice.length > 0 && numOnly === parsed.expectedNumber);
+      } else if (parsed.type === 'comparison') {
+        isCorrect = String(choice).trim() === parsed.expectedChar;
+      } else {
+        isCorrect = String(choice).trim() === String(this.challenge.answer).trim();
+      }
     }
 
     if (isCorrect) {
