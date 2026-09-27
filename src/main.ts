@@ -176,7 +176,7 @@ app.innerHTML = `
       <div class="bottom-bar">
         <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
         <div class="toolbar">
-          <button id="archimedes-btn" class="tool-button special-btn">${icon('star')}<span>Bản Đồ Archimedes</span></button>
+          <button id="archimedes-btn" class="tool-button special-btn">${icon('star')}<span>Bản Đồ</span></button>
           <button id="travel" class="tool-button">${icon('compass')}<span id="travel-text">Đến Vườn Hoa</span></button>
           <button id="learn" class="tool-button">${icon('book')}<span>Sổ cửu chương</span></button>
           <button id="help" class="icon-button" aria-label="Hướng dẫn chơi" title="Hướng dẫn chơi">${icon('help')}</button>
@@ -685,7 +685,7 @@ function openFlowerDialog(index: number) {
           activeRemoteQuestions['VuonHoa'] = remoteFlowers;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   // Khớp theo ID bài (ProblemId trong Google Sheets là 1..10 tương ứng index 0..9)
@@ -1337,7 +1337,7 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
               <div class="completion-rewards">
                 <span>★ +50 XP</span><span>◉ +25 xu</span>
               </div>
-              <button id="close-zone-grand" class="primary wide">Mở Bản Đồ Archimedes ${icon('arrow')}</button>
+              <button id="close-zone-grand" class="primary wide">Mở Bản Đồ ${icon('arrow')}</button>
               `,
               'complete'
             );
@@ -1422,7 +1422,7 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     <div id="arch-hint-area" class="hint-area" hidden></div>
     <div class="quiz-footer">
       <button id="arch-hint" class="text-button">${icon('help')} Xem gợi ý</button>
-      <button id="back-map-btn" class="text-button">${icon('compass')} Về bản đồ Archimedes</button>
+      <button id="back-map-btn" class="text-button">${icon('compass')} Về bản đồ</button>
     </div>
     <button id="arch-next-step" class="primary wide" hidden>Tiếp tục bước tiếp theo ${icon('arrow')}</button>
     <button id="arch-finish-btn" class="primary wide" hidden>Kích hoạt Bia Đá ${icon('check')}</button>
@@ -2008,7 +2008,7 @@ if (modelContext?.registerTool) {
         },
         { signal: lifecycle.signal }
       )
-    ).catch(() => {});
+    ).catch(() => { });
   } catch {
     /* Optional browser capability; gameplay stays available. */
   }
