@@ -116,3 +116,16 @@ _Avoid_: F5 trình duyệt, Tải lại trang, Force reload
 Nguyên tắc xử lý an toàn khi một vùng đất được khai báo trong `CONFIG` nhưng tab câu hỏi chưa được tạo trên Google Sheets; thế giới 3D vẫn sinh đảo và cảnh quan bình thường mà không làm gián đoạn trò chơi.
 _Avoid_: Báo lỗi crash, Chặn render, Block island
 
+**Câu Hỏi Nhiều Ô Nhập (Multi-Slot Question)**:
+Một thử thách toán học yêu cầu học sinh điền đồng thời nhiều giá trị trung gian hoặc kết quả (ví dụ: số điền vào các hình liên hoàn của sơ đồ chuỗi phép tính).
+_Avoid_: Câu hỏi phức tạp, Form điền số, Multi-input quiz
+
+**Ô Nhập Giá Trị (Input Slot)**:
+Một ô hiển thị giá trị tương tác riêng biệt trên giao diện nhận số từ bàn phím Numpad ảo hoặc phím vật lý khi được chọn (Active Slot).
+_Avoid_: Input box con, Textfield con, Ô gõ số
+
+**Ký Tự Phân Tách Đáp Án (Answer Slot Delimiter)**:
+Ký tự gạch đứng `|` dùng trong cột `Answer` trên Google Sheets để phân tách các giá trị cần điền theo thứ tự từ trái sang phải hoặc từ trên xuống dưới (ví dụ `88|100`).
+_Avoid_: Dấu phẩy, Dấu gạch chéo, Dấu chấm phẩy
+
+

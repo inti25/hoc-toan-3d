@@ -384,28 +384,28 @@
         "steps": [
           {
             "stepId": "310_1",
-            "prompt": "Theo sơ đồ: 80 ➔ (+8) ➔ [ Lục giác ] ➔ (+12) ➔ [ Tam giác ]. Giá trị ở Tam giác là bao nhiêu?",
+            "prompt": "Theo sơ đồ: 80 ➔ (+8) ➔ [ Lục giác ] ➔ (+12) ➔ [ Tam giác ]. Điền giá trị vào Lục giác và Tam giác:",
             "imageUrl": "Screenshot 2026-09-27 160421.png",
             "options": [
               {
-                "label": "100",
-                "value": "100"
+                "label": "88 | 100",
+                "value": "88|100"
               },
               {
-                "label": "98",
-                "value": "98"
+                "label": "88 | 98",
+                "value": "88|98"
               },
               {
-                "label": "108",
-                "value": "108"
+                "label": "90 | 102",
+                "value": "90|102"
               }
             ],
-            "answer": "100",
+            "answer": "88|100",
             "hints": [
               "Lục giác = 80 + 8 = 88.",
-              "Tam giác = Lục giác + 12 = 88 + 12 = ?"
+              "Tam giác = Lục giác + 12 = 88 + 12 = 100."
             ],
-            "explanation": "80 + 8 = 88; 88 + 12 = 100. Số cần điền vào tam giác cuối cùng là 100."
+            "explanation": "80 + 8 = 88; 88 + 12 = 100. Điền 88 vào Lục giác và 100 vào Tam giác."
           },
           {
             "stepId": "310_2",

@@ -10,6 +10,7 @@ import {
   createArchimedesChallenge,
   ChallengeSession,
   parseAnswer,
+  type ParsedAnswer,
   type MultiplicationChallenge,
   type FlowerChallenge,
   type ArchimedesChallenge
@@ -65,6 +66,9 @@ let currentSession: ChallengeSession | undefined;
 let mode: 'bridge' | 'practice' = 'bridge';
 let currentDialog = '';
 let currentInputValue = '';
+let currentSlotValues: string[] = [];
+let activeSlotIndex = 0;
+let isMultiSlot = false;
 let toastTimer = 0;
 let near = false;
 let nearFlower = -1;
@@ -467,6 +471,8 @@ function interactAction() {
 $('interact').onclick = interactAction;
 
 function renderMathInputAndNumpad(unit = ''): string {
+  isMultiSlot = false;
+  currentInputValue = '';
   return `
     <div class="math-input-container">
       <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
@@ -494,6 +500,81 @@ function renderMathInputAndNumpad(unit = ''): string {
   `;
 }
 
+function renderMultiSlotInputAndNumpad(slots: ParsedAnswer[]): string {
+  isMultiSlot = true;
+  currentSlotValues = new Array(slots.length).fill('');
+  activeSlotIndex = 0;
+
+  return `
+    <div class="multi-slot-wrapper">
+      <div class="multi-slot-container" role="group" aria-label="Các ô điền đáp án">
+        ${slots.map((slot, idx) => `
+          ${idx > 0 ? '<span class="slot-arrow">➔</span>' : ''}
+          <div class="math-slot-item ${idx === 0 ? 'active' : ''}" data-slot-index="${idx}">
+            <span class="slot-badge">${idx + 1}</span>
+            <div id="slot-box-${idx}" class="math-slot-box ${idx === 0 ? 'active' : ''} placeholder" tabindex="0">?</div>
+            ${slot.unit ? `<span class="math-input-unit">${slot.unit}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      <div class="slot-nav-bar">
+        <button type="button" id="prev-slot-btn" class="slot-nav-btn" title="Ô trước" disabled>◀ Ô trước</button>
+        <span id="slot-status-indicator" class="slot-nav-indicator">Ô 1 / ${slots.length}</span>
+        <button type="button" id="next-slot-btn" class="slot-nav-btn" title="Ô sau" ${slots.length <= 1 ? 'disabled' : ''}>Ô sau ▶</button>
+      </div>
+    </div>
+    <div class="numpad-container">
+      <div class="numpad-grid">
+        <button type="button" class="numpad-btn" data-key="1">1</button>
+        <button type="button" class="numpad-btn" data-key="2">2</button>
+        <button type="button" class="numpad-btn" data-key="3">3</button>
+        <button type="button" class="numpad-btn" data-key="4">4</button>
+        <button type="button" class="numpad-btn" data-key="5">5</button>
+        <button type="button" class="numpad-btn" data-key="6">6</button>
+        <button type="button" class="numpad-btn" data-key="7">7</button>
+        <button type="button" class="numpad-btn" data-key="8">8</button>
+        <button type="button" class="numpad-btn" data-key="9">9</button>
+        <button type="button" class="numpad-btn numpad-action" data-key="clear" title="Xóa hết">C</button>
+        <button type="button" class="numpad-btn" data-key="0">0</button>
+        <button type="button" class="numpad-btn numpad-action" data-key="backspace" title="Xóa lùi">⌫</button>
+      </div>
+      <button type="button" id="numpad-submit" class="numpad-submit-btn">
+        ${icon('check')} Kiểm tra đáp án
+      </button>
+    </div>
+  `;
+}
+
+function selectSlot(index: number) {
+  if (index < 0 || index >= currentSlotValues.length) return;
+  activeSlotIndex = index;
+  document.querySelectorAll<HTMLElement>('.math-slot-item').forEach(item => {
+    const idx = Number(item.dataset.slotIndex);
+    item.classList.toggle('active', idx === activeSlotIndex);
+  });
+  document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((box, idx) => {
+    box.classList.toggle('active', idx === activeSlotIndex);
+  });
+  const ind = $('slot-status-indicator');
+  if (ind) ind.textContent = `Ô ${activeSlotIndex + 1} / ${currentSlotValues.length}`;
+  const prevBtn = $<HTMLButtonElement>('prev-slot-btn');
+  const nextBtn = $<HTMLButtonElement>('next-slot-btn');
+  if (prevBtn) prevBtn.disabled = activeSlotIndex === 0;
+  if (nextBtn) nextBtn.disabled = activeSlotIndex === currentSlotValues.length - 1;
+}
+
+function updateSlotDisplay(index: number, val: string) {
+  const box = $(`slot-box-${index}`);
+  if (!box) return;
+  if (!val) {
+    box.textContent = '?';
+    box.classList.add('placeholder');
+  } else {
+    box.textContent = val;
+    box.classList.remove('placeholder');
+  }
+}
+
 function updateMathInputDisplay(val: string) {
   const box = $('math-input-box');
   if (!box) return;
@@ -508,6 +589,29 @@ function updateMathInputDisplay(val: string) {
 
 function handleNumpadInput(key: string) {
   if (!currentSession || currentSession.isSolved()) return;
+
+  if (isMultiSlot) {
+    const curVal = currentSlotValues[activeSlotIndex] || '';
+    const box = $(`slot-box-${activeSlotIndex}`);
+    if (box) box.classList.remove('shake', 'error');
+
+    if (key === 'backspace') {
+      if (curVal.length > 0) {
+        currentSlotValues[activeSlotIndex] = curVal.slice(0, -1);
+        updateSlotDisplay(activeSlotIndex, currentSlotValues[activeSlotIndex]);
+      }
+    } else if (key === 'clear') {
+      currentSlotValues[activeSlotIndex] = '';
+      updateSlotDisplay(activeSlotIndex, '');
+    } else if (/^[0-9]$/.test(key)) {
+      if (curVal.length < 5) {
+        currentSlotValues[activeSlotIndex] = curVal + key;
+        updateSlotDisplay(activeSlotIndex, currentSlotValues[activeSlotIndex]);
+      }
+    }
+    return;
+  }
+
   const box = $('math-input-box');
   if (box) box.classList.remove('shake', 'error');
 
@@ -520,14 +624,14 @@ function handleNumpadInput(key: string) {
     currentInputValue = '';
     updateMathInputDisplay(currentInputValue);
   } else if (/^[0-9]$/.test(key)) {
-    if (currentInputValue.length < 4) {
+    if (currentInputValue.length < 5) {
       currentInputValue += key;
       updateMathInputDisplay(currentInputValue);
     }
   }
 }
 
-function setupNumpadListeners(onSubmit: (val: string) => void) {
+function setupNumpadListeners(onSubmit: (val: any) => void) {
   currentInputValue = '';
   document.querySelectorAll<HTMLButtonElement>('.numpad-btn').forEach(btn => {
     btn.onclick = () => {
@@ -536,9 +640,45 @@ function setupNumpadListeners(onSubmit: (val: string) => void) {
     };
   });
 
+  if (isMultiSlot) {
+    document.querySelectorAll<HTMLElement>('.math-slot-item, .math-slot-box').forEach(el => {
+      el.onclick = () => {
+        const slotIdx = Number(el.dataset.slotIndex ?? el.closest('.math-slot-item')?.getAttribute('data-slot-index'));
+        if (!isNaN(slotIdx)) {
+          selectSlot(slotIdx);
+        }
+      };
+    });
+
+    const prevBtn = $('prev-slot-btn');
+    if (prevBtn) {
+      prevBtn.onclick = () => selectSlot(activeSlotIndex - 1);
+    }
+    const nextBtn = $('next-slot-btn');
+    if (nextBtn) {
+      nextBtn.onclick = () => selectSlot(activeSlotIndex + 1);
+    }
+  }
+
   const submitBtn = $('numpad-submit');
   if (submitBtn) {
     submitBtn.onclick = () => {
+      if (isMultiSlot) {
+        const emptyIdx = currentSlotValues.findIndex(v => !v);
+        if (emptyIdx !== -1) {
+          selectSlot(emptyIdx);
+          const box = $(`slot-box-${emptyIdx}`);
+          if (box) {
+            box.classList.remove('shake');
+            void box.offsetWidth;
+            box.classList.add('shake');
+          }
+          return;
+        }
+        onSubmit(currentSlotValues);
+        return;
+      }
+
       if (!currentInputValue) {
         const box = $('math-input-box');
         if (box) {
@@ -752,7 +892,7 @@ function openFlowerDialog(index: number) {
     `;
   }
 
-  function handleFlowerSubmit(choiceVal: string) {
+  function handleFlowerSubmit(choiceVal: string | string[]) {
     if (!currentSession || currentSession.isSolved()) return;
     const res = currentSession.submit(choiceVal);
     const inputBox = $('math-input-box');
@@ -762,9 +902,17 @@ function openFlowerDialog(index: number) {
         inputBox.classList.remove('shake', 'error');
         inputBox.classList.add('correct');
       }
-      document.querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn').forEach(b => (b.disabled = true));
+      if (isMultiSlot) {
+        document.querySelectorAll<HTMLElement>('.math-slot-box').forEach(b => {
+          b.classList.remove('shake', 'error', 'active');
+          b.classList.add('correct');
+        });
+      }
+      document.querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn').forEach(b => (b.disabled = true));
       const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
       if (numpadContainer) numpadContainer.style.display = 'none';
+      const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
+      if (slotNavBar) slotNavBar.style.display = 'none';
 
       const feedback = $('flower-feedback');
       feedback.className = 'feedback success';
@@ -819,16 +967,42 @@ function openFlowerDialog(index: number) {
         void inputBox.offsetWidth;
         inputBox.classList.add('shake', 'error');
       }
+      if (isMultiSlot && res.slotResults) {
+        res.slotResults.forEach((correct, idx) => {
+          const box = $(`slot-box-${idx}`);
+          if (box) {
+            box.classList.remove('shake', 'error', 'correct');
+            void box.offsetWidth;
+            if (correct) {
+              box.classList.add('correct');
+            } else {
+              box.classList.add('shake', 'error');
+            }
+          }
+        });
+        const firstWrong = res.slotResults.findIndex(c => !c);
+        if (firstWrong !== -1) {
+          selectSlot(firstWrong);
+        }
+      }
       const feedback = $('flower-feedback');
       feedback.className = 'feedback gentle';
-      feedback.textContent = '↻ Chưa đúng rồi. Hãy đọc gợi ý để cùng thử lại nhé!';
+      const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
+      const totalSlots = res.slotResults ? res.slotResults.length : 0;
+      if (totalSlots > 1 && correctCount > 0) {
+        feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ và đọc gợi ý nhé!`;
+      } else {
+        feedback.textContent = '↻ Chưa đúng rồi. Hãy đọc gợi ý để cùng thử lại nhé!';
+      }
       renderFlowerHint(res.hint, res.explanation);
       audio.playCue('hint');
     }
   }
 
   let bodyControls = '';
-  if (parsed.type === 'numeric') {
+  if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
+    bodyControls = renderMultiSlotInputAndNumpad(parsed.slots);
+  } else if (parsed.type === 'numeric') {
     bodyControls = renderMathInputAndNumpad(parsed.unit);
   } else if (parsed.type === 'comparison') {
     const compOptions = (challenge.options && challenge.options.length > 0)
@@ -1281,7 +1455,7 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     `;
   }
 
-  function handleArchSubmit(choiceVal: string) {
+  function handleArchSubmit(choiceVal: string | string[]) {
     if (!currentSession || currentSession.isSolved()) return;
     const res = currentSession.submit(choiceVal);
     const inputBox = $('math-input-box');
@@ -1291,9 +1465,17 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
         inputBox.classList.remove('shake', 'error');
         inputBox.classList.add('correct');
       }
-      document.querySelectorAll<HTMLButtonElement>('.arch-opt, .numpad-btn, #numpad-submit, .comp-btn').forEach(b => (b.disabled = true));
+      if (isMultiSlot) {
+        document.querySelectorAll<HTMLElement>('.math-slot-box').forEach(b => {
+          b.classList.remove('shake', 'error', 'active');
+          b.classList.add('correct');
+        });
+      }
+      document.querySelectorAll<HTMLButtonElement>('.arch-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn').forEach(b => (b.disabled = true));
       const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
       if (numpadContainer) numpadContainer.style.display = 'none';
+      const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
+      if (slotNavBar) slotNavBar.style.display = 'none';
 
       const feedback = $('arch-feedback');
       feedback.className = 'feedback success';
@@ -1367,16 +1549,42 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
         void inputBox.offsetWidth;
         inputBox.classList.add('shake', 'error');
       }
+      if (isMultiSlot && res.slotResults) {
+        res.slotResults.forEach((correct, idx) => {
+          const box = $(`slot-box-${idx}`);
+          if (box) {
+            box.classList.remove('shake', 'error', 'correct');
+            void box.offsetWidth;
+            if (correct) {
+              box.classList.add('correct');
+            } else {
+              box.classList.add('shake', 'error');
+            }
+          }
+        });
+        const firstWrong = res.slotResults.findIndex(c => !c);
+        if (firstWrong !== -1) {
+          selectSlot(firstWrong);
+        }
+      }
       const feedback = $('arch-feedback');
       feedback.className = 'feedback gentle';
-      feedback.textContent = '↻ Chưa chính xác rồi. Hãy đọc gợi ý để làm lại nhé!';
+      const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
+      const totalSlots = res.slotResults ? res.slotResults.length : 0;
+      if (totalSlots > 1 && correctCount > 0) {
+        feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ và đọc gợi ý nhé!`;
+      } else {
+        feedback.textContent = '↻ Chưa chính xác rồi. Hãy đọc gợi ý để làm lại nhé!';
+      }
       renderArchimedesHint(res.hint, res.explanation);
       audio.playCue('hint');
     }
   }
 
   let bodyControls = '';
-  if (parsed.type === 'numeric') {
+  if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
+    bodyControls = renderMultiSlotInputAndNumpad(parsed.slots);
+  } else if (parsed.type === 'numeric') {
     bodyControls = renderMathInputAndNumpad(parsed.unit);
   } else if (parsed.type === 'comparison') {
     const compOptions = (step.options && step.options.length > 0)
@@ -1692,8 +1900,20 @@ document.addEventListener('keydown', e => {
   if (e.repeat && ['e', ' ', 'Escape'].includes(e.key)) return;
   if ($<HTMLDialogElement>('dialog').open) {
     if (currentDialog === 'quiz' || currentDialog === 'flowerQuiz' || currentDialog === 'archimedesQuiz') {
-      const hasMathInput = !!document.getElementById('math-input-box');
+      const hasMathInput = !!document.getElementById('math-input-box') || !!document.querySelector('.multi-slot-container');
       if (hasMathInput && !currentSession?.isSolved()) {
+        if (isMultiSlot) {
+          if (e.key === 'Tab' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            selectSlot((activeSlotIndex + 1) % currentSlotValues.length);
+            return;
+          }
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            selectSlot((activeSlotIndex - 1 + currentSlotValues.length) % currentSlotValues.length);
+            return;
+          }
+        }
         if (/^[0-9]$/.test(e.key)) {
           e.preventDefault();
           handleNumpadInput(e.key);
@@ -1706,6 +1926,15 @@ document.addEventListener('keydown', e => {
         }
         if (e.key === 'Enter') {
           e.preventDefault();
+          if (isMultiSlot) {
+            if (currentSlotValues[activeSlotIndex]) {
+              const unfilled = currentSlotValues.findIndex((v, i) => !v && i > activeSlotIndex);
+              if (unfilled !== -1) {
+                selectSlot(unfilled);
+                return;
+              }
+            }
+          }
           const submitBtn = $<HTMLButtonElement>('numpad-submit');
           if (submitBtn && !submitBtn.disabled) submitBtn.click();
           return;

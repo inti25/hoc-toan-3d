@@ -173,4 +173,75 @@ test('ArchimedesChallenge accepts comparison operators and typed numbers with un
   assert.equal(s2.submit('>').isCorrect, false);
 });
 
+test('parseAnswer handles multi-slot answers with delimiter |', () => {
+  const parsed = parseAnswer('88|100');
+  assert.equal(parsed.type, 'multi');
+  assert.equal(parsed.raw, '88|100');
+  assert.deepEqual(parsed.expectedAnswers, ['88', '100']);
+  assert.equal(parsed.slots?.length, 2);
+  assert.equal(parsed.slots![0].type, 'numeric');
+  assert.equal(parsed.slots![0].expectedNumber, 88);
+  assert.equal(parsed.slots![1].type, 'numeric');
+  assert.equal(parsed.slots![1].expectedNumber, 100);
+
+  // Mixed slot types
+  const parsedMixed = parseAnswer('12 cm | > | 40');
+  assert.equal(parsedMixed.type, 'multi');
+  assert.equal(parsedMixed.slots?.length, 3);
+  assert.equal(parsedMixed.slots![0].type, 'numeric');
+  assert.equal(parsedMixed.slots![0].unit, 'cm');
+  assert.equal(parsedMixed.slots![1].type, 'comparison');
+  assert.equal(parsedMixed.slots![1].expectedChar, '>');
+  assert.equal(parsedMixed.slots![2].type, 'numeric');
+  assert.equal(parsedMixed.slots![2].expectedNumber, 40);
+});
+
+test('ChallengeSession validates multi-slot answers with slotResults array', () => {
+  const challenge = {
+    id: 'test_multi',
+    kind: 'archimedes' as const,
+    monolithId: 310,
+    monolithIndex: 4,
+    stepIndex: 0,
+    totalSteps: 1,
+    title: 'Bài 310',
+    zoneName: 'Khu 1',
+    page: 25,
+    badge: 'Đá Cổ',
+    color: 0x3b82f6,
+    prompt: 'Theo sơ đồ: 80 ➔ (+8) ➔ [ Lục giác ] ➔ (+12) ➔ [ Tam giác ]',
+    options: [],
+    answer: '88|100',
+    hints: ['Tính 80 + 8 trước', 'Tính tiếp + 12'],
+    explanation: '80 + 8 = 88; 88 + 12 = 100',
+    monolith: {} as any,
+    step: {} as any
+  };
+
+  const session = new ChallengeSession(challenge);
+
+  // Partial match: slot 0 correct, slot 1 wrong
+  const res1 = session.submit(['88', '99']);
+  assert.equal(res1.isCorrect, false);
+  assert.deepEqual(res1.slotResults, [true, false]);
+  assert.equal(session.isSolved(), false);
+
+  // Both wrong
+  const res2 = session.submit(['50', '60']);
+  assert.equal(res2.isCorrect, false);
+  assert.deepEqual(res2.slotResults, [false, false]);
+
+  // Both correct via array
+  const res3 = session.submit(['88', '100']);
+  assert.equal(res3.isCorrect, true);
+  assert.deepEqual(res3.slotResults, [true, true]);
+  assert.equal(session.isSolved(), true);
+
+  // Also accepts pipe-delimited string
+  const session2 = new ChallengeSession(challenge);
+  const resStr = session2.submit('88|100');
+  assert.equal(resStr.isCorrect, true);
+  assert.deepEqual(resStr.slotResults, [true, true]);
+});
+
 

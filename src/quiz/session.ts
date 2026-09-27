@@ -4,7 +4,7 @@ import { ARCHIMEDES_MONOLITHS, type ArchimedesMonolith, type ArchimedesStep } fr
 
 export type ChallengeKind = 'multiplication' | 'flower' | 'archimedes';
 
-export type AnswerType = 'numeric' | 'comparison' | 'choice';
+export type AnswerType = 'numeric' | 'comparison' | 'choice' | 'multi';
 
 export interface ParsedAnswer {
   type: AnswerType;
@@ -12,10 +12,26 @@ export interface ParsedAnswer {
   expectedNumber?: number;
   unit?: string;
   expectedChar?: string;
+  expectedAnswers?: string[];
+  slots?: ParsedAnswer[];
 }
 
 export function parseAnswer(rawAnswer: string | number): ParsedAnswer {
   const str = String(rawAnswer).trim();
+
+  // Multi-slot question with answers separated by '|' (e.g., '88|100')
+  if (str.includes('|')) {
+    const rawParts = str.split('|').map(s => s.trim()).filter(Boolean);
+    if (rawParts.length > 1) {
+      const slots = rawParts.map(p => parseAnswer(p));
+      return {
+        type: 'multi',
+        raw: str,
+        expectedAnswers: rawParts,
+        slots
+      };
+    }
+  }
 
   const compMatch = str.match(/^([<>=]|<=|>=|≤|≥|=>|=<)$/);
   if (compMatch) {
@@ -268,6 +284,31 @@ export interface SubmitResult {
   hintStage: number;
   hint: string;
   explanation?: string;
+  slotResults?: boolean[];
+}
+
+function checkSlotMatch(userChoice: string | number, parsedSlot: ParsedAnswer): boolean {
+  if (parsedSlot.type === 'numeric') {
+    const cleanChoice = String(userChoice).trim();
+    const numOnly = Number(cleanChoice.replace(/[^0-9]/g, ''));
+    return (
+      cleanChoice === parsedSlot.raw ||
+      Number(userChoice) === parsedSlot.expectedNumber ||
+      (cleanChoice.length > 0 && numOnly === parsedSlot.expectedNumber)
+    );
+  }
+  if (parsedSlot.type === 'comparison') {
+    const cleanChoice = String(userChoice).trim();
+    let normChoice = cleanChoice;
+    if (cleanChoice === '≤' || cleanChoice === '=<') normChoice = '<=';
+    else if (cleanChoice === '≥' || cleanChoice === '=>') normChoice = '>=';
+    return (
+      cleanChoice === parsedSlot.raw ||
+      cleanChoice === parsedSlot.expectedChar ||
+      normChoice === parsedSlot.expectedChar
+    );
+  }
+  return String(userChoice).trim().toLowerCase() === String(parsedSlot.raw).trim().toLowerCase();
 }
 
 export class ChallengeSession {
@@ -303,9 +344,10 @@ export class ChallengeSession {
     return this.resolveHint(this.hintStage);
   }
 
-  submit(choice: string | number): SubmitResult {
+  submit(choice: string | number | (string | number)[]): SubmitResult {
     this.attempts++;
     let isCorrect = false;
+    let slotResults: boolean[] | undefined;
 
     if (this.challenge.kind === 'multiplication') {
       const num = Number(choice);
@@ -316,24 +358,18 @@ export class ChallengeSession {
       }
     } else {
       const parsed = parseAnswer(this.challenge.answer);
-      if (parsed.type === 'numeric') {
-        const cleanChoice = String(choice).trim();
-        const numOnly = Number(cleanChoice.replace(/[^0-9]/g, ''));
-        isCorrect =
-          cleanChoice === parsed.raw ||
-          Number(choice) === parsed.expectedNumber ||
-          (cleanChoice.length > 0 && numOnly === parsed.expectedNumber);
-      } else if (parsed.type === 'comparison') {
-        const cleanChoice = String(choice).trim();
-        let normChoice = cleanChoice;
-        if (cleanChoice === '≤' || cleanChoice === '=<') normChoice = '<=';
-        else if (cleanChoice === '≥' || cleanChoice === '=>') normChoice = '>=';
-        isCorrect =
-          cleanChoice === parsed.raw ||
-          cleanChoice === parsed.expectedChar ||
-          normChoice === parsed.expectedChar;
+      if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
+        const parts: (string | number)[] = Array.isArray(choice)
+          ? choice
+          : String(choice).split('|');
+        slotResults = parsed.slots.map((slot, idx) => {
+          const partVal = parts[idx] ?? '';
+          return checkSlotMatch(partVal, slot);
+        });
+        isCorrect = slotResults.length === parsed.slots.length && slotResults.every(Boolean);
       } else {
-        isCorrect = String(choice).trim() === String(this.challenge.answer).trim();
+        const singleVal = Array.isArray(choice) ? (choice[0] ?? '') : choice;
+        isCorrect = checkSlotMatch(singleVal, parsed);
       }
     }
 
@@ -344,7 +380,8 @@ export class ChallengeSession {
         attempts: this.attempts,
         hintStage: this.hintStage,
         hint: '',
-        explanation: this.challenge.kind !== 'multiplication' ? this.challenge.explanation : undefined
+        explanation: this.challenge.kind !== 'multiplication' ? this.challenge.explanation : undefined,
+        slotResults
       };
     }
 
@@ -361,7 +398,8 @@ export class ChallengeSession {
       explanation:
         this.challenge.kind !== 'multiplication' && this.hintStage >= maxStages
           ? this.challenge.explanation
-          : undefined
+          : undefined,
+      slotResults
     };
   }
 
