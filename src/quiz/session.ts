@@ -17,11 +17,16 @@ export interface ParsedAnswer {
 export function parseAnswer(rawAnswer: string | number): ParsedAnswer {
   const str = String(rawAnswer).trim();
 
-  if (/^[<>=]$/.test(str)) {
+  const compMatch = str.match(/^([<>=]|<=|>=|≤|≥|=>|=<)$/);
+  if (compMatch) {
+    let normalized = str;
+    if (str === '≤' || str === '=<') normalized = '<=';
+    else if (str === '≥' || str === '=>') normalized = '>=';
+
     return {
       type: 'comparison',
       raw: str,
-      expectedChar: str
+      expectedChar: normalized
     };
   }
 
@@ -240,7 +245,14 @@ export class ChallengeSession {
           Number(choice) === parsed.expectedNumber ||
           (cleanChoice.length > 0 && numOnly === parsed.expectedNumber);
       } else if (parsed.type === 'comparison') {
-        isCorrect = String(choice).trim() === parsed.expectedChar;
+        const cleanChoice = String(choice).trim();
+        let normChoice = cleanChoice;
+        if (cleanChoice === '≤' || cleanChoice === '=<') normChoice = '<=';
+        else if (cleanChoice === '≥' || cleanChoice === '=>') normChoice = '>=';
+        isCorrect =
+          cleanChoice === parsed.raw ||
+          cleanChoice === parsed.expectedChar ||
+          normChoice === parsed.expectedChar;
       } else {
         isCorrect = String(choice).trim() === String(this.challenge.answer).trim();
       }

@@ -119,6 +119,26 @@ export class SpatialWorld {
     this.obstacles.push(obstacle);
   }
 
+  private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string }[] = [];
+  private dynamicPortals: PortalLink[] = [];
+  private dynamicMonoliths: { x: number; z: number }[] = [];
+
+  setDynamicData(
+    zones: { center: { x: number; z: number }; width: number; depth: number; name?: string; id?: number }[],
+    monolithPositions: { x: number; z: number }[] = [],
+    customPortals: PortalLink[] = []
+  ) {
+    this.dynamicIslands = zones.map((z) => ({
+      cx: z.center.x,
+      cz: z.center.z,
+      w: z.width,
+      d: z.depth,
+      name: z.name
+    }));
+    this.dynamicMonoliths = monolithPositions;
+    this.dynamicPortals = customPortals;
+  }
+
   isWithinLand(x: number, z: number): boolean {
     // 1. Starter Village
     if (x >= -21 && x <= 4 && Math.abs(z) <= 18.8) return true;
@@ -138,6 +158,15 @@ export class SpatialWorld {
     if (x >= 136 && x <= 164 && z >= 43 && z <= 77) return true;
     // 9. Sanctuary 5 (Đỉnh Núi Tư Duy Sao)
     if (x >= 179 && x <= 201 && z >= -12 && z <= 12) return true;
+
+    // 10. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
+    for (const isl of this.dynamicIslands) {
+      const halfW = isl.w / 2 + 1;
+      const halfD = isl.d / 2 + 1;
+      if (x >= isl.cx - halfW && x <= isl.cx + halfW && z >= isl.cz - halfD && z <= isl.cz + halfD) {
+        return true;
+      }
+    }
 
     return false;
   }
@@ -210,6 +239,16 @@ export class SpatialWorld {
   }
 
   nearMonolithIndex(): number {
+    if (this.dynamicMonoliths.length > 0) {
+      for (let i = 0; i < this.dynamicMonoliths.length; i++) {
+        const { x, z } = this.dynamicMonoliths[i];
+        if (Math.hypot(this.x - x, this.z - z) < 2.9) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
     for (let i = 0; i < ARCHIMEDES_MONOLITHS.length; i++) {
       const { x, z } = ARCHIMEDES_MONOLITHS[i].position;
       if (Math.hypot(this.x - x, this.z - z) < 2.9) {
@@ -225,7 +264,9 @@ export class SpatialWorld {
       if (this.portalCooldown > 0) return null;
     }
 
-    for (const portal of PORTAL_LINKS) {
+    const allPortals = this.dynamicPortals.length > 0 ? this.dynamicPortals : PORTAL_LINKS;
+
+    for (const portal of allPortals) {
       const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
       if (dist <= portal.triggerRadius) {
         this.teleport(portal.target.x, portal.target.z);
@@ -237,7 +278,8 @@ export class SpatialWorld {
   }
 
   getNearPortal(): PortalLink | null {
-    return PORTAL_LINKS.find(p => Math.hypot(this.x - p.source.x, this.z - p.source.z) < 3.2) || null;
+    const allPortals = this.dynamicPortals.length > 0 ? this.dynamicPortals : PORTAL_LINKS;
+    return allPortals.find(p => Math.hypot(this.x - p.source.x, this.z - p.source.z) < 3.2) || null;
   }
 
   isNearPortal(): boolean {

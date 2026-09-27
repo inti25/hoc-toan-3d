@@ -150,32 +150,7 @@ export class World {
     ];
 
     for (const isl of islands) {
-      const shape = new THREE.Shape();
-      const left = -isl.w / 2, right = isl.w / 2, t = -isl.d / 2, b = isl.d / 2, r = 2;
-      shape.moveTo(left + r, t);
-      shape.lineTo(right - r, t);
-      shape.quadraticCurveTo(right, t, right, t + r);
-      shape.lineTo(right, b - r);
-      shape.quadraticCurveTo(right, b, right - r, b);
-      shape.lineTo(left + r, b);
-      shape.quadraticCurveTo(left, b, left, b - r);
-      shape.lineTo(left, t + r);
-      shape.quadraticCurveTo(left, t, left + r, t);
-
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.5, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .35, bevelThickness: .2 });
-      geo.rotateX(-Math.PI / 2);
-      const soil = new THREE.Mesh(geo, [this.material(isl.cx > 35 ? (isl.soilColor || 0x6e964b) : 0x88bb52), this.material(isl.soilColor || 0xb7976d)]);
-      soil.position.set(isl.cx, -2.5, isl.cz);
-      soil.receiveShadow = true;
-      soil.castShadow = true;
-      this.scene.add(soil);
-
-      const grass = new THREE.ShapeGeometry(shape);
-      grass.rotateX(-Math.PI / 2);
-      const top = new THREE.Mesh(grass, this.material(isl.grassColor));
-      top.position.set(isl.cx, .025, isl.cz);
-      top.receiveShadow = true;
-      this.scene.add(top);
+      this.createSingleIsland(isl);
     }
 
     // Paths in starter village
@@ -285,6 +260,34 @@ export class World {
     this.scene.add(cloudSea);
   }
 
+  public createSingleIsland(isl: { cx: number; cz: number; w: number; d: number; grassColor: number; soilColor?: number }) {
+    const shape = new THREE.Shape();
+    const left = -isl.w / 2, right = isl.w / 2, t = -isl.d / 2, b = isl.d / 2, r = 2;
+    shape.moveTo(left + r, t);
+    shape.lineTo(right - r, t);
+    shape.quadraticCurveTo(right, t, right, t + r);
+    shape.lineTo(right, b - r);
+    shape.quadraticCurveTo(right, b, right - r, b);
+    shape.lineTo(left + r, b);
+    shape.quadraticCurveTo(left, b, left, b - r);
+    shape.lineTo(left, t + r);
+    shape.quadraticCurveTo(left, t, left + r, t);
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.5, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .35, bevelThickness: .2 });
+    geo.rotateX(-Math.PI / 2);
+    const soil = new THREE.Mesh(geo, [this.material(isl.cx > 35 ? (isl.soilColor || 0x6e964b) : 0x88bb52), this.material(isl.soilColor || 0xb7976d)]);
+    soil.position.set(isl.cx, -2.5, isl.cz);
+    soil.receiveShadow = true;
+    soil.castShadow = true;
+    this.scene.add(soil);
+
+    const grass = new THREE.ShapeGeometry(shape);
+    grass.rotateX(-Math.PI / 2);
+    const top = new THREE.Mesh(grass, this.material(isl.grassColor));
+    top.position.set(isl.cx, .025, isl.cz);
+    top.receiveShadow = true;
+    this.scene.add(top);
+  }
 
   private house(x: number, z: number, color: number, size = 1, rotate = 0) {
     const h = new THREE.Group(); h.position.set(x, 0, z); h.scale.setScalar(size); h.rotation.y = rotate;
@@ -513,68 +516,127 @@ export class World {
     this.createPortalArch(181, 0, 0x38bdf8, 0);
   }
 
+  public createMonolithEntity(id: number | string, x: number, z: number, color: number, title?: string): MonolithItem {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    // 1. Pedestal base (stone cylinder)
+    const pedestal = this.cylinder(group, 0, .14, 0, 1.35, 1.45, .28, 0x64748b, 12);
+    this.cylinder(group, 0, .26, 0, 1.15, 1.15, .08, 0x334155, 12);
+
+    // 2. Small stone approach path
+    this.box(group, 0, .05, 1.3, 1.1, .08, 1.2, 0xd5cbb2);
+
+    // 3. Obelisk column
+    const pillar = this.box(group, 0, 1.1, 0, .68, 1.7, .68, 0x475569);
+
+    // 4. Inscription plaque on front face (Bài number)
+    this.box(group, 0, 1.3, .36, .52, .38, .06, 0xfef08a);
+
+    // 5. Crown stone cap
+    this.cylinder(group, 0, 2.02, 0, .45, .38, .16, 0x334155, 8);
+
+    // 6. Floating Rune Crystal Beacon (Octahedron)
+    const crystalGeo = new THREE.OctahedronGeometry(.32, 0);
+    const crystalMat = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      roughness: 0.5,
+      metalness: 0.1
+    });
+    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+    crystal.position.set(0, 2.45, 0);
+    crystal.castShadow = true;
+    group.add(crystal);
+
+    // 7. Celestial Light Beam (inactive at start)
+    const beamGeo = new THREE.CylinderGeometry(.25, .45, 18, 8, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, 11.5, 0);
+    beam.visible = false;
+    group.add(beam);
+
+    this.scene.add(group);
+    this.obstacles.push({ x, z, radius: 1.35 });
+
+    const numId = typeof id === 'number' ? id : parseInt(String(id), 10) || (306 + this.monoliths.length);
+    const monolithItem: MonolithItem = {
+      id: numId,
+      position: new THREE.Vector3(x, 0, z),
+      group,
+      pedestal,
+      pillar,
+      crystal,
+      beam,
+      activated: false,
+      color,
+      glowAnim: 0
+    };
+    this.monoliths.push(monolithItem);
+    return monolithItem;
+  }
+
   private createArchimedesMonoliths() {
     ARCHIMEDES_MONOLITHS.forEach((m) => {
-      const group = new THREE.Group();
-      group.position.set(m.position.x, 0, m.position.z);
+      this.createMonolithEntity(m.id, m.position.x, m.position.z, m.color, m.title);
+    });
+  }
 
-      // 1. Pedestal base (stone cylinder)
-      const pedestal = this.cylinder(group, 0, .14, 0, 1.35, 1.45, .28, 0x64748b, 12);
-      this.cylinder(group, 0, .26, 0, 1.15, 1.15, .08, 0x334155, 12);
+  public renderDynamicZones(
+    zones: Array<{ id: number; name: string; template: string; center: { x: number; z: number }; width: number; depth: number; color: number }>,
+    positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = []
+  ) {
+    // 1. Dựng các hòn đảo động (chỉ dựng nếu ngoài 5 khu mặc định id > 5)
+    zones.forEach((z) => {
+      if (z.id > 5 && z.id !== 6) {
+        this.createSingleIsland({
+          cx: z.center.x,
+          cz: z.center.z,
+          w: z.width,
+          d: z.depth,
+          grassColor: z.color,
+          soilColor: 0x93a388
+        });
 
-      // 2. Small stone approach path
-      this.box(group, 0, .05, 1.3, 1.1, .08, 1.2, 0xd5cbb2);
+        // 2. Tạo Cổng Dịch Chuyển tại Đền Cổng Archimedes (x: 60, z: 0)
+        const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
+        const hubX = 60 + Math.cos(angle) * 8.5;
+        const hubZ = Math.sin(angle) * 8.5;
+        this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
 
-      // 3. Obelisk column
-      const pillar = this.box(group, 0, 1.1, 0, .68, 1.7, .68, 0x475569);
+        // Cổng quay về trên đảo mới
+        const retX = z.center.x - z.width / 2 + 3;
+        const retZ = z.center.z;
+        this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+      }
+    });
 
-      // 4. Inscription plaque on front face (Bài number)
-      this.box(group, 0, 1.3, .36, .52, .38, .06, 0xfef08a);
+    // Dọn dẹp bất kỳ bia đá nào bị sinh nhầm trong Vườn Hoa (id 1..10)
+    for (let i = this.monoliths.length - 1; i >= 0; i--) {
+      const m = this.monoliths[i];
+      if (typeof m.id === 'number' && m.id <= 10) {
+        this.scene.remove(m.group);
+        this.monoliths.splice(i, 1);
+      }
+    }
 
-      // 5. Crown stone cap
-      this.cylinder(group, 0, 2.02, 0, .45, .38, .16, 0x334155, 8);
+    // 3. Dựng các bia đá mới nếu có (chỉ cho các phân khu Archimedes / bia đá, tuyệt đối không dựng bia đá ở Vườn Hoa)
+    const existingIds = new Set(this.monoliths.map((m) => m.id));
+    positionedMonoliths.forEach((pm) => {
+      const numId = typeof pm.id === 'number' ? pm.id : parseInt(String(pm.id), 10);
+      // Bỏ qua nếu thuộc khu Vườn Hoa (id 1..10) vì Vườn Hoa đã có đài hoa 3D chuyên biệt
+      if (isNaN(numId) || numId <= 10 || !pm.position) return;
 
-      // 6. Floating Rune Crystal Beacon (Octahedron)
-      const crystalGeo = new THREE.OctahedronGeometry(.32, 0);
-      const crystalMat = new THREE.MeshStandardMaterial({
-        color: 0x64748b,
-        roughness: 0.5,
-        metalness: 0.1
-      });
-      const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-      crystal.position.set(0, 2.45, 0);
-      crystal.castShadow = true;
-      group.add(crystal);
-
-      // 7. Celestial Light Beam (inactive at start)
-      const beamGeo = new THREE.CylinderGeometry(.25, .45, 18, 8, 1, true);
-      const beamMat = new THREE.MeshBasicMaterial({
-        color: m.color,
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false,
-        side: THREE.DoubleSide
-      });
-      const beam = new THREE.Mesh(beamGeo, beamMat);
-      beam.position.set(0, 11.5, 0);
-      beam.visible = false;
-      group.add(beam);
-
-      this.scene.add(group);
-      this.obstacles.push({ x: m.position.x, z: m.position.z, radius: 1.35 });
-
-      this.monoliths.push({
-        id: m.id,
-        position: new THREE.Vector3(m.position.x, 0, m.position.z),
-        group,
-        pedestal,
-        pillar,
-        crystal,
-        beam,
-        activated: false,
-        color: m.color,
-        glowAnim: 0
-      });
+      if (!existingIds.has(numId)) {
+        this.createMonolithEntity(numId, pm.position.x, pm.position.z, pm.color || 0x38bdf8, pm.title);
+        existingIds.add(numId);
+      }
     });
   }
 

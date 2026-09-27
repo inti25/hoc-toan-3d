@@ -1,0 +1,443 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { getBundledFallbackData } from '../src/core/sheetsClient';
+
+function buildAppsScriptCode() {
+  const bundle = getBundledFallbackData();
+
+  // Tạo mã nguồn JavaScript của Google Apps Script
+  const code = `/**
+ * ============================================================================
+ * VƯƠNG QUỐC HỌC TOÁN 3D - GOOGLE APPS SCRIPT BACKEND
+ * ============================================================================
+ * Biến Google Sheets thành Headless CMS & Database cho game 3D.
+ * Hỗ trợ:
+ * 1. doGet: Lấy danh sách vùng đất (getZones), câu hỏi theo vùng (getQuestions),
+ *    hoặc toàn bộ dữ liệu (getAll).
+ * 2. doPost: Ghi nhận nhật ký làm bài của học sinh vào tab LOGS, hoặc seedDatabase.
+ * 3. seedFullKingdomDatabase: Hàm 1-CLICK tự động tạo 7 tab với 50 bài toán mẫu.
+ */
+
+// Tiêu đề các cột cho sheet CONFIG
+const CONFIG_HEADERS = [
+  'ZoneId', 'Name', 'Title', 'Description', 'Template',
+  'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge'
+];
+
+// Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
+const QUEST_HEADERS = [
+  'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt',
+  'OptionA', 'OptionB', 'OptionC', 'OptionD', 'Answer',
+  'Hints', 'Explanation', 'PosX', 'PosZ'
+];
+
+// Tiêu đề các cột cho sheet LOGS
+const LOG_HEADERS = [
+  'Timestamp', 'ExplorerName', 'ClassName', 'ZoneId',
+  'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details'
+];
+
+/**
+ * Xử lý HTTP GET
+ */
+function doGet(e) {
+  try {
+    const params = e ? e.parameter : {};
+    const action = params.action || 'getAll';
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    let result = {};
+
+    if (action === 'ping') {
+      result = { status: 'success', message: 'Vương Quốc Học Toán 3D Backend Online!', time: new Date().toISOString() };
+    } else if (action === 'getZones') {
+      result = { status: 'success', zones: fetchZonesFromSheet(ss) };
+    } else if (action === 'getQuestions') {
+      const sheetName = params.sheetName;
+      if (!sheetName) {
+        throw new Error('Thiếu tham số sheetName');
+      }
+      result = { status: 'success', sheetName: sheetName, questions: fetchQuestionsFromSheet(ss, sheetName) };
+    } else if (action === 'getAll') {
+      const zones = fetchZonesFromSheet(ss);
+      const allQuestions = {};
+      zones.forEach(function(zone) {
+        if (zone.sheetName) {
+          allQuestions[zone.sheetName] = fetchQuestionsFromSheet(ss, zone.sheetName);
+        }
+      });
+      result = { status: 'success', zones: zones, questions: allQuestions };
+    } else {
+      throw new Error('Action không hợp lệ: ' + action);
+    }
+
+    return createJsonResponse(result);
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: err.toString() });
+  }
+}
+
+/**
+ * Xử lý HTTP POST (Ghi nhật ký làm bài hoặc Seed Database)
+ */
+function doPost(e) {
+  try {
+    let payload = {};
+    if (e && e.postData && e.postData.contents) {
+      payload = JSON.parse(e.postData.contents);
+    } else if (e && e.parameter) {
+      payload = e.parameter;
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. Xử lý hành động Seed Database (Khởi tạo toàn bộ dữ liệu mẫu)
+    if (payload.action === 'seedDatabase') {
+      const seedResult = handleSeedDatabase(ss, payload);
+      return createJsonResponse(seedResult);
+    }
+
+    // 2. Mặc định: Ghi nhật ký tiến trình vào sheet LOGS
+    let logSheet = ss.getSheetByName('LOGS');
+    if (!logSheet) {
+      logSheet = ss.insertSheet('LOGS');
+      logSheet.appendRow(LOG_HEADERS);
+      logSheet.setFrozenRows(1);
+    }
+
+    const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const explorerName = payload.explorerName || payload.nickname || 'Dũng Sĩ Ẩn Danh';
+    const className = payload.className || 'Tự do';
+    const zoneId = payload.zoneId || '';
+    const problemId = payload.problemId || '';
+    const stepId = payload.stepId || '';
+    const isCorrect = payload.isCorrect !== undefined ? (payload.isCorrect ? 'ĐÚNG' : 'SAI') : '';
+    const score = payload.score !== undefined ? payload.score : 0;
+    const details = payload.details ? JSON.stringify(payload.details) : '';
+
+    logSheet.appendRow([
+      timestamp, explorerName, className, zoneId,
+      problemId, stepId, isCorrect, score, details
+    ]);
+
+    return createJsonResponse({ status: 'success', message: 'Đã lưu nhật ký thành công' });
+  } catch (err) {
+    return createJsonResponse({ status: 'error', message: err.toString() });
+  }
+}
+
+/**
+ * Khởi tạo hoặc ghi đè toàn bộ dữ liệu các vùng đất và câu hỏi lên Google Sheets
+ */
+function handleSeedDatabase(ss, payload) {
+  const zones = (payload && payload.zones && payload.zones.length) ? payload.zones : SEED_DATA.zones;
+  const questionsBySheet = (payload && payload.questionsBySheet && Object.keys(payload.questionsBySheet).length)
+    ? payload.questionsBySheet
+    : SEED_DATA.questionsBySheet;
+
+  // 1. Tạo hoặc làm mới sheet CONFIG (Sổ Đăng Ký Vùng Đất)
+  let configSheet = ss.getSheetByName('CONFIG');
+  if (!configSheet) {
+    configSheet = ss.insertSheet('CONFIG');
+  } else {
+    configSheet.clear();
+  }
+  configSheet.appendRow(CONFIG_HEADERS);
+
+  const configRows = zones.map(function(z) {
+    return [
+      z.id,
+      z.name || '',
+      z.title || '',
+      z.description || '',
+      z.template || 'GRID_SANCTUARY',
+      z.sheetName || '',
+      z.center ? z.center.x : 0,
+      z.center ? z.center.z : 0,
+      z.width || 24,
+      z.depth || 32,
+      z.colorHex || '#38bdf8',
+      z.badge || ''
+    ];
+  });
+
+  if (configRows.length > 0) {
+    const configRange = configSheet.getRange(2, 1, configRows.length, CONFIG_HEADERS.length);
+    configRange.setNumberFormat('@');
+    configRange.setValues(configRows);
+  }
+  configSheet.setFrozenRows(1);
+
+  // Hàm bảo vệ ô tính khỏi lỗi công thức Google Sheets (#ERROR! với dấu =, <=, >=)
+  function escapeSheetsText(val) {
+    if (val === undefined || val === null) return '';
+    var str = String(val);
+    var trimmed = str.trim();
+    if (
+      trimmed.indexOf('=') === 0 ||
+      trimmed.indexOf('+') === 0 ||
+      trimmed.indexOf('-') === 0 ||
+      trimmed.indexOf('@') === 0 ||
+      trimmed.indexOf('<') === 0 ||
+      trimmed.indexOf('>') === 0 ||
+      trimmed.indexOf('≤') === 0 ||
+      trimmed.indexOf('≥') === 0
+    ) {
+      return "'" + str;
+    }
+    return str;
+  }
+
+  // 2. Tạo hoặc làm mới từng sheet câu hỏi (Bảng Thử Thách)
+  const sheetNames = Object.keys(questionsBySheet);
+  sheetNames.forEach(function(sName) {
+    let sheet = ss.getSheetByName(sName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sName);
+    } else {
+      sheet.clear();
+    }
+    sheet.appendRow(QUEST_HEADERS);
+
+    const problems = questionsBySheet[sName] || [];
+    const rowsToAppend = [];
+
+    problems.forEach(function(prob) {
+      const steps = prob.steps || [];
+      steps.forEach(function(step, sIdx) {
+        const optA = (step.options && step.options[0]) ? (step.options[0].value || step.options[0].label || '') : '';
+        const optB = (step.options && step.options[1]) ? (step.options[1].value || step.options[1].label || '') : '';
+        const optC = (step.options && step.options[2]) ? (step.options[2].value || step.options[2].label || '') : '';
+        const optD = (step.options && step.options[3]) ? (step.options[3].value || step.options[3].label || '') : '';
+        const hints = Array.isArray(step.hints) ? step.hints.join(' | ') : (step.hints || '');
+        const posX = (prob.position && typeof prob.position.x === 'number') ? prob.position.x : '';
+        const posZ = (prob.position && typeof prob.position.z === 'number') ? prob.position.z : '';
+
+        rowsToAppend.push([
+          prob.id,
+          step.stepId || (prob.id + '_' + (sIdx + 1)),
+          prob.title || '',
+          prob.subtitle || '',
+          escapeSheetsText(step.prompt || ''),
+          escapeSheetsText(optA),
+          escapeSheetsText(optB),
+          escapeSheetsText(optC),
+          escapeSheetsText(optD),
+          escapeSheetsText(step.answer || ''),
+          escapeSheetsText(hints),
+          escapeSheetsText(step.explanation || ''),
+          posX,
+          posZ
+        ]);
+      });
+    });
+
+    if (rowsToAppend.length > 0) {
+      const range = sheet.getRange(2, 1, rowsToAppend.length, QUEST_HEADERS.length);
+      range.setNumberFormat('@');
+      range.setValues(rowsToAppend);
+    }
+    sheet.setFrozenRows(1);
+  });
+
+  // 3. Đảm bảo sheet LOGS tồn tại mà KHÔNG xóa nhật ký đã có
+  let logSheet = ss.getSheetByName('LOGS');
+  if (!logSheet) {
+    logSheet = ss.insertSheet('LOGS');
+    logSheet.appendRow(LOG_HEADERS);
+    logSheet.setFrozenRows(1);
+  }
+
+  return {
+    status: 'success',
+    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất và ' + sheetNames.length + ' bảng câu hỏi với đầy đủ bài toán!'
+  };
+}
+
+/**
+ * HÀM 1-CLICK DÀNH CHO GIÁO VIÊN / ADMIN CHẠY TRỰC TIẾP TRONG APPS SCRIPT:
+ * Chọn hàm "seedFullKingdomDatabase" từ menu thả xuống và bấm [Chạy] (Run)
+ * để tự động khởi tạo 7 tab với 50 bài toán vào Google Sheets.
+ */
+function seedFullKingdomDatabase() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const res = handleSeedDatabase(ss, null);
+  Logger.log(res.message);
+  return res;
+}
+
+/**
+ * Đọc dữ liệu từ sheet CONFIG
+ */
+function fetchZonesFromSheet(ss) {
+  const sheet = ss.getSheetByName('CONFIG');
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+
+  const headers = data[0].map(function(h) { return String(h).trim(); });
+  const zones = [];
+
+  for (let r = 1; r < data.length; r++) {
+    const row = data[r];
+    if (!row[0] && row[0] !== 0) continue;
+
+    const rowObj = {};
+    headers.forEach(function(h, colIdx) {
+      rowObj[h] = row[colIdx];
+    });
+
+    zones.push({
+      id: Number(rowObj.ZoneId) || r,
+      name: String(rowObj.Name || ''),
+      title: String(rowObj.Title || ''),
+      description: String(rowObj.Description || ''),
+      template: String(rowObj.Template || 'GRID_SANCTUARY').toUpperCase(),
+      sheetName: String(rowObj.SheetName || ''),
+      center: {
+        x: Number(rowObj.CenterX) || 0,
+        z: Number(rowObj.CenterZ) || 0
+      },
+      width: Number(rowObj.Width) || 24,
+      depth: Number(rowObj.Depth) || 32,
+      color: parseColorHex(rowObj.ColorHex),
+      colorHex: String(rowObj.ColorHex || '#38bdf8'),
+      badge: String(rowObj.Badge || '🏆 Huy Chương Thám Hiểm')
+    });
+  }
+
+  return zones;
+}
+
+/**
+ * Đọc dữ liệu từ tab câu hỏi và tự động gom nhóm theo ProblemId
+ */
+function fetchQuestionsFromSheet(ss, sheetName) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+
+  const headers = data[0].map(function(h) { return String(h).trim(); });
+  const problemMap = {};
+  const problemOrder = [];
+
+  function cleanSheetText(val) {
+    if (val === undefined || val === null) return '';
+    var str = String(val).trim();
+    if (str.indexOf("'") === 0) {
+      str = str.substring(1);
+    }
+    // Tự động khôi phục nếu ô bị lỗi công thức #ERROR! từ Google Sheets (do chứa dấu =)
+    if (
+      str.indexOf('#') === 0 &&
+      (str.indexOf('ERROR') !== -1 ||
+       str.indexOf('NAME') !== -1 ||
+       str.indexOf('VALUE') !== -1 ||
+       str.indexOf('REF') !== -1 ||
+       str.indexOf('N/A') !== -1)
+    ) {
+      return '=';
+    }
+    return str;
+  }
+
+  for (let r = 1; r < data.length; r++) {
+    const row = data[r];
+    if (!row[0] && row[0] !== 0) continue;
+
+    const rowObj = {};
+    headers.forEach(function(h, colIdx) {
+      rowObj[h] = row[colIdx];
+    });
+
+    const probId = String(rowObj.ProblemId).trim();
+    if (!probId) continue;
+
+    const cleanAnswer = cleanSheetText(rowObj.Answer);
+
+    const rawOptions = [rowObj.OptionA, rowObj.OptionB, rowObj.OptionC, rowObj.OptionD]
+      .filter(function(opt) { return opt !== undefined && opt !== null && String(opt).trim() !== ''; })
+      .map(function(opt) {
+        const val = cleanSheetText(opt);
+        return { label: val, value: val };
+      });
+
+    // Nếu options chưa chứa cleanAnswer đúng, tự động thêm vào
+    if (cleanAnswer && !rawOptions.some(function(o) { return o.value === cleanAnswer; })) {
+      rawOptions.unshift({ label: cleanAnswer, value: cleanAnswer });
+    }
+
+    let rawHints = [];
+    if (rowObj.Hints) {
+      rawHints = String(rowObj.Hints)
+        .split(/[|;]/)
+        .map(function(h) { return cleanSheetText(h); })
+        .filter(function(h) { return h.length > 0; });
+    }
+
+    const stepObj = {
+      stepId: String(rowObj.StepId || probId + '_' + r).trim(),
+      prompt: cleanSheetText(rowObj.Prompt || ''),
+      options: rawOptions,
+      answer: cleanAnswer,
+      hints: rawHints,
+      explanation: cleanSheetText(rowObj.Explanation || '')
+    };
+
+    if (!problemMap[probId]) {
+      const posX = rowObj.PosX !== '' && rowObj.PosX !== undefined ? Number(rowObj.PosX) : null;
+      const posZ = rowObj.PosZ !== '' && rowObj.PosZ !== undefined ? Number(rowObj.PosZ) : null;
+
+      problemMap[probId] = {
+        id: isNaN(Number(probId)) ? probId : Number(probId),
+        title: String(rowObj.Title || 'Bài ' + probId).trim(),
+        subtitle: String(rowObj.Subtitle || '').trim(),
+        position: (posX !== null && posZ !== null) ? { x: posX, z: posZ } : null,
+        steps: []
+      };
+      problemOrder.push(probId);
+    }
+
+    problemMap[probId].steps.push(stepObj);
+  }
+
+  return problemOrder.map(function(pId) { return problemMap[pId]; });
+}
+
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function parseColorHex(hexStr) {
+  if (!hexStr) return 0x38bdf8;
+  const clean = String(hexStr).replace(/^#/, '').replace(/^0x/, '');
+  const parsed = parseInt(clean, 16);
+  return isNaN(parsed) ? 0x38bdf8 : parsed;
+}
+
+/**
+ * ============================================================================
+ * HÀM 1-CLICK TỰ ĐỘNG KHỞI TẠO 50 BÀI TOÁN TOÀN DIỆN LÊN GOOGLE SHEETS
+ * Chạy hàm này một lần trong Apps Script Editor để sinh đủ 7 tab với 50 câu hỏi.
+ * ============================================================================
+ */
+function seedFullKingdomDatabase() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const res = handleSeedDatabase(ss, SEED_DATA);
+  SpreadsheetApp.getUi().alert(res.message);
+}
+
+// BỘ DỮ LIỆU GỐC ĐẦY ĐỦ (50 BÀI TOÁN & 6 VÙNG ĐẤT)
+const SEED_DATA = ${JSON.stringify(bundle, null, 2)};
+`;
+
+  const outputPath = path.resolve(process.cwd(), 'apps-script/Code.gs');
+  fs.writeFileSync(outputPath, code, 'utf-8');
+  console.log(`✅ Đã sinh thành công apps-script/Code.gs với đầy đủ 50 bài toán (${(code.length / 1024).toFixed(1)} KB)`);
+}
+
+buildAppsScriptCode();

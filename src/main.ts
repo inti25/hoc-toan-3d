@@ -11,6 +11,7 @@ import {
   ChallengeSession,
   parseAnswer,
   type MultiplicationChallenge,
+  type FlowerChallenge,
   type ArchimedesChallenge
 } from './quiz/session';
 import {
@@ -21,6 +22,19 @@ import {
   type ArchimedesMonolith
 } from './data/archimedesTrialMap';
 import { AudioManager } from './audio/audio';
+import {
+  loadZonesAndQuestions,
+  getAppsScriptUrl,
+  setAppsScriptUrl,
+  getExplorerProfile,
+  saveExplorerProfile,
+  logRemoteProgress,
+  fetchRemoteData,
+  resolveZoneProblemsWithPositions,
+  seedRemoteDatabase,
+  REMOTE_CACHE_KEY
+} from './core/sheetsClient';
+import type { RemoteZoneConfig, RemoteProblem } from './data/remoteTypes';
 
 const icons: Record<string, string> = {
   crown: '<path d="m3 6 5 4 4-7 4 7 5-4-2 13H5Z"/><path d="M8 15h8"/>',
@@ -59,6 +73,41 @@ let nearFlower = -1;
 let nearPortal = false;
 let nearMonolith = -1;
 let frameTick = 0;
+let activeRemoteZones: RemoteZoneConfig[] = [];
+let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
+
+function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) {
+  activeRemoteZones = data.zones;
+  activeRemoteQuestions = data.questionsBySheet;
+  if (!world) return;
+
+  const monolithProblems: RemoteProblem[] = [];
+  data.zones.forEach((z) => {
+    const list = data.questionsBySheet[z.sheetName] || [];
+    const resolved = resolveZoneProblemsWithPositions(z, list);
+
+    // Vườn Hoa Tri Thức là khu vực hoa 3D, tuyệt đối KHÔNG sinh bia đá
+    if (z.template === 'FLOWER_BEDS' || z.id === 6 || z.sheetName === 'VuonHoa') {
+      return;
+    }
+    monolithProblems.push(...resolved);
+  });
+
+  world.renderDynamicZones(
+    data.zones,
+    monolithProblems.map((p) => ({
+      id: p.id,
+      position: p.position!,
+      color: p.color,
+      title: p.title
+    }))
+  );
+
+  world.spatial.setDynamicData(
+    data.zones,
+    monolithProblems.filter((p) => p.position).map((p) => p.position!)
+  );
+}
 
 const app = $('app');
 app.innerHTML = `
@@ -156,7 +205,8 @@ function updateHUD() {
   const level = getLevel(state.xp),
     start = LEVEL_XP[level - 1],
     next = LEVEL_XP[level];
-  $('level').textContent = String(level);
+  const profile = getExplorerProfile();
+  $('level').textContent = `${level} · ${profile.nickname}`;
   $('coins').textContent = String(state.coins);
   $('xp-text').textContent = next ? `${state.xp - start} / ${next - start} XP` : `${state.xp} XP · Cấp cao nhất`;
   const percent = next ? Math.min(100, ((state.xp - start) / (next - start)) * 100) : 100;
@@ -245,6 +295,15 @@ function start() {
   $('menu-footer').hidden = true;
   document.body.classList.add('playing');
   updateHUD();
+
+  // Nạp và đồng bộ dữ liệu từ Google Sheets
+  loadZonesAndQuestions((fresh) => {
+    syncDynamicContent(fresh);
+    toast('✨ Đã cập nhật câu hỏi mới từ Google Sheets!');
+  }).then((data) => {
+    syncDynamicContent(data);
+  });
+
   toast('Chào bạn! Di chuyển đến Milo, hoặc nhấn "Đến Vườn Hoa" để khám phá!');
 }
 
@@ -521,7 +580,57 @@ function submitAnswer(value: number) {
 }
 
 function openFlowerDialog(index: number) {
-  const challenge = createFlowerChallenge(index);
+  let remoteFlowers = activeRemoteQuestions['VuonHoa'];
+  if (!remoteFlowers || remoteFlowers.length === 0) {
+    try {
+      const raw = localStorage.getItem(REMOTE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const questions = parsed?.data?.questionsBySheet || parsed?.questionsBySheet;
+        if (questions?.['VuonHoa']?.length) {
+          remoteFlowers = questions['VuonHoa'];
+          activeRemoteQuestions['VuonHoa'] = remoteFlowers;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Khớp theo ID bài (ProblemId trong Google Sheets là 1..10 tương ứng index 0..9)
+  const targetId = index + 1;
+  const remoteQ = remoteFlowers && (
+    remoteFlowers.find((p) => Number(p.id) === targetId) ||
+    remoteFlowers[index]
+  );
+  let challenge: FlowerChallenge;
+  if (remoteQ && remoteQ.steps && remoteQ.steps[0]) {
+    const step = remoteQ.steps[0];
+    challenge = {
+      id: `flower_${index}`,
+      kind: 'flower',
+      index,
+      title: remoteQ.subtitle || remoteQ.title || `Hoa Thử Thách #${index + 1}`,
+      badge: remoteQ.badge || `🌸 Hoa Tri Thức #${index + 1}`,
+      color: remoteQ.color || 0xec4899,
+      prompt: step.prompt,
+      options: step.options.map((o) => ({ value: o.value, label: o.label })),
+      answer: step.answer,
+      hints: step.hints,
+      explanation: step.explanation,
+      flowerQuestion: {
+        id: typeof remoteQ.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ.id), 10) || index + 1),
+        title: remoteQ.subtitle || remoteQ.title,
+        question: step.prompt,
+        options: step.options,
+        answer: step.answer,
+        hints: step.hints,
+        explanation: step.explanation,
+        badge: remoteQ.badge || '',
+        color: remoteQ.color || 0xec4899
+      }
+    };
+  } else {
+    challenge = createFlowerChallenge(index);
+  }
   currentSession = new ChallengeSession(challenge);
   currentInputValue = '';
   const q = challenge.flowerQuestion;
@@ -561,6 +670,14 @@ function openFlowerDialog(index: number) {
         audio.playCue('celebrate');
         feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
         updateHUD();
+
+        logRemoteProgress({
+          zoneId: 6,
+          problemId: challenge.flowerQuestion?.id || index + 1,
+          stepId: `flower_${challenge.flowerQuestion?.id || index + 1}`,
+          isCorrect: true,
+          score: 15
+        });
 
         if (delta.allFlowersCompleted) {
           setTimeout(() => {
@@ -609,20 +726,28 @@ function openFlowerDialog(index: number) {
   if (parsed.type === 'numeric') {
     bodyControls = renderMathInputAndNumpad(parsed.unit);
   } else if (parsed.type === 'comparison') {
+    const compOptions = (challenge.options && challenge.options.length > 0)
+      ? challenge.options.map((o: { value: string | number; label: string }) => String(o.value || o.label).trim())
+      : ['<', '=', '>'];
+    const getCompLabel = (v: string) => {
+      if (v === '<') return '&lt;';
+      if (v === '>') return '&gt;';
+      if (v === '<=' || v === '≤') return '&le;';
+      if (v === '>=' || v === '≥') return '&ge;';
+      return v;
+    };
     bodyControls = `
       <div class="math-input-container">
         <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
       </div>
       <div class="comp-options">
-        <button type="button" class="comp-btn" data-value="<">&lt;</button>
-        <button type="button" class="comp-btn" data-value="=">=</button>
-        <button type="button" class="comp-btn" data-value=">">&gt;</button>
+        ${compOptions.map((op: string) => `<button type="button" class="comp-btn" data-value="${op}">${getCompLabel(op)}</button>`).join('')}
       </div>
     `;
   } else {
     bodyControls = `
       <div class="answers flower-answers">
-        ${q.options.map((o, i) => `
+        ${q.options.map((o: { value: string | number; label: string }, i: number) => `
           <button class="answer flower-opt" data-value="${o.value}">
             <kbd>${i + 1}</kbd><span>${o.label}</span>
           </button>
@@ -773,9 +898,43 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
 
 function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
   const challenge = createArchimedesChallenge(monolithIndex, stepIndex);
+  const m = challenge.monolith;
+
+  // Kiểm tra câu hỏi cập nhật từ Google Sheets nếu có
+  let remoteProblem: RemoteProblem | undefined;
+  for (const sheetKey of Object.keys(activeRemoteQuestions)) {
+    const list = activeRemoteQuestions[sheetKey];
+    const found = list?.find((p) => Number(p.id) === m.id);
+    if (found) {
+      remoteProblem = found;
+      break;
+    }
+  }
+
+  if (remoteProblem && remoteProblem.steps && remoteProblem.steps[stepIndex]) {
+    const rStep = remoteProblem.steps[stepIndex];
+    challenge.prompt = rStep.prompt;
+    challenge.options = rStep.options.map((o) => ({ value: o.value, label: o.label }));
+    challenge.answer = rStep.answer;
+    challenge.hints = rStep.hints;
+    challenge.explanation = rStep.explanation;
+    if (rStep.diagramSvg) challenge.diagramSvg = rStep.diagramSvg;
+    if (remoteProblem.title) challenge.title = remoteProblem.subtitle || remoteProblem.title;
+    if (remoteProblem.badge) challenge.badge = remoteProblem.badge;
+    if (remoteProblem.color) challenge.color = remoteProblem.color;
+    challenge.step = {
+      stepId: rStep.stepId,
+      prompt: rStep.prompt,
+      options: rStep.options,
+      answer: rStep.answer,
+      hints: rStep.hints,
+      explanation: rStep.explanation,
+      diagramSvg: rStep.diagramSvg
+    };
+  }
+
   currentSession = new ChallengeSession(challenge);
   currentInputValue = '';
-  const m = challenge.monolith;
   const step = challenge.step;
   const isDone = adventure.getState().monoliths[monolithIndex];
   const parsed = parseAnswer(challenge.answer);
@@ -808,6 +967,14 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
       feedback.className = 'feedback success';
 
       const isLastStep = stepIndex + 1 >= challenge.totalSteps;
+      logRemoteProgress({
+        zoneId: m.zoneId,
+        problemId: m.id,
+        stepId: step.stepId,
+        isCorrect: true,
+        score: isLastStep ? 20 : 10
+      });
+
       if (!isLastStep) {
         audio.playCue('correct');
         feedback.textContent = `✓ Chính xác! Bước ${stepIndex + 1} hoàn thành xuất sắc!`;
@@ -856,6 +1023,13 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
         $('arch-finish-btn').onclick = () => openArchimedesMapDialog(m.zoneId);
       }
     } else {
+      logRemoteProgress({
+        zoneId: m.zoneId,
+        problemId: m.id,
+        stepId: step.stepId,
+        isCorrect: false,
+        score: 0
+      });
       if (inputBox) {
         inputBox.classList.remove('shake');
         void inputBox.offsetWidth;
@@ -873,14 +1047,22 @@ function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
   if (parsed.type === 'numeric') {
     bodyControls = renderMathInputAndNumpad(parsed.unit);
   } else if (parsed.type === 'comparison') {
+    const compOptions = (step.options && step.options.length > 0)
+      ? step.options.map((o: { value: string | number; label: string }) => String(o.value || o.label).trim())
+      : ['<', '=', '>'];
+    const getCompLabel = (v: string) => {
+      if (v === '<') return '&lt;';
+      if (v === '>') return '&gt;';
+      if (v === '<=' || v === '≤') return '&le;';
+      if (v === '>=' || v === '≥') return '&ge;';
+      return v;
+    };
     bodyControls = `
       <div class="math-input-container">
         <div id="math-input-box" class="math-input-display placeholder" tabindex="0">?</div>
       </div>
       <div class="comp-options">
-        <button type="button" class="comp-btn" data-value="<">&lt;</button>
-        <button type="button" class="comp-btn" data-value="=">=</button>
-        <button type="button" class="comp-btn" data-value=">">&gt;</button>
+        ${compOptions.map((op: string) => `<button type="button" class="comp-btn" data-value="${op}">${getCompLabel(op)}</button>`).join('')}
       </div>
     `;
   } else {
@@ -1021,12 +1203,54 @@ function setWheelControlEnabled(val: boolean) {
 
 function settings() {
   const state = adventure.getState();
+  const profile = getExplorerProfile();
   const stats = Object.values(state.questionStats),
     attempts = stats.reduce((a, s) => a + s.attempts, 0),
     correct = stats.reduce((a, s) => a + s.correct, 0);
   openDialog(
     'Một chút cài đặt',
-    `<div class="settings-row"><span>Hiệu ứng âm thanh</span><button id="toggle-sound" class="switch" role="switch" aria-checked="${state.sound}" aria-label="Hiệu ứng âm thanh"><i></i></button></div><div class="settings-row"><span>Nhạc nền nhẹ nhàng</span><button id="toggle-music" class="switch" role="switch" aria-checked="${state.music}" aria-label="Nhạc nền"><i></i></button></div><div class="settings-row"><span>Bánh xe di chuyển (Wheel Control)</span><button id="toggle-wheel" class="switch" role="switch" aria-checked="${isWheelControlEnabled()}" aria-label="Bánh xe di chuyển"><i></i></button></div><div class="progress-summary"><span><strong>${state.xp}</strong>XP tích lũy</span><span><strong>${attempts}</strong>Lượt trả lời</span><span><strong>${attempts ? Math.round((correct / attempts) * 100) : 0}%</strong>Trả lời đúng</span></div><p class="book-note">Tiến trình tự lưu trên trình duyệt này, không cần tài khoản. Xóa dữ liệu trình duyệt sẽ xóa tiến trình.</p><button id="save-now" class="secondary wide">${icon('save')} Lưu tiến trình</button><button id="return-menu" class="text-button centered">Về màn hình chính</button><button id="reset-progress" class="text-button danger centered">${icon('reset')} Chơi lại từ đầu</button>`,
+    `<div class="settings-row"><span>Hiệu ứng âm thanh</span><button id="toggle-sound" class="switch" role="switch" aria-checked="${state.sound}" aria-label="Hiệu ứng âm thanh"><i></i></button></div>
+    <div class="settings-row"><span>Nhạc nền nhẹ nhàng</span><button id="toggle-music" class="switch" role="switch" aria-checked="${state.music}" aria-label="Nhạc nền"><i></i></button></div>
+    <div class="settings-row"><span>Bánh xe di chuyển (Wheel Control)</span><button id="toggle-wheel" class="switch" role="switch" aria-checked="${isWheelControlEnabled()}" aria-label="Bánh xe di chuyển"><i></i></button></div>
+
+    <div class="sheets-config-box">
+      <h4>${icon('settings')} Nguồn Dữ Liệu Giáo Viên (Google Sheets)</h4>
+      <p>Dán link Web App Apps Script để tải câu hỏi và vùng đất riêng của lớp bạn.</p>
+      <input type="text" id="sheets-url-input" class="sheets-url-input" placeholder="https://script.google.com/macros/s/.../exec" value="${getAppsScriptUrl()}">
+      <div class="sheets-action-row">
+        <button id="save-sync-sheets" class="primary small">${icon('check')} Lưu & Đồng bộ ngay</button>
+        <button id="refresh-sheets-btn" class="secondary small" title="Tải lại câu hỏi mới nhất từ Google Sheets">${icon('reset')} Tải lại câu hỏi</button>
+        <button id="seed-sheets-btn" class="secondary small" title="Nạp toàn bộ 40 bài Archimedes và 10 bài Vườn Hoa lên Google Sheets">${icon('star')} ⚡ Khởi tạo 50 câu hỏi lên Sheets</button>
+      </div>
+    </div>
+
+    <div class="sheets-config-box">
+      <h4>${icon('crown')} Hồ Sơ Dũng Sĩ</h4>
+      <p>Thông tin ghi nhận kết quả và nhật ký làm bài trên Google Sheets.</p>
+      <div class="profile-inputs-row">
+        <div class="profile-field">
+          <label for="profile-name">Tên dũng sĩ:</label>
+          <input type="text" id="profile-name" value="${profile.nickname}">
+        </div>
+        <div class="profile-field">
+          <label for="profile-class">Lớp học:</label>
+          <input type="text" id="profile-class" value="${profile.className}">
+        </div>
+      </div>
+      <div class="sheets-action-row">
+        <button id="save-profile-btn" class="secondary small">${icon('check')} Lưu hồ sơ</button>
+      </div>
+    </div>
+
+    <div class="progress-summary">
+      <span><strong>${state.xp}</strong>XP tích lũy</span>
+      <span><strong>${attempts}</strong>Lượt trả lời</span>
+      <span><strong>${attempts ? Math.round((correct / attempts) * 100) : 0}%</strong>Trả lời đúng</span>
+    </div>
+    <p class="book-note">Tiến trình tự lưu trên trình duyệt này, không cần tài khoản. Xóa dữ liệu trình duyệt sẽ xóa tiến trình.</p>
+    <button id="save-now" class="secondary wide">${icon('save')} Lưu tiến trình</button>
+    <button id="return-menu" class="text-button centered">Về màn hình chính</button>
+    <button id="reset-progress" class="text-button danger centered">${icon('reset')} Chơi lại từ đầu</button>`,
     'settings'
   );
   $('toggle-sound').onclick = () => {
@@ -1044,6 +1268,86 @@ function settings() {
     setWheelControlEnabled(!isWheelControlEnabled());
     settings();
   };
+
+  $('save-sync-sheets').onclick = () => {
+    const input = $<HTMLInputElement>('sheets-url-input');
+    if (input) {
+      const url = input.value.trim();
+      setAppsScriptUrl(url);
+      if (!url) {
+        toast('Đã bỏ cấu hình URL Google Sheets.');
+        return;
+      }
+      toast('Đang kết nối tới Google Sheets...');
+      fetchRemoteData(url)
+        .then(fresh => {
+          if (fresh) {
+            syncDynamicContent(fresh);
+            toast('✨ Đã kết nối và đồng bộ câu hỏi mới thành công!');
+          }
+        })
+        .catch(err => {
+          toast(`⚠️ Lỗi kết nối Google Sheets: ${err.message}`);
+        });
+    }
+  };
+
+  $('refresh-sheets-btn').onclick = () => {
+    const input = $<HTMLInputElement>('sheets-url-input');
+    const url = (input ? input.value.trim() : '') || getAppsScriptUrl();
+    if (!url) {
+      toast('⚠️ Vui lòng cấu hình URL Google Apps Script trước.');
+      return;
+    }
+    toast('⏳ Đang tải lại câu hỏi mới nhất từ Google Sheets...');
+    fetchRemoteData(url)
+      .then((fresh) => {
+        if (fresh) {
+          syncDynamicContent(fresh);
+          toast('✨ Đã tải lại câu hỏi mới nhất từ Google Sheets thành công!');
+        }
+      })
+      .catch((err) => {
+        toast(`⚠️ Không thể tải dữ liệu: ${err.message}`);
+      });
+  };
+
+  $('seed-sheets-btn').onclick = () => {
+    const input = $<HTMLInputElement>('sheets-url-input');
+    const url = input ? input.value.trim() : getAppsScriptUrl();
+    if (!url) {
+      toast('⚠️ Vui lòng dán URL Google Apps Script trước khi khởi tạo.');
+      return;
+    }
+    setAppsScriptUrl(url);
+    toast('⏳ Đang khởi tạo toàn bộ 50 bài toán lên Google Sheets...');
+    seedRemoteDatabase(url)
+      .then((res) => {
+        toast(`✨ ${res.message}`);
+        return fetchRemoteData(url);
+      })
+      .then((fresh) => {
+        if (fresh) syncDynamicContent(fresh);
+      })
+      .catch((err) => {
+        toast(`⚠️ Khởi tạo thất bại: ${err.message}`);
+      });
+  };
+
+  $('save-profile-btn').onclick = () => {
+    const nameInput = $<HTMLInputElement>('profile-name');
+    const classInput = $<HTMLInputElement>('profile-class');
+    if (nameInput && classInput) {
+      saveExplorerProfile({
+        nickname: nameInput.value.trim() || 'Dũng Sĩ Tí Hon',
+        className: classInput.value.trim() || 'Lớp 2',
+        isAnonymous: false
+      });
+      updateHUD();
+      toast('Đã lưu hồ sơ dũng sĩ!');
+    }
+  };
+
   $('save-now').onclick = () => {
     if (adventure.save()) toast('Đã lưu hành trình của bạn trên thiết bị này.');
   };
@@ -1071,6 +1375,7 @@ function settings() {
   };
 }
 $('settings').onclick = settings;
+document.querySelector('.player-card')?.addEventListener('click', () => settings());
 $('sound').onclick = () => {
   const state = adventure.getState();
   adventure.setAudio(!state.sound, state.music);
@@ -1100,8 +1405,11 @@ document.addEventListener('keydown', e => {
           if (submitBtn && !submitBtn.disabled) submitBtn.click();
           return;
         }
-        if (['<', '>', '='].includes(e.key)) {
-          const compBtn = document.querySelector<HTMLButtonElement>(`.comp-btn[data-value="${e.key}"]`);
+        if (['<', '>', '=', '≤', '≥'].includes(e.key)) {
+          let targetVal = e.key;
+          if (e.key === '≤') targetVal = '<=';
+          else if (e.key === '≥') targetVal = '>=';
+          const compBtn = document.querySelector<HTMLButtonElement>(`.comp-btn[data-value="${targetVal}"]`);
           if (compBtn && !compBtn.disabled) {
             e.preventDefault();
             compBtn.click();
@@ -1350,6 +1658,14 @@ try {
   };
   $('loading').hidden = true;
   updateHUD();
+
+  // Nạp dữ liệu zones và câu hỏi ngay khi ứng dụng khởi động (áp dụng cache 30 phút & Stale-While-Revalidate)
+  loadZonesAndQuestions((fresh) => {
+    syncDynamicContent(fresh);
+    console.log('✨ [Sheets] Đã đồng bộ câu hỏi mới nhất từ Google Sheets!');
+  }).then((data) => {
+    syncDynamicContent(data);
+  });
 } catch (error) {
   $('loading').innerHTML =
     '<strong>Chưa mở được thế giới 3D</strong><p>Hãy bật tăng tốc đồ họa trong trình duyệt, hoặc thử Chrome / Edge mới hơn.</p><button class="primary" onclick="location.reload()">Thử lại</button>';

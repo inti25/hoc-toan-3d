@@ -60,10 +60,46 @@ _Avoid_: Phân vùng, Cụm level, Bãi quái
 Quảng trường trung chuyển kiến trúc đá cổ kính chứa các Cổng Dịch Chuyển ánh sáng nối trực tiếp tới 5 Ốc Đảo Chuyên Đề và Vườn Hoa Tri Thức.
 _Avoid_: Sảnh chờ, Điểm dịch chuyển chung
 
-**Tinh Thể Phong Ấn (Rune Crystal Beacon)**:
-Khối đá ma thuật lơ lửng trên đỉnh mỗi Bia Đá Tri Thức, phát sáng rực rỡ hào quang chuyên đề khi người chơi hoàn thành bài toán.
-_Avoid_: Cục ngọc, Điểm sáng, Hạt particle
+**Bản Mẫu Vùng Đất (Zone Template)**:
+Khuôn mẫu định nghĩa hình thái không gian 3D (loại địa hình, kích thước đảo, bố cục thực thể tương tác) và chuẩn dữ liệu câu hỏi đi kèm.
+_Avoid_: Scene preset, Layout mẫu, Map template
 
+**Sổ Đăng Ký Vùng Đất (Zone Registry)**:
+Bảng tính trung tâm lưu trữ danh mục và thuộc tính của tất cả các vùng đất (mã vùng, tên hiển thị, template sử dụng, liên kết sheet câu hỏi, màu sắc hào quang).
+_Avoid_: Bảng cài đặt, Config sheet, Danh mục đảo
 
+**Bảng Thử Thách Vùng Đất (Zone Quest Sheet)**:
+Trang tính chứa ngân hàng câu hỏi, các bước giải, gợi ý và đáp án cho một vùng đất cụ thể.
+_Avoid_: Sheet câu hỏi, Tab bài tập
 
+**Nhật Ký Thám Hiểm Trực Tuyến (Remote Adventure Log)**:
+Bảng ghi nhận tiến trình, mốc hoàn thành và kết quả thử thách của người chơi được đồng bộ lên Google Sheets qua Apps Script.
+_Avoid_: Bảng điểm, Save log, Lịch sử làm bài
 
+**Bản Mẫu Bố Cục Thử Thách (Procedural Layout Template)**:
+Quy tắc hình học tự động sắp xếp các thực thể học tập (Bia đá, Cây hoa) trên bề mặt đảo 3D theo dạng luống hoa, vòng tròn đá hoặc lưới tọa độ đều đặn.
+_Avoid_: Thuật toán xếp map, Auto layout
+
+**Hồ Sơ Dũng Sĩ (Explorer Profile)**:
+Thông tin định danh nhẹ của học sinh gồm biệt danh và lớp học, được lưu cục bộ trên thiết bị và đính kèm vào Nhật Ký Thám Hiểm khi nộp bài.
+_Avoid_: Tài khoản người dùng, User account
+
+**Kho Dự Phòng Cục Bộ (Bundled Fallback Cache)**:
+Tập dữ liệu câu hỏi và bản đồ dựng sẵn trong mã nguồn client kết hợp bộ nhớ đệm trình duyệt, đảm bảo thế giới 3D luôn khởi động tức thì 60fps trước khi đồng bộ Apps Script.
+_Avoid_: Mock data, Dữ liệu nháp
+
+**Cổng Hào Quang Năng Động (Dynamic Portal Arch)**:
+Cổng vòm dịch chuyển phát sáng được tự động bố trí vòng quanh Đền Cổng Archimedes tương ứng với từng vùng đất đăng ký mới trên Google Sheets.
+_Avoid_: Cửa tele động, Cổng tự sinh
+
+**Bộ Lọc Phục Hồi Dữ Liệu (Resilient Data Sanitizer)**:
+Cơ chế tự động dọn dẹp khoảng trắng, bổ sung phương án khuyết và cô lập dòng lỗi từ Google Sheets để bảo toàn trải nghiệm 3D liên tục cho học sinh.
+_Avoid_: Trình kiểm tra lỗi, Error checker
+
+**Bản Khởi Tạo Toàn Diện (Full Kingdom Seed)**:
+Gói dữ liệu gốc gồm 40 bài toán Archimedes (phân chia 5 ốc đảo chuyên đề), 10 bài toán Vườn Hoa và Sổ Đăng Ký CONFIG được nạp tự động lên Google Sheets.
+_Avoid_: File import mẫu, Dữ liệu seed
+
+**Cổng Khởi Tạo Trực Tiếp (One-Click Seed Port)**:
+Cơ chế kích hoạt nạp toàn bộ kho câu hỏi gốc lên Google Sheets trực tiếp từ giao diện Cài Đặt của game, qua lệnh CLI hoặc hàm Apps Script.
+_Avoid_: Nút import, Tool nạp data

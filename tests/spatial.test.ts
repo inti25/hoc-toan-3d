@@ -75,3 +75,34 @@ test('SpatialWorld responds accurately to mobile and tablet wheel joystick input
   assert.ok(poseRight.x > initialX, 'Player moves right along +x');
 });
 
+test('SpatialWorld supports dynamic islands and dynamic portal transits', () => {
+  const world = new SpatialWorld(0, 0);
+
+  // Vị trí (300, 300) ban đầu là void, không thể di chuyển
+  assert.equal(world.isWithinLand(300, 300), false);
+  assert.equal(world.canMove(300, 300), false);
+
+  // Khai báo một Ốc Đảo mới ở (300, 300) với kích thước 30x30
+  world.setDynamicData(
+    [{ id: 99, name: 'Đảo Mới', center: { x: 300, z: 300 }, width: 30, depth: 30 }],
+    [{ x: 300, z: 302 }],
+    [{ id: 'hub_to_new', name: 'Đến Đảo Mới', source: { x: 60, z: 10 }, target: { x: 300, z: 295 }, triggerRadius: 1.5 }]
+  );
+
+  // Bây giờ vị trí (300, 300) đã là đất liền hợp lệ
+  assert.equal(world.isWithinLand(300, 300), true);
+  assert.equal(world.canMove(300, 300), true);
+
+  // Kiểm tra nhận diện bia đá trên đảo mới
+  world.teleport(300, 301.5);
+  assert.equal(world.nearMonolithIndex(), 0);
+
+  // Kiểm tra dịch chuyển qua portal động
+  world.teleport(60, 10);
+  const transit = world.checkPortalTransit(0.5);
+  assert.ok(transit !== null);
+  assert.equal(transit?.id, 'hub_to_new');
+  assert.equal(world.getPose().x, 300);
+  assert.equal(world.getPose().z, 295);
+});
+
