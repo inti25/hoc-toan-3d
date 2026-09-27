@@ -1,4 +1,6 @@
 export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY';
+export type ZoneThemeType = 'GARDEN' | 'RUINS' | 'FOREST' | 'CRYSTAL' | 'VILLAGE';
+export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface RemoteStep {
   stepId: string;
@@ -28,6 +30,8 @@ export interface RemoteZoneConfig {
   title: string;
   description: string;
   template: ZoneTemplateType;
+  theme?: ZoneThemeType;
+  decorDensity?: DecorDensityType;
   sheetName: string;
   center: { x: number; z: number };
   width: number;
@@ -41,6 +45,28 @@ export interface ExplorerProfile {
   nickname: string;
   className: string;
   isAnonymous: boolean;
+}
+
+/**
+ * Tự động tính toán vị trí vòng cung quanh biển (Archipelago Orbital Radius)
+ * nếu giáo viên để trống hoặc để tọa độ (0, 0)
+ * Bán kính từ 110m đến 175m cách đảo trung tâm (Làng Khởi Đầu), phân bố đều theo góc.
+ */
+export function computeArchipelagoOrbitalPosition(
+  zoneIndex: number,
+  totalZones = 8,
+  minRadius = 110,
+  maxRadius = 175
+): { x: number; z: number } {
+  const safeTotal = Math.max(totalZones, 6);
+  // Góc cơ bản phân bố theo số lượng đảo, tránh góc 0 (hướng làng và vườn hoa)
+  const angle = (zoneIndex / safeTotal) * Math.PI * 2 + 0.45;
+  // Bán kính zic-zac tự nhiên
+  const radius = minRadius + (zoneIndex % 3) * ((maxRadius - minRadius) / 2);
+  return {
+    x: Math.round(Math.cos(angle) * radius),
+    z: Math.round(Math.sin(angle) * radius)
+  };
 }
 
 /**

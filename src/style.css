@@ -59,6 +59,17 @@
 .archimedes-step-indicator{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:bold;background:#e6efe0;color:#336449;padding:4px 10px;border-radius:10px;margin-bottom:10px}
 .archimedes-diagram-box{background:#fdfefb;border:1px solid #dce8d3;border-radius:12px;padding:12px;margin:12px 0;display:flex;justify-content:center}
 
+.zone-banner{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:#f1f8ed;border:1.5px solid #d0e4c8;border-radius:14px;padding:12px 16px;margin-bottom:14px}
+.zone-banner-info h4{margin:0 0 4px;font-size:15px;color:var(--green);display:flex;align-items:center;gap:6px}
+.zone-banner-info p{margin:0;font-size:11px;color:#557564}
+.zone-banner-teleport{font-size:12px;font-weight:700;padding:8px 14px;border-radius:10px;background:var(--green);color:#fffceb;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:transform .15s,background .15s}
+.zone-banner-teleport:hover{background:#1e5a48;transform:translateY(-1px)}
+.zone-overview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;max-height:48vh;overflow-y:auto;padding-right:6px;margin-bottom:12px}
+.zone-overview-card{background:#ffffff;border:1.5px solid #dce8d3;border-radius:14px;padding:14px;display:flex;flex-direction:column;justify-content:space-between;gap:8px;transition:transform .15s,box-shadow .15s}
+.zone-overview-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px #123e3415;border-color:#99cf8e}
+.zone-card-title{font-size:15px;font-weight:800;color:var(--green);display:flex;align-items:center;gap:6px}
+.zone-card-meta{font-size:11px;color:#637b6c}
+
 /* Wheel Control & Tablet/Mobile Touch Navigation */
 .touch-controls {
   display: none;

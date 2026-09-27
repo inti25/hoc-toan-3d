@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
-import { SpatialWorld } from './SpatialWorld';
+import { SpatialWorld, type PortalLink } from './SpatialWorld';
+import type { RemoteZoneConfig } from '../data/remoteTypes';
 
 interface Obstacle { x: number; z: number; radius: number }
 interface Spark { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }
@@ -588,13 +589,153 @@ export class World {
     });
   }
 
+  private dynamicIslandIds = new Set<number>();
+  private dynamicObstacles: Obstacle[] = [];
+
+  private createIslandScenery(z: {
+    id: number;
+    name: string;
+    theme?: string;
+    decorDensity?: string;
+    center: { x: number; z: number };
+    width: number;
+    depth: number;
+    color: number;
+  }): Obstacle[] {
+    const obstacles: Obstacle[] = [];
+    const theme = (z.theme || 'RUINS').toUpperCase();
+    const density = (z.decorDensity || 'MEDIUM').toUpperCase();
+    const countMult = density === 'HIGH' ? 1.4 : (density === 'LOW' ? 0.6 : 1.0);
+
+    const halfW = z.width / 2;
+    const halfD = z.depth / 2;
+    const cx = z.center.x;
+    const cz = z.center.z;
+
+    const decorGroup = new THREE.Group();
+    decorGroup.position.set(cx, 0, cz);
+
+    if (theme === 'GARDEN') {
+      // 1. Đài phun nước nhỏ ở giữa
+      const fountain = new THREE.Group();
+      fountain.position.set(0, 0, 0);
+      this.cylinder(fountain, 0, .25, 0, 1.6, 1.8, .5, 0xdcd1b8, 16);
+      this.cylinder(fountain, 0, .42, 0, 1.4, 1.4, .12, 0x38bdf8, 16);
+      this.cylinder(fountain, 0, 1.0, 0, .3, .45, 1.1, 0x8a7051, 10);
+      this.sphere(fountain, 0, 1.6, 0, .22, 0xfacc15);
+      decorGroup.add(fountain);
+      obstacles.push({ x: cx, z: cz, radius: 1.8 });
+
+      // 2. Viền hoa xung quanh mép đảo
+      const flowerCount = Math.round(12 * countMult);
+      const flowerColors = [0xf43f5e, 0xec4899, 0xa855f7, 0x38bdf8, 0xfbbf24];
+      for (let i = 0; i < flowerCount; i++) {
+        const angle = (i / flowerCount) * Math.PI * 2;
+        const fx = Math.cos(angle) * (halfW - 2.5);
+        const fz = Math.sin(angle) * (halfD - 2.5);
+        const col = flowerColors[i % flowerColors.length];
+        this.sphere(decorGroup, fx, .2, fz, .35, col);
+        this.sphere(decorGroup, fx, .1, fz, .45, 0x22c55e);
+      }
+    } else if (theme === 'RUINS') {
+      // 1. Hàng cột đá cổ Hy Lạp ở 4 góc
+      const colCorners = [
+        [-halfW + 3.5, -halfD + 3.5],
+        [halfW - 3.5, -halfD + 3.5],
+        [-halfW + 3.5, halfD - 3.5],
+        [halfW - 3.5, halfD - 3.5]
+      ];
+      colCorners.forEach(([ox, oz]) => {
+        const pillar = new THREE.Group();
+        pillar.position.set(ox, 0, oz);
+        this.cylinder(pillar, 0, .2, 0, .9, 1.0, .35, 0x94a3b8, 10);
+        this.cylinder(pillar, 0, 1.8, 0, .38, .45, 3.2, 0xcfd8dc, 8);
+        this.cylinder(pillar, 0, 3.5, 0, .55, .42, .25, 0x94a3b8, 8);
+        this.box(pillar, 0, 3.75, 0, 1.2, .25, 1.2, 0xe2e8f0);
+        decorGroup.add(pillar);
+        obstacles.push({ x: cx + ox, z: cz + oz, radius: 1.0 });
+      });
+
+      // 2. Tảng đá rêu phong
+      const rockCount = Math.round(6 * countMult);
+      for (let i = 0; i < rockCount; i++) {
+        const angle = (i / rockCount) * Math.PI * 2 + 0.3;
+        const rx = Math.cos(angle) * (halfW - 3);
+        const rz = Math.sin(angle) * (halfD - 3);
+        const stone = this.box(decorGroup, rx, .4, rz, 1.4, .8, 1.1, 0x64748b);
+        stone.rotation.y = angle;
+        obstacles.push({ x: cx + rx, z: cz + rz, radius: .9 });
+      }
+    } else if (theme === 'FOREST') {
+      // 1. Cây cối xung quanh đảo
+      const treeCount = Math.round(8 * countMult);
+      for (let i = 0; i < treeCount; i++) {
+        const angle = (i / treeCount) * Math.PI * 2;
+        const tx = Math.cos(angle) * (halfW - 3.0);
+        const tz = Math.sin(angle) * (halfD - 3.0);
+        this.tree(cx + tx, cz + tz, 1.2, i);
+        obstacles.push({ x: cx + tx, z: cz + tz, radius: .6 });
+      }
+
+      // 2. Nấm ma thuật phát sáng
+      const shroomCount = Math.round(10 * countMult);
+      const shroomColors = [0xef4444, 0xa855f7, 0xf97316];
+      for (let i = 0; i < shroomCount; i++) {
+        const angle = (i / shroomCount) * Math.PI * 2 + 0.4;
+        const sx = Math.cos(angle) * (halfW * 0.6);
+        const sz = Math.sin(angle) * (halfD * 0.6);
+        this.cylinder(decorGroup, sx, .2, sz, .08, .12, .4, 0xf1f5f9, 6);
+        this.sphere(decorGroup, sx, .45, sz, .28, shroomColors[i % shroomColors.length]);
+      }
+    } else if (theme === 'CRYSTAL') {
+      // 1. Khối pha lê phát sáng
+      const crystalCount = Math.round(8 * countMult);
+      const crystalColors = [0x22d3ee, 0xc084fc, 0xf472b6, 0x38bdf8];
+      for (let i = 0; i < crystalCount; i++) {
+        const angle = (i / crystalCount) * Math.PI * 2;
+        const kx = Math.cos(angle) * (halfW - 3.2);
+        const kz = Math.sin(angle) * (halfD - 3.2);
+        const cCol = crystalColors[i % crystalColors.length];
+
+        const cGroup = new THREE.Group();
+        cGroup.position.set(kx, 0, kz);
+        this.cylinder(cGroup, 0, .15, 0, .8, .9, .3, 0x1e293b, 8);
+        const cMesh = this.cylinder(cGroup, 0, 1.2, 0, 0, .35, 2.2, cCol, 6);
+        cMesh.rotation.z = (i % 2 === 0 ? 0.15 : -0.15);
+        decorGroup.add(cGroup);
+        obstacles.push({ x: cx + kx, z: cz + kz, radius: .8 });
+      }
+    } else if (theme === 'VILLAGE') {
+      // 1. Nhà gỗ nhỏ ở góc đảo
+      const hx = -halfW + 5.5;
+      const hz = -halfD + 5.5;
+      this.house(cx + hx, cz + hz, 0xd97706, 0.85);
+      obstacles.push({ x: cx + hx, z: cz + hz, radius: 2.0 });
+
+      // 2. Hàng rào gỗ
+      const fenceCount = Math.round(5 * countMult);
+      for (let i = 0; i < fenceCount; i++) {
+        const fx = halfW - 3;
+        const fz = -halfD + 4 + i * 2.5;
+        this.box(decorGroup, fx, .5, fz, .15, .8, 2.2, 0x854d0e);
+        this.box(decorGroup, fx, .3, fz, .2, .15, 2.4, 0xa16207);
+        obstacles.push({ x: cx + fx, z: cz + fz, radius: .5 });
+      }
+    }
+
+    this.scene.add(decorGroup);
+    return obstacles;
+  }
+
   public renderDynamicZones(
-    zones: Array<{ id: number; name: string; template: string; center: { x: number; z: number }; width: number; depth: number; color: number }>,
+    zones: RemoteZoneConfig[],
     positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = []
   ) {
-    // 1. Dựng các hòn đảo động (chỉ dựng nếu ngoài 5 khu mặc định id > 5)
+    const customPortals: PortalLink[] = [];
+
+    // 1. Dựng các hòn đảo động và cảnh quan
     zones.forEach((z) => {
-      if (z.id > 5 && z.id !== 6) {
+      if (z.id > 5 && z.id !== 6 && !this.dynamicIslandIds.has(z.id)) {
         this.createSingleIsland({
           cx: z.center.x,
           cz: z.center.z,
@@ -603,21 +744,43 @@ export class World {
           grassColor: z.color,
           soilColor: 0x93a388
         });
+        this.dynamicIslandIds.add(z.id);
 
-        // 2. Tạo Cổng Dịch Chuyển tại Đền Cổng Archimedes (x: 60, z: 0)
+        // Sinh cảnh quan theo chủ đề
+        const islandObs = this.createIslandScenery(z);
+        this.dynamicObstacles.push(...islandObs);
+
+        // Cổng kết nối từ Hub tới đảo mới
         const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
         const hubX = 60 + Math.cos(angle) * 8.5;
         const hubZ = Math.sin(angle) * 8.5;
         this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
 
-        // Cổng quay về trên đảo mới
+        // Cổng quay về từ đảo mới về Hub
         const retX = z.center.x - z.width / 2 + 3;
         const retZ = z.center.z;
         this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+
+        customPortals.push(
+          {
+            id: `hub_to_z${z.id}`,
+            name: `Đến ${z.name}`,
+            source: { x: hubX, z: hubZ },
+            target: { x: retX + 2.5, z: retZ },
+            triggerRadius: 1.5
+          },
+          {
+            id: `z${z.id}_to_hub`,
+            name: 'Về Đền Cổng Archimedes',
+            source: { x: retX, z: retZ },
+            target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
+            triggerRadius: 1.5
+          }
+        );
       }
     });
 
-    // Dọn dẹp bất kỳ bia đá nào bị sinh nhầm trong Vườn Hoa (id 1..10)
+    // 2. Dọn dẹp bất kỳ bia đá nào bị sinh nhầm trong Vườn Hoa (id 1..10)
     for (let i = this.monoliths.length - 1; i >= 0; i--) {
       const m = this.monoliths[i];
       if (typeof m.id === 'number' && m.id <= 10) {
@@ -626,11 +789,10 @@ export class World {
       }
     }
 
-    // 3. Dựng các bia đá mới nếu có (chỉ cho các phân khu Archimedes / bia đá, tuyệt đối không dựng bia đá ở Vườn Hoa)
+    // 3. Dựng các bia đá mới nếu có
     const existingIds = new Set(this.monoliths.map((m) => m.id));
     positionedMonoliths.forEach((pm) => {
       const numId = typeof pm.id === 'number' ? pm.id : parseInt(String(pm.id), 10);
-      // Bỏ qua nếu thuộc khu Vườn Hoa (id 1..10) vì Vườn Hoa đã có đài hoa 3D chuyên biệt
       if (isNaN(numId) || numId <= 10 || !pm.position) return;
 
       if (!existingIds.has(numId)) {
@@ -638,6 +800,10 @@ export class World {
         existingIds.add(numId);
       }
     });
+
+    // 4. Đồng bộ hóa sang SpatialWorld
+    const allPositions = positionedMonoliths.filter((pm) => pm.position).map((pm) => pm.position!);
+    this.spatial.setDynamicData(zones, allPositions, customPortals, this.dynamicObstacles);
   }
 
   nearFlower(): number {

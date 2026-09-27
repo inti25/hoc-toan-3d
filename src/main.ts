@@ -32,6 +32,7 @@ import {
   fetchRemoteData,
   resolveZoneProblemsWithPositions,
   seedRemoteDatabase,
+  getBundledFallbackData,
   REMOTE_CACHE_KEY
 } from './core/sheetsClient';
 import type { RemoteZoneConfig, RemoteProblem } from './data/remoteTypes';
@@ -75,6 +76,19 @@ let nearMonolith = -1;
 let frameTick = 0;
 let activeRemoteZones: RemoteZoneConfig[] = [];
 let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
+let activeMonolithProblems: RemoteProblem[] = [];
+
+function getThemeBadgeIcon(theme?: string): string {
+  switch (theme) {
+    case 'GARDEN': return '🌸';
+    case 'FOREST': return '🌲';
+    case 'CRYSTAL': return '💎';
+    case 'VILLAGE': return '🏡';
+    case 'RUINS':
+    default:
+      return '🏛️';
+  }
+}
 
 function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) {
   activeRemoteZones = data.zones;
@@ -92,6 +106,7 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     }
     monolithProblems.push(...resolved);
   });
+  activeMonolithProblems = monolithProblems;
 
   world.renderDynamicZones(
     data.zones,
@@ -107,6 +122,7 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     data.zones,
     monolithProblems.filter((p) => p.position).map((p) => p.position!)
   );
+  updateHUD();
 }
 
 const app = $('app');
@@ -251,10 +267,14 @@ function updateHUD() {
     )
     .join('');
 
-  // Archimedes quest tracker
+  // Archimedes & Kingdom quest tracker
   const monolithCount = state.monoliths.filter(Boolean).length;
-  $('monolith-count').textContent = `${monolithCount} / 40 Bia Đá`;
-  $('archimedes-badges').innerHTML = ARCHIMEDES_ZONES.map((z, i) => {
+  const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
+  $('monolith-count').textContent = `${monolithCount} / ${totalMonoliths} Bia Đá`;
+  const zonesForBadges = activeRemoteZones.length > 0
+    ? activeRemoteZones.filter((z) => z.id !== 6 && z.sheetName !== 'VuonHoa')
+    : ARCHIMEDES_ZONES;
+  $('archimedes-badges').innerHTML = zonesForBadges.map((z, i) => {
     const earned = state.zoneBadges[i];
     return `<span class="archimedes-badge-dot ${earned ? 'earned' : ''}" title="${z.name} (${earned ? 'Đã đạt' : 'Chưa đạt'})">${earned ? '🏆' : '✦'}</span>`;
   }).join('');
@@ -794,145 +814,429 @@ function openFlowerDialog(index: number) {
 
 function openArchimedesMapDialog(selectedZoneId = 0) {
   const state = adventure.getState();
-  const totalCompleted = state.monoliths.filter(Boolean).length;
-  const filteredMonoliths = selectedZoneId === 0
-    ? ARCHIMEDES_MONOLITHS
-    : getMonolithsByZone(selectedZoneId);
+  const zones: RemoteZoneConfig[] = activeRemoteZones.length > 0 ? activeRemoteZones : getBundledFallbackData().zones;
+
+  const totalMonolithCompleted = state.monoliths.filter(Boolean).length;
+  const totalFlowerCompleted = state.flowers.filter(Boolean).length;
+  const badgesEarned = state.zoneBadges.filter(Boolean).length;
 
   const zoneTabsHtml = [
-    `<button class="archimedes-zone-tab" data-zone="0" aria-pressed="${selectedZoneId === 0}">Tất cả (40)</button>`,
-    ...ARCHIMEDES_ZONES.map(z => {
-      const zMonoliths = getMonolithsByZone(z.id);
-      const zDone = zMonoliths.filter(m => state.monoliths[m.id - 306]).length;
-      return `<button class="archimedes-zone-tab" data-zone="${z.id}" aria-pressed="${selectedZoneId === z.id}">${z.title} (${zDone}/${zMonoliths.length})</button>`;
+    `<button class="archimedes-zone-tab" data-zone="0" aria-pressed="${selectedZoneId === 0}">🌐 Toàn Cảnh (${zones.length} Vùng)</button>`,
+    `<button class="archimedes-zone-tab" data-zone="-1" aria-pressed="${selectedZoneId === -1}">🏡 Làng Khởi Đầu</button>`,
+    ...zones.map((z) => {
+      let done = 0;
+      let total = 0;
+      if (z.id === 6 || z.sheetName === 'VuonHoa') {
+        done = totalFlowerCompleted;
+        total = 10;
+      } else if (z.id <= 5) {
+        const zMonoliths = getMonolithsByZone(z.id);
+        done = zMonoliths.filter((m) => state.monoliths[m.id - 306]).length;
+        total = zMonoliths.length;
+      } else {
+        const qList = activeRemoteQuestions[z.sheetName] || [];
+        total = qList.length;
+        done = qList.filter((_, qIdx) => state.monoliths[306 + qIdx]).length;
+      }
+      return `<button class="archimedes-zone-tab" data-zone="${z.id}" aria-pressed="${selectedZoneId === z.id}">${getThemeBadgeIcon(z.theme)} ${z.name} (${done}/${total})</button>`;
     })
   ].join('');
 
-  const monolithsGridHtml = filteredMonoliths.map(m => {
-    const isDone = state.monoliths[m.id - 306];
-    return `
-      <div class="archimedes-monolith-card ${isDone ? 'completed' : ''}" data-id="${m.id}">
-        <div class="archimedes-card-header">
-          <span class="archimedes-card-page">Trang ${m.page}</span>
-          <span class="archimedes-card-status">${isDone ? '🏆 Đã giải' : '✨ Thử thách'}</span>
+  let contentHtml = '';
+
+  if (selectedZoneId === 0) {
+    // 1. Toàn cảnh Vương Quốc
+    const overviewCardsHtml = [
+      `
+      <div class="zone-overview-card">
+        <div>
+          <div class="zone-card-title">🏡 Làng Khởi Đầu</div>
+          <div class="zone-card-meta">Trung tâm Vương Quốc · Tọa độ: (0, 0)</div>
+          <p style="font-size:12px;color:#456755;margin:8px 0">
+            Nơi gặp gỡ Milo dẫn đường, Cây cầu tình bạn (6 đoạn), Cối xay gió và dòng sông thơ mộng.
+          </p>
         </div>
-        <div class="archimedes-card-title">${m.title}</div>
-        <div class="archimedes-card-sub">${m.subtitle}</div>
-        <div class="archimedes-card-actions">
-          <button class="archimedes-card-action" data-index="${m.id - 306}">
-            ${isDone ? `${icon('check')} Xem lại` : `${icon('star')} Giải bài`}
-          </button>
-          <button class="archimedes-card-teleport" data-id="${m.id}" data-x="${m.position.x}" data-z="${m.position.z}" title="Dịch chuyển tức thời đến trước Bia Đá 3D">
-            🚀 Đến ngay
-          </button>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="-6" data-z="5" data-name="Làng Khởi Đầu">
+          🚀 Về Làng Khởi Đầu
+        </button>
+      </div>
+      `,
+      ...zones.map((z) => {
+        let questSummary = '';
+        if (z.id === 6 || z.sheetName === 'VuonHoa') {
+          questSummary = `${totalFlowerCompleted}/10 Cây hoa nở`;
+        } else if (z.id <= 5) {
+          const zMonoliths = getMonolithsByZone(z.id);
+          const done = zMonoliths.filter((m) => state.monoliths[m.id - 306]).length;
+          questSummary = `${done}/${zMonoliths.length} Bia đá tri thức`;
+        } else {
+          const count = (activeRemoteQuestions[z.sheetName] || []).length;
+          questSummary = `${count} Thử thách toán học`;
+        }
+        return `
+        <div class="zone-overview-card">
+          <div>
+            <div class="zone-card-title">${getThemeBadgeIcon(z.theme)} ${z.name}</div>
+            <div class="zone-card-meta">${z.badge} · Chủ đề ${z.theme || 'DI TÍCH'} · (${Math.round(z.center.x)}, ${Math.round(z.center.z)})</div>
+            <p style="font-size:12px;color:#456755;margin:8px 0">
+              Quy mô: ${z.width}m × ${z.depth}m · ${questSummary}
+            </p>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button class="zone-teleport-btn zone-banner-teleport" data-x="${z.center.x - z.width / 2 + 4}" data-z="${z.center.z}" data-name="${z.name}">
+              🚀 Đến đảo này
+            </button>
+            <button class="archimedes-card-action kingdom-zone-inspect-btn" data-zone="${z.id}">
+              🔍 Xem thử thách
+            </button>
+          </div>
         </div>
+        `;
+      })
+    ].join('');
+
+    contentHtml = `
+      <div class="zone-overview-grid">
+        ${overviewCardsHtml}
       </div>
     `;
-  }).join('');
+  } else if (selectedZoneId === -1) {
+    // 2. Làng Khởi Đầu
+    contentHtml = `
+      <div class="zone-banner">
+        <div class="zone-banner-info">
+          <h4>🏡 Làng Khởi Đầu</h4>
+          <p>Trung tâm kết nối các vùng đất kỳ thú · Vị trí: (X: 0, Z: 0)</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="-6" data-z="5" data-name="Làng Khởi Đầu">
+          🚀 Dịch chuyển về Làng Khởi Đầu
+        </button>
+      </div>
+      <div class="zone-overview-card" style="margin-top:12px">
+        <div class="zone-card-title">🌉 Cây cầu tình bạn & Milo</div>
+        <p style="font-size:13px;color:#355a47;margin:8px 0">
+          Tiến độ xây cầu: <b>${state.bridge} / 6 đoạn</b>.<br>
+          Gặp Milo bên bờ sông để cùng luyện tập bảng cửu chương nhân từ ×1 đến ×10!
+        </p>
+      </div>
+    `;
+  } else if (selectedZoneId === 6) {
+    // 3. Vườn Hoa Tri Thức
+    const flowerCardsHtml = Array.from({ length: 10 }, (_, i) => {
+      const bloomed = state.flowers[i];
+      const flowerPos = world?.flowers[i]?.position ?? { x: 13 + (i % 5) * 3, z: -4 + Math.floor(i / 5) * 8 };
+      return `
+        <div class="archimedes-monolith-card ${bloomed ? 'completed' : ''}">
+          <div class="archimedes-card-header">
+            <span class="archimedes-card-page">Cây Hoa #${i + 1}</span>
+            <span class="archimedes-card-status">${bloomed ? '🌸 Đã nở' : '🌱 Đang ấp nụ'}</span>
+          </div>
+          <div class="archimedes-card-title">Hoa Tri Thức Số ${i + 1}</div>
+          <div class="archimedes-card-sub">Làm nở hoa bằng cách trả lời đúng câu hỏi</div>
+          <div class="archimedes-card-actions">
+            <button class="archimedes-card-action flower-open-btn" data-index="${i}">
+              ${bloomed ? `${icon('check')} Xem lại` : `🌸 Làm nở hoa`}
+            </button>
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${flowerPos.x - 1.5}" data-z="${flowerPos.z}" data-name="Cây Hoa ${i + 1}">
+              🚀 Đến ngay
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    contentHtml = `
+      <div class="zone-banner">
+        <div class="zone-banner-info">
+          <h4>🌸 Vườn Hoa Tri Thức</h4>
+          <p>10 Cây hoa thử thách nở rộ kỳ diệu · Vị trí: (X: 20, Z: 0)</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="13" data-z="0" data-name="Vườn Hoa Tri Thức">
+          🚀 Dịch chuyển đến Vườn Hoa
+        </button>
+      </div>
+      <div class="archimedes-monolith-grid">
+        ${flowerCardsHtml}
+      </div>
+    `;
+  } else if (selectedZoneId <= 5) {
+    // 4. Các phân khu Archimedes
+    const currentZone = zones.find((z) => z.id === selectedZoneId);
+    const zMonoliths = getMonolithsByZone(selectedZoneId);
+    const monolithCardsHtml = zMonoliths.map((m) => {
+      const isDone = state.monoliths[m.id - 306];
+      return `
+        <div class="archimedes-monolith-card ${isDone ? 'completed' : ''}" data-id="${m.id}">
+          <div class="archimedes-card-header">
+            <span class="archimedes-card-page">Trang ${m.page}</span>
+            <span class="archimedes-card-status">${isDone ? '🏆 Đã giải' : '✨ Thử thách'}</span>
+          </div>
+          <div class="archimedes-card-title">${m.title}</div>
+          <div class="archimedes-card-sub">${m.subtitle}</div>
+          <div class="archimedes-card-actions">
+            <button class="archimedes-card-action monolith-open-btn" data-index="${m.id - 306}">
+              ${isDone ? `${icon('check')} Xem lại` : `${icon('star')} Giải bài`}
+            </button>
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${m.position.x - 1.5}" data-z="${m.position.z}" data-name="Bia Đá ${m.id}">
+              🚀 Đến ngay
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    contentHtml = `
+      <div class="zone-banner">
+        <div class="zone-banner-info">
+          <h4>${getThemeBadgeIcon(currentZone?.theme)} ${currentZone?.name || 'Vùng Đất Archimedes'}</h4>
+          <p>${currentZone?.badge || ''} · Vị trí: (X: ${currentZone?.center.x}, Z: ${currentZone?.center.z})</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${(currentZone?.center.x || 100) - (currentZone?.width || 36) / 2 + 4}" data-z="${currentZone?.center.z || 0}" data-name="${currentZone?.name}">
+          🚀 Dịch chuyển đến đảo này
+        </button>
+      </div>
+      <div class="archimedes-monolith-grid">
+        ${monolithCardsHtml}
+      </div>
+    `;
+  } else {
+    // 5. Vùng đất tùy biến từ Google Sheets (id > 6)
+    const currentZone = zones.find((z) => z.id === selectedZoneId);
+    const qList = currentZone ? activeRemoteQuestions[currentZone.sheetName] || [] : [];
+    const customCardsHtml = qList.map((p, qIdx) => {
+      const isDone = state.monoliths[306 + qIdx];
+      const pPos = p.position || { x: currentZone?.center.x || 0, z: currentZone?.center.z || 0 };
+      return `
+        <div class="archimedes-monolith-card ${isDone ? 'completed' : ''}" data-id="${p.id}">
+          <div class="archimedes-card-header">
+            <span class="archimedes-card-page">${p.badge || `Thử thách #${p.id}`}</span>
+            <span class="archimedes-card-status">${isDone ? '🏆 Đã giải' : '✨ Thử thách'}</span>
+          </div>
+          <div class="archimedes-card-title">${p.title || `Câu hỏi #${p.id}`}</div>
+          <div class="archimedes-card-sub">${p.subtitle || (p.steps && p.steps[0] ? p.steps[0].prompt : '')}</div>
+          <div class="archimedes-card-actions">
+            <button class="archimedes-card-action monolith-open-btn" data-index="${p.id}">
+              ${isDone ? `${icon('check')} Xem lại` : `${icon('star')} Giải bài`}
+            </button>
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${pPos.x - 1.5}" data-z="${pPos.z}" data-name="${p.title || `Thử thách ${p.id}`}">
+              🚀 Đến ngay
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    contentHtml = `
+      <div class="zone-banner">
+        <div class="zone-banner-info">
+          <h4>${getThemeBadgeIcon(currentZone?.theme)} ${currentZone?.name || 'Vùng Đất Mới'}</h4>
+          <p>${currentZone?.badge || ''} · Chủ đề ${currentZone?.theme || 'DI TÍCH'} · (${Math.round(currentZone?.center.x || 0)}, ${Math.round(currentZone?.center.z || 0)})</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${(currentZone?.center.x || 0) - (currentZone?.width || 36) / 2 + 4}" data-z="${currentZone?.center.z || 0}" data-name="${currentZone?.name}">
+          🚀 Dịch chuyển đến đảo này
+        </button>
+      </div>
+      <div class="archimedes-monolith-grid">
+        ${customCardsHtml || '<p style="padding:20px;text-align:center;color:#666">Chưa có câu hỏi nào trong vùng đất này trên Google Sheets.</p>'}
+      </div>
+    `;
+  }
 
   openDialog(
-    '🏛️ Vùng Đất Luyện Tập Archimedes',
+    '🗺️ Bản Đồ Vương Quốc Học Toán 3D',
     `
-    <div class="dialog-eyebrow">CHỦ ĐỀ 15: LUYỆN TẬP CHUNG · TOÁN 2 ARCHIMEDES</div>
+    <div class="dialog-eyebrow">KHÁM PHÁ TOÀN DIỆN · ĐỒNG BỘ GOOGLE SHEETS & TOÁN 2 ARCHIMEDES</div>
     <div class="archimedes-header-banner">
       <div>
-        <h3>40 Thử Thách Bia Đá Tri Thức</h3>
-        <p>Khám phá 5 phân khu chuyên đề từ trang 128 đến 139 trong sách.</p>
+        <h3>${zones.length + 1} Vùng Đất & Hòn Đảo Tri Thức</h3>
+        <p>Bản đồ thế giới mở 3D: Làng Khởi Đầu, Vườn Hoa và các Quần đảo chuyên đề.</p>
       </div>
       <div class="archimedes-stats">
         <div class="archimedes-stat-box">
-          <strong>${totalCompleted} / 40</strong>
-          <small>Bia Đá Đã Kích Hoạt</small>
+          <strong>${totalMonolithCompleted + totalFlowerCompleted}</strong>
+          <small>Thử Thách Đã Giải</small>
         </div>
         <div class="archimedes-stat-box">
-          <strong>${state.zoneBadges.filter(Boolean).length} / 5</strong>
-          <small>Đại Huy Chương</small>
+          <strong>${badgesEarned} / ${Math.max(5, zones.length)}</strong>
+          <small>Huy Chương</small>
         </div>
+        <button id="map-sync-sheets-btn" class="zone-banner-teleport" style="background:#2563eb;color:#fff;font-size:11px;padding:6px 12px;margin-left:4px" title="Đồng bộ ngay dữ liệu mới nhất từ Google Sheets">
+          🔄 Đồng bộ Sheets
+        </button>
       </div>
     </div>
     <div class="archimedes-zone-tabs" role="tablist">
       ${zoneTabsHtml}
     </div>
-    <div class="archimedes-monolith-grid">
-      ${monolithsGridHtml}
-    </div>
+    ${contentHtml}
     `,
     'archimedesMap'
   );
 
-  document.querySelectorAll<HTMLButtonElement>('.archimedes-zone-tab').forEach(tab => {
+  const mapSyncBtn = $('map-sync-sheets-btn');
+  if (mapSyncBtn) {
+    mapSyncBtn.onclick = () => {
+      const url = getAppsScriptUrl();
+      if (!url) {
+        toast('⚠️ Vui lòng dán URL Google Apps Script trong Cài Đặt trước.');
+        return;
+      }
+      toast('⏳ Đang đồng bộ câu hỏi mới nhất từ Google Sheets...');
+      fetchRemoteData(url)
+        .then((fresh) => {
+          if (fresh) {
+            syncDynamicContent(fresh);
+            toast('✨ Đã cập nhật câu hỏi mới từ Google Sheets!');
+            openArchimedesMapDialog(selectedZoneId);
+          }
+        })
+        .catch((err) => {
+          toast(`⚠️ Không thể đồng bộ: ${err.message}`);
+        });
+    };
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.archimedes-zone-tab').forEach((tab) => {
     tab.onclick = () => {
       const zId = Number(tab.dataset.zone ?? '0');
       openArchimedesMapDialog(zId);
     };
   });
 
-  document.querySelectorAll<HTMLButtonElement>('.archimedes-card-action').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const mIdx = Number(btn.dataset.index ?? '0');
-      openArchimedesMonolithDialog(mIdx, 0);
+  document.querySelectorAll<HTMLButtonElement>('.kingdom-zone-inspect-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const zId = Number(btn.dataset.zone ?? '0');
+      openArchimedesMapDialog(zId);
     };
   });
 
-  document.querySelectorAll<HTMLButtonElement>('.archimedes-card-teleport').forEach(btn => {
+  document.querySelectorAll<HTMLButtonElement>('.zone-teleport-btn').forEach((btn) => {
     btn.onclick = (e) => {
       e.stopPropagation();
       const x = Number(btn.dataset.x);
       const z = Number(btn.dataset.z);
-      const id = btn.dataset.id;
+      const name = btn.dataset.name || 'đích đến';
       closeDialog();
-      world.teleport(x - 1.5, z);
-      toast(`Đã dịch chuyển đến trước Bia Đá ${id}!`);
+      world.teleport(x, z);
+      audio.playCue('jump');
+      world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
+      toast(`✨ Đã dịch chuyển đến ${name}!`);
     };
   });
 
-  document.querySelectorAll<HTMLElement>('.archimedes-monolith-card').forEach(card => {
-    card.onclick = () => {
-      const mId = Number(card.dataset.id ?? '306');
-      openArchimedesMonolithDialog(mId - 306, 0);
+  document.querySelectorAll<HTMLButtonElement>('.monolith-open-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const ref = btn.dataset.index ?? '0';
+      openArchimedesMonolithDialog(isNaN(Number(ref)) ? ref : Number(ref), 0);
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.flower-open-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const fIdx = Number(btn.dataset.index ?? '0');
+      openFlowerDialog(fIdx);
     };
   });
 }
 
+function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 0) {
+  let challenge: ArchimedesChallenge;
 
-function openArchimedesMonolithDialog(monolithIndex: number, stepIndex = 0) {
-  const challenge = createArchimedesChallenge(monolithIndex, stepIndex);
-  const m = challenge.monolith;
-
-  // Kiểm tra câu hỏi cập nhật từ Google Sheets nếu có
   let remoteProblem: RemoteProblem | undefined;
   for (const sheetKey of Object.keys(activeRemoteQuestions)) {
     const list = activeRemoteQuestions[sheetKey];
-    const found = list?.find((p) => Number(p.id) === m.id);
+    const found = list?.find((p) => Number(p.id) === Number(monolithRef));
     if (found) {
       remoteProblem = found;
       break;
     }
   }
+  if (!remoteProblem && typeof monolithRef === 'number' && activeMonolithProblems[monolithRef]) {
+    remoteProblem = activeMonolithProblems[monolithRef];
+  }
 
-  if (remoteProblem && remoteProblem.steps && remoteProblem.steps[stepIndex]) {
-    const rStep = remoteProblem.steps[stepIndex];
-    challenge.prompt = rStep.prompt;
-    challenge.options = rStep.options.map((o) => ({ value: o.value, label: o.label }));
-    challenge.answer = rStep.answer;
-    challenge.hints = rStep.hints;
-    challenge.explanation = rStep.explanation;
-    if (rStep.diagramSvg) challenge.diagramSvg = rStep.diagramSvg;
-    if (remoteProblem.title) challenge.title = remoteProblem.subtitle || remoteProblem.title;
-    if (remoteProblem.badge) challenge.badge = remoteProblem.badge;
-    if (remoteProblem.color) challenge.color = remoteProblem.color;
-    challenge.step = {
-      stepId: rStep.stepId,
+  let archIndex = -1;
+  if (typeof monolithRef === 'number' && monolithRef >= 0 && monolithRef < ARCHIMEDES_MONOLITHS.length) {
+    archIndex = monolithRef;
+  } else {
+    archIndex = ARCHIMEDES_MONOLITHS.findIndex((m) => m.id === Number(monolithRef));
+  }
+  if (archIndex === -1 && remoteProblem) {
+    archIndex = ARCHIMEDES_MONOLITHS.findIndex((m) => m.id === Number(remoteProblem?.id));
+  }
+
+  const monolithIndex = archIndex !== -1 ? archIndex : (typeof monolithRef === 'number' ? monolithRef : 0);
+
+  if (archIndex !== -1) {
+    challenge = createArchimedesChallenge(archIndex, stepIndex);
+    if (remoteProblem && remoteProblem.steps && remoteProblem.steps[stepIndex]) {
+      const rStep = remoteProblem.steps[stepIndex];
+      challenge.prompt = rStep.prompt;
+      challenge.options = rStep.options.map((o) => ({ value: o.value, label: o.label }));
+      challenge.answer = rStep.answer;
+      challenge.hints = rStep.hints;
+      challenge.explanation = rStep.explanation;
+      if (rStep.diagramSvg) challenge.diagramSvg = rStep.diagramSvg;
+      if (remoteProblem.title) challenge.title = remoteProblem.subtitle || remoteProblem.title;
+      if (remoteProblem.badge) challenge.badge = remoteProblem.badge;
+      if (remoteProblem.color) challenge.color = remoteProblem.color;
+      challenge.step = {
+        stepId: rStep.stepId,
+        prompt: rStep.prompt,
+        options: rStep.options,
+        answer: rStep.answer,
+        hints: rStep.hints,
+        explanation: rStep.explanation,
+        diagramSvg: rStep.diagramSvg
+      };
+    }
+  } else if (remoteProblem && remoteProblem.steps && remoteProblem.steps.length > 0) {
+    const rStep = remoteProblem.steps[Math.min(stepIndex, remoteProblem.steps.length - 1)] || remoteProblem.steps[0];
+    const parentZone = activeRemoteZones.find((z) => {
+      const list = activeRemoteQuestions[z.sheetName];
+      return list?.some((p) => p.id === remoteProblem?.id);
+    });
+    const pId = Number(remoteProblem.id) || (400 + monolithIndex);
+    const validZoneId: 1 | 2 | 3 | 4 | 5 = (parentZone?.id && parentZone.id <= 5 ? parentZone.id : 1) as 1 | 2 | 3 | 4 | 5;
+    challenge = {
+      id: `dynamic_${pId}_${stepIndex}`,
+      kind: 'archimedes',
+      monolithId: pId,
+      monolithIndex,
+      stepIndex,
+      totalSteps: remoteProblem.steps.length,
+      title: remoteProblem.title || `Thử Thách #${pId}`,
+      zoneName: parentZone?.name || 'Vùng Đất Kỳ Bí',
+      page: 1,
+      badge: remoteProblem.badge || '🏆 Thử Thách',
+      color: remoteProblem.color || 0x38bdf8,
       prompt: rStep.prompt,
-      options: rStep.options,
+      options: rStep.options.map((o) => ({ value: o.value, label: o.label })),
       answer: rStep.answer,
       hints: rStep.hints,
       explanation: rStep.explanation,
-      diagramSvg: rStep.diagramSvg
+      diagramSvg: rStep.diagramSvg,
+      monolith: {
+        id: pId,
+        zoneId: validZoneId,
+        zoneName: parentZone?.name || 'Vùng Đất Kỳ Bí',
+        page: 1,
+        title: remoteProblem.title || `Thử Thách #${pId}`,
+        subtitle: remoteProblem.subtitle || '',
+        badge: remoteProblem.badge || '',
+        color: remoteProblem.color || 0x38bdf8,
+        position: remoteProblem.position || { x: 0, z: 0 },
+        steps: remoteProblem.steps
+      },
+      step: rStep
     };
+  } else {
+    challenge = createArchimedesChallenge(0, 0);
   }
 
+  const m = challenge.monolith;
   currentSession = new ChallengeSession(challenge);
   currentInputValue = '';
   const step = challenge.step;
@@ -1145,15 +1449,16 @@ $('learn-welcome').onclick = () => learn();
 
 $('travel').onclick = () => {
   if (!world.active || world.paused) return;
-  if (world.spatial.isInArchimedesRealm()) {
-    world.teleport(-6, 5);
-    toast('Đã trở về Làng Khởi Đầu!');
-  } else if (world.spatial.isInGarden()) {
+  const locName = world.spatial.getCurrentLocationName();
+  if (locName === 'Làng Khởi Đầu') {
+    world.teleport(13, 0);
+    toast('Chào mừng bạn đến với Vườn Hoa Tri Thức!');
+  } else if (locName === 'Vườn Hoa Tri Thức') {
     world.teleport(60, 0);
     toast('Chào mừng bạn đến Đền Cổng Archimedes!');
   } else {
-    world.teleport(13, 0);
-    toast('Chào mừng bạn đến với Vườn Hoa Tri Thức!');
+    world.teleport(-6, 5);
+    toast('Đã trở về Làng Khởi Đầu!');
   }
 };
 
@@ -1595,27 +1900,26 @@ try {
     $('area-label-text').textContent = locName;
 
     let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
-    if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
+    const dynZone = activeRemoteZones.find((z) => z.name === locName);
+    if (dynZone) {
+      subLabel = `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
+    } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
     else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
-    else if (locName === 'Thung Lũng Tính Toán') subLabel = 'CHUYÊN ĐỀ 1: PHÉP TÍNH NHANH (BÀI 306 - 313)';
-    else if (locName === 'Suối Nguồn Dãy Số') subLabel = 'CHUYÊN ĐỀ 2: QUY LUẬT DÃY SỐ (BÀI 314 - 321)';
-    else if (locName === 'Đồi Thời Gian') subLabel = 'CHUYÊN ĐỀ 3: THỜI GIAN & ĐO LƯỜNG (BÀI 322 - 329)';
-    else if (locName === 'Rừng Hình Học') subLabel = 'CHUYÊN ĐỀ 4: HÌNH HỌC TRỰC QUAN (BÀI 330 - 337)';
-    else if (locName === 'Đỉnh Núi Tư Duy Sao') subLabel = 'CHUYÊN ĐỀ 5: TỔNG HỢP & NÂNG CAO (BÀI 338 - 345)';
     else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
 
     $('area-label-sub').textContent = subLabel;
-    $('travel-text').textContent = inArchimedes ? 'Về Làng Khởi Đầu' : inGarden ? 'Đến Đền Archimedes' : 'Đến Vườn Hoa';
+    $('travel-text').textContent = locName === 'Làng Khởi Đầu' ? 'Đến Vườn Hoa' : locName === 'Vườn Hoa Tri Thức' ? 'Đến Đền Cổng' : 'Về Làng Khởi Đầu';
 
     const nearPortalObj = world.spatial.getNearPortal();
 
     if (nearMonolith !== -1) {
-      const m = ARCHIMEDES_MONOLITHS[nearMonolith];
+      const dynamicProb = activeMonolithProblems[nearMonolith];
+      const m = dynamicProb || ARCHIMEDES_MONOLITHS[nearMonolith] || ARCHIMEDES_MONOLITHS[0];
       const done = adventure.getState().monoliths[nearMonolith];
-      $('interact').innerHTML = `⚡ <b>Bia Đá ${m.id}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
+      $('interact').innerHTML = `⚡ <b>${m.title || `Bia Đá ${m.id}`}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearPortal) {
-      $('interact').innerHTML = `🏛️ <b>${nearPortalObj?.name || 'Cổng Archimedes'}</b> (Bấm E để mở Bản Đồ) ${icon('arrow')}`;
+      $('interact').innerHTML = `🏛️ <b>${nearPortalObj?.name || 'Cổng Không Gian'}</b> (Bấm E để mở Bản Đồ) ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearFlower !== -1) {
       const bloomed = adventure.getState().flowers[nearFlower];

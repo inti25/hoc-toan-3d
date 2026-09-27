@@ -39,11 +39,11 @@ export function parseSave(raw: string | null): SaveState {
     }
     if (Array.isArray(d.monoliths)) {
       const mo = d.monoliths;
-      base.monoliths = Array.from({ length: 40 }, (_, i) => mo[i] === true);
+      base.monoliths = Array.from({ length: Math.max(40, mo.length) }, (_, i) => mo[i] === true);
     }
     if (Array.isArray(d.zoneBadges)) {
       const zb = d.zoneBadges;
-      base.zoneBadges = Array.from({ length: 5 }, (_, i) => zb[i] === true);
+      base.zoneBadges = Array.from({ length: Math.max(5, zb.length) }, (_, i) => zb[i] === true);
     }
     return base;
   } catch { return base; }

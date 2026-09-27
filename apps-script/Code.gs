@@ -12,7 +12,7 @@
 
 // Tiêu đề các cột cho sheet CONFIG
 const CONFIG_HEADERS = [
-  'ZoneId', 'Name', 'Title', 'Description', 'Template',
+  'ZoneId', 'Name', 'Title', 'Description', 'Template', 'Theme', 'DecorDensity',
   'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge'
 ];
 
@@ -143,6 +143,8 @@ function handleSeedDatabase(ss, payload) {
       z.title || '',
       z.description || '',
       z.template || 'GRID_SANCTUARY',
+      z.theme || (z.template === 'FLOWER_BEDS' ? 'GARDEN' : 'RUINS'),
+      z.decorDensity || 'MEDIUM',
       z.sheetName || '',
       z.center ? z.center.x : 0,
       z.center ? z.center.z : 0,
@@ -247,6 +249,106 @@ function handleSeedDatabase(ss, payload) {
 }
 
 /**
+ * Tự động thêm menu 'Vương Quốc 3D' trên thanh công cụ của Google Sheets
+ */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('🎮 Vương Quốc 3D')
+      .addItem('➕ Tạo Vùng Đất Mới...', 'menuCreateNewZone')
+      .addSeparator()
+      .addItem('⚡ Khởi tạo lại 50 câu hỏi gốc', 'seedFullKingdomDatabase')
+      .addToUi();
+  } catch (_) {}
+}
+
+/**
+ * Hộp thoại tương tác cho giáo viên tạo vùng đất mới
+ */
+function menuCreateNewZone() {
+  const ui = SpreadsheetApp.getUi();
+  const nameResp = ui.prompt('Tạo Vùng Đất Mới (Bước 1/2)', 'Nhập tên vùng đất mới (VD: Rừng Phép Thuật, Mỏ Pha Lê):', ui.ButtonSet.OK_CANCEL);
+  if (nameResp.getSelectedButton() !== ui.Button.OK) return;
+  const zoneName = nameResp.getResponseText().trim();
+  if (!zoneName) {
+    ui.alert('⚠️ Tên vùng đất không được để trống.');
+    return;
+  }
+
+  const themeResp = ui.prompt(
+    'Chọn Chủ Đề Cảnh Quan (Bước 2/2)',
+    'Nhập một trong các chủ đề sau:\n- FOREST (Rừng thông, nấm ma thuật)\n- RUINS (Di tích cổ Hy Lạp, cột đá)\n- GARDEN (Đồi hoa rực rỡ, đài phun nước)\n- CRYSTAL (Mỏ pha lê, thạch anh phát sáng)\n- VILLAGE (Làng quê, nhà gỗ mini)',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (themeResp.getSelectedButton() !== ui.Button.OK) return;
+  let theme = themeResp.getResponseText().trim().toUpperCase();
+  if (!['FOREST', 'RUINS', 'GARDEN', 'CRYSTAL', 'VILLAGE'].includes(theme)) {
+    theme = 'FOREST';
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let configSheet = ss.getSheetByName('CONFIG');
+  if (!configSheet) {
+    seedFullKingdomDatabase();
+    configSheet = ss.getSheetByName('CONFIG');
+  }
+
+  // Lấy ZoneId tiếp theo
+  const lastRow = configSheet.getLastRow();
+  let maxId = 0;
+  if (lastRow >= 2) {
+    const ids = configSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    ids.forEach(function(row) {
+      const num = Number(row[0]);
+      if (!isNaN(num) && num > maxId) maxId = num;
+    });
+  }
+  const nextId = maxId + 1;
+  const safeName = zoneName.replace(/[^a-zA-Z0-9]/g, '');
+  const sheetName = 'Zone_' + nextId + '_' + (safeName || 'Moi');
+
+  configSheet.appendRow([
+    nextId,
+    zoneName,
+    'Khám Phá ' + zoneName,
+    'Khu vực thử thách mới với chủ đề ' + theme,
+    theme === 'GARDEN' ? 'FLOWER_BEDS' : 'GRID_SANCTUARY',
+    theme,
+    'MEDIUM',
+    sheetName,
+    0, // CenterX = 0 -> Game tự tính vị trí quanh biển
+    0, // CenterZ = 0
+    26,
+    32,
+    theme === 'CRYSTAL' ? '#a855f7' : (theme === 'GARDEN' ? '#ec4899' : (theme === 'FOREST' ? '#22c55e' : '#38bdf8')),
+    '🌟 Huy Hiệu ' + zoneName
+  ]);
+
+  let questSheet = ss.getSheetByName(sheetName);
+  if (!questSheet) {
+    questSheet = ss.insertSheet(sheetName);
+    questSheet.appendRow(QUEST_HEADERS);
+    questSheet.appendRow([
+      1, 'step_1', zoneName + ' - Bài 1', 'Thử Thách Khởi Động',
+      'Tính nhẩm: 25 + 35 = ?',
+      '50', '60', '70', '55', '60',
+      'Cộng hàng đơn vị 5 + 5 = 10, nhớ 1 sang hàng chục',
+      '25 + 35 = 60', '', ''
+    ]);
+    questSheet.appendRow([
+      2, 'step_1', zoneName + ' - Bài 2', 'Thử Thách Tiếp Theo',
+      'Tính: 8 x 5 = ?',
+      '35', '40', '45', '48', '40',
+      'Nhớ lại bảng cửu chương 8: 8 x 5 = 40',
+      '8 nhân 5 bằng 40', '', ''
+    ]);
+    questSheet.setFrozenRows(1);
+  }
+
+  ui.alert('🎉 Đã tạo thành công vùng đất "' + zoneName + '" (ZoneId: ' + nextId + ') và tab câu hỏi "' + sheetName + '"!\nBạn có thể vào tab đó để soạn câu hỏi và mở game để phiêu lưu ngay.');
+}
+
+/**
  * HÀM 1-CLICK DÀNH CHO GIÁO VIÊN / ADMIN CHẠY TRỰC TIẾP TRONG APPS SCRIPT:
  * Chọn hàm "seedFullKingdomDatabase" từ menu thả xuống và bấm [Chạy] (Run)
  * để tự động khởi tạo 7 tab với 50 bài toán vào Google Sheets.
@@ -255,6 +357,9 @@ function seedFullKingdomDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const res = handleSeedDatabase(ss, null);
   Logger.log(res.message);
+  try {
+    SpreadsheetApp.getUi().alert(res.message);
+  } catch (_) {}
   return res;
 }
 
@@ -286,6 +391,8 @@ function fetchZonesFromSheet(ss) {
       title: String(rowObj.Title || ''),
       description: String(rowObj.Description || ''),
       template: String(rowObj.Template || 'GRID_SANCTUARY').toUpperCase(),
+      theme: String(rowObj.Theme || (String(rowObj.Template).toUpperCase() === 'FLOWER_BEDS' ? 'GARDEN' : 'RUINS')).toUpperCase(),
+      decorDensity: String(rowObj.DecorDensity || 'MEDIUM').toUpperCase(),
       sheetName: String(rowObj.SheetName || ''),
       center: {
         x: Number(rowObj.CenterX) || 0,
@@ -432,6 +539,8 @@ const SEED_DATA = {
       "title": "Khu 1: Phép Tính & Đo Lường",
       "description": "Rèn luyện đặt tính cộng trừ 3 chữ số, đại lượng kg, cm, lít và tìm thành phần chưa biết.",
       "template": "GRID_SANCTUARY",
+      "theme": "RUINS",
+      "decorDensity": "MEDIUM",
       "sheetName": "Zone_1_Archimedes",
       "center": {
         "x": 110,
@@ -449,6 +558,8 @@ const SEED_DATA = {
       "title": "Khu 2: Tính Nhanh & Quy Luật Số",
       "description": "Chinh phục nghệ thuật nhóm số tròn chục tròn trăm và giải mã các dãy số bí ẩn.",
       "template": "GRID_SANCTUARY",
+      "theme": "FOREST",
+      "decorDensity": "HIGH",
       "sheetName": "Zone_2_Archimedes",
       "center": {
         "x": 150,
@@ -466,6 +577,8 @@ const SEED_DATA = {
       "title": "Khu 3: Đồng Hồ, Lịch & Cân Đĩa",
       "description": "Khám phá thế giới thời gian 24h, lịch ngày trong tuần và bài toán cân đĩa thăng bằng.",
       "template": "CIRCLE_SANCTUARY",
+      "theme": "CRYSTAL",
+      "decorDensity": "MEDIUM",
       "sheetName": "Zone_3_Archimedes",
       "center": {
         "x": 110,
@@ -483,6 +596,8 @@ const SEED_DATA = {
       "title": "Khu 4: Hình Học & Đường Gấp Khúc",
       "description": "Quan sát các hình tam giác, tứ giác, trung điểm đoạn thẳng và tính độ dài đường gấp khúc.",
       "template": "GRID_SANCTUARY",
+      "theme": "FOREST",
+      "decorDensity": "HIGH",
       "sheetName": "Zone_4_Archimedes",
       "center": {
         "x": 150,
@@ -500,6 +615,8 @@ const SEED_DATA = {
       "title": "Khu 5: Thử Thách Tư Duy Đỉnh Cao",
       "description": "Thử thách trí tuệ với các bài toán sao nâng cao: ma trận ô số, số ma thuật và logic tối ưu.",
       "template": "CIRCLE_SANCTUARY",
+      "theme": "RUINS",
+      "decorDensity": "MEDIUM",
       "sheetName": "Zone_5_Archimedes",
       "center": {
         "x": 190,
@@ -517,6 +634,8 @@ const SEED_DATA = {
       "title": "Vườn Hoa Rực Rỡ",
       "description": "Đánh thức 10 đóa hoa tri thức bằng các bài toán ứng dụng",
       "template": "FLOWER_BEDS",
+      "theme": "GARDEN",
+      "decorDensity": "HIGH",
       "sheetName": "VuonHoa",
       "center": {
         "x": 22,

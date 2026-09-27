@@ -122,11 +122,13 @@ export class SpatialWorld {
   private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string }[] = [];
   private dynamicPortals: PortalLink[] = [];
   private dynamicMonoliths: { x: number; z: number }[] = [];
+  private dynamicObstacles: Obstacle[] = [];
 
   setDynamicData(
     zones: { center: { x: number; z: number }; width: number; depth: number; name?: string; id?: number }[],
     monolithPositions: { x: number; z: number }[] = [],
-    customPortals: PortalLink[] = []
+    customPortals: PortalLink[] = [],
+    obstacles: Obstacle[] = []
   ) {
     this.dynamicIslands = zones.map((z) => ({
       cx: z.center.x,
@@ -137,6 +139,7 @@ export class SpatialWorld {
     }));
     this.dynamicMonoliths = monolithPositions;
     this.dynamicPortals = customPortals;
+    this.dynamicObstacles = obstacles;
   }
 
   isWithinLand(x: number, z: number): boolean {
@@ -173,13 +176,24 @@ export class SpatialWorld {
 
   canMove(x: number, z: number): boolean {
     if (!this.isWithinLand(x, z)) return false;
-    return !this.obstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
+    const hitDefault = this.obstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
+    if (hitDefault) return false;
+    return !this.dynamicObstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
   }
 
   getCurrentLocationName(): string {
     if (this.x <= 4) return 'Làng Khởi Đầu';
     if (this.x <= 34) return 'Vườn Hoa Tri Thức';
     if (this.x >= 49 && this.x <= 71 && Math.abs(this.z) <= 11) return 'Đền Cổng Archimedes';
+
+    for (const isl of this.dynamicIslands) {
+      const halfW = isl.w / 2 + 1;
+      const halfD = isl.d / 2 + 1;
+      if (this.x >= isl.cx - halfW && this.x <= isl.cx + halfW && this.z >= isl.cz - halfD && this.z <= isl.cz + halfD) {
+        return isl.name || 'Vùng Đất Mới';
+      }
+    }
+
     if (this.x >= 98 && this.x <= 122 && this.z >= -76 && this.z <= -44) return 'Thung Lũng Tính Toán';
     if (this.x >= 138 && this.x <= 162 && this.z >= -76 && this.z <= -44) return 'Suối Nguồn Dãy Số';
     if (this.x >= 98 && this.x <= 122 && this.z >= 44 && this.z <= 76) return 'Đồi Thời Gian';

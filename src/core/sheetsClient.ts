@@ -2,6 +2,7 @@ import { ARCHIMEDES_ZONES, ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialM
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import {
   computeProceduralEntityPositions,
+  computeArchipelagoOrbitalPosition,
   type RemoteZoneConfig,
   type RemoteProblem,
   type ExplorerProfile
@@ -139,6 +140,8 @@ export function getBundledFallbackData(): {
       title: z.title,
       description: z.description,
       template: (z.id === 3 || z.id === 5 ? 'CIRCLE_SANCTUARY' : 'GRID_SANCTUARY') as any,
+      theme: (z.id === 2 || z.id === 4 ? 'FOREST' : (z.id === 3 ? 'CRYSTAL' : 'RUINS')) as any,
+      decorDensity: (z.id === 2 || z.id === 4 ? 'HIGH' : 'MEDIUM') as any,
       sheetName: `Zone_${z.id}_Archimedes`,
       center: { ...z.center },
       width: z.id === 4 ? 28 : (z.id === 5 ? 22 : 24),
@@ -153,6 +156,8 @@ export function getBundledFallbackData(): {
       title: 'Vườn Hoa Rực Rỡ',
       description: 'Đánh thức 10 đóa hoa tri thức bằng các bài toán ứng dụng',
       template: 'FLOWER_BEDS',
+      theme: 'GARDEN',
+      decorDensity: 'HIGH',
       sheetName: 'VuonHoa',
       center: { x: 22, z: 0 },
       width: 26,
@@ -346,6 +351,52 @@ export async function loadZonesAndQuestions(
 }
 
 /**
+ * Chuẩn hóa danh sách cấu hình phân khu / vùng đất
+ */
+export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((z: any, idx: number) => {
+    let cx = Number(z.center?.x ?? z.CenterX) || 0;
+    let cz = Number(z.center?.z ?? z.CenterZ) || 0;
+    // Nếu để trống tọa độ hoặc là (0, 0), tự động xếp theo quỹ đạo vòng cung quanh biển
+    if (cx === 0 && cz === 0) {
+      const orb = computeArchipelagoOrbitalPosition(idx, rawList.length);
+      cx = orb.x;
+      cz = orb.z;
+    }
+
+    const rawTheme = String(z.theme || z.Theme || '').toUpperCase();
+    const validTheme = ['GARDEN', 'RUINS', 'FOREST', 'CRYSTAL', 'VILLAGE'].includes(rawTheme)
+      ? (rawTheme as any)
+      : (z.template === 'FLOWER_BEDS' ? 'GARDEN' : 'RUINS');
+
+    const rawDensity = String(z.decorDensity || z.DecorDensity || '').toUpperCase();
+    const validDensity = ['LOW', 'MEDIUM', 'HIGH'].includes(rawDensity)
+      ? (rawDensity as any)
+      : 'MEDIUM';
+
+    return {
+      id: Number(z.id ?? z.ZoneId) || idx + 1,
+      name: String(z.name || z.ZoneName || 'Vùng Đất Mới').trim(),
+      title: String(z.title || z.Title || '').trim(),
+      description: String(z.description || z.Description || '').trim(),
+      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY'].includes(z.template)
+        ? z.template
+        : 'GRID_SANCTUARY') as any,
+      theme: validTheme,
+      decorDensity: validDensity,
+      sheetName: String(z.sheetName || z.SheetName || '').trim(),
+      center: { x: cx, z: cz },
+      width: Number(z.width ?? z.Width) || 24,
+      depth: Number(z.depth ?? z.Depth) || 32,
+      color: Number(z.color) || 0x38bdf8,
+      colorHex: String(z.colorHex || z.ColorHex || '#38bdf8'),
+      badge: String(z.badge || z.Badge || '🏆 Huy Chương Thám Hiểm')
+    };
+  });
+}
+
+/**
  * Gọi API trực tiếp từ Google Apps Script
  */
 export async function fetchRemoteData(scriptUrl: string): Promise<{
@@ -353,9 +404,13 @@ export async function fetchRemoteData(scriptUrl: string): Promise<{
   questionsBySheet: Record<string, RemoteProblem[]>;
 } | null> {
   const url = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}action=getAll&_t=${Date.now()}`;
-  const response = await fetch(url, { method: 'GET' });
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+
   if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
+    throw new Error(`Lỗi kết nối máy chủ Google Sheets (${response.status} ${response.statusText})`);
   }
 
   const json = await response.json();
@@ -363,25 +418,7 @@ export async function fetchRemoteData(scriptUrl: string): Promise<{
     throw new Error(json.message || 'Cấu trúc dữ liệu Apps Script không hợp lệ');
   }
 
-  const sanitizedZones: RemoteZoneConfig[] = json.zones.map((z: any) => ({
-    id: Number(z.id) || 1,
-    name: String(z.name || 'Vùng Đất Mới').trim(),
-    title: String(z.title || '').trim(),
-    description: String(z.description || '').trim(),
-    template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY'].includes(z.template)
-      ? z.template
-      : 'GRID_SANCTUARY') as any,
-    sheetName: String(z.sheetName || '').trim(),
-    center: {
-      x: Number(z.center?.x) || 0,
-      z: Number(z.center?.z) || 0
-    },
-    width: Number(z.width) || 24,
-    depth: Number(z.depth) || 32,
-    color: Number(z.color) || 0x38bdf8,
-    colorHex: String(z.colorHex || '#38bdf8'),
-    badge: String(z.badge || '🏆 Huy Chương Thám Hiểm')
-  }));
+  const sanitizedZones: RemoteZoneConfig[] = sanitizeRemoteZones(json.zones);
 
   const sanitizedQuestions: Record<string, RemoteProblem[]> = {};
   if (json.questions && typeof json.questions === 'object') {

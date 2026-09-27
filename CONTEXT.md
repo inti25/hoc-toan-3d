@@ -103,3 +103,16 @@ _Avoid_: File import mẫu, Dữ liệu seed
 **Cổng Khởi Tạo Trực Tiếp (One-Click Seed Port)**:
 Cơ chế kích hoạt nạp toàn bộ kho câu hỏi gốc lên Google Sheets trực tiếp từ giao diện Cài Đặt của game, qua lệnh CLI hoặc hàm Apps Script.
 _Avoid_: Nút import, Tool nạp data
+
+**Kiến Trúc Tải Hợp Nhất (Unified Batch Ingestion)**:
+Cơ chế máy chủ Google Apps Script nạp Sổ Đăng Ký Vùng Đất (`CONFIG`) trước, tự động duyệt và gộp toàn bộ câu hỏi từ các Bảng Thử Thách tương ứng (`sheetName`) để trả về client trong một payload duy nhất nhằm triệt tiêu độ trễ mạng.
+_Avoid_: 2-step fetch, Tải từng phần, Multi-request
+
+**Đồng Bộ Nóng Thủ Công (Manual Hot Sync)**:
+Thao tác kích hoạt nạp tức thời dữ liệu mới nhất từ Google Sheets từ Bản Đồ Vương Quốc hoặc Cài Đặt, bỏ qua thời hạn đệm 30 phút để giáo viên kiểm tra ngay nội dung vừa soạn.
+_Avoid_: F5 trình duyệt, Tải lại trang, Force reload
+
+**Dung Lỗi Phân Khu (Graceful Zone Fallback)**:
+Nguyên tắc xử lý an toàn khi một vùng đất được khai báo trong `CONFIG` nhưng tab câu hỏi chưa được tạo trên Google Sheets; thế giới 3D vẫn sinh đảo và cảnh quan bình thường mà không làm gián đoạn trò chơi.
+_Avoid_: Báo lỗi crash, Chặn render, Block island
+
