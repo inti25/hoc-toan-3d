@@ -26,9 +26,9 @@ const CONFIG_HEADERS = [
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
 const QUEST_HEADERS = [
-  'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt',
+  'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt', 'ImageUrl',
   'OptionA', 'OptionB', 'OptionC', 'OptionD', 'Answer',
-  'Hints', 'Explanation', 'PosX', 'PosZ'
+  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ'
 ];
 
 // Tiêu đề các cột cho sheet LOGS
@@ -221,6 +221,7 @@ function handleSeedDatabase(ss, payload) {
           prob.title || '',
           prob.subtitle || '',
           escapeSheetsText(step.prompt || ''),
+          escapeSheetsText(step.imageUrl || ''),
           escapeSheetsText(optA),
           escapeSheetsText(optB),
           escapeSheetsText(optC),
@@ -228,6 +229,7 @@ function handleSeedDatabase(ss, payload) {
           escapeSheetsText(step.answer || ''),
           escapeSheetsText(hints),
           escapeSheetsText(step.explanation || ''),
+          escapeSheetsText(step.explanationImageUrl || ''),
           posX,
           posZ
         ]);
@@ -488,10 +490,12 @@ function fetchQuestionsFromSheet(ss, sheetName) {
     const stepObj = {
       stepId: String(rowObj.StepId || probId + '_' + r).trim(),
       prompt: cleanSheetText(rowObj.Prompt || ''),
+      imageUrl: cleanSheetText(rowObj.ImageUrl || ''),
       options: rawOptions,
       answer: cleanAnswer,
       hints: rawHints,
-      explanation: cleanSheetText(rowObj.Explanation || '')
+      explanation: cleanSheetText(rowObj.Explanation || ''),
+      explanationImageUrl: cleanSheetText(rowObj.ExplanationImageUrl || '')
     };
 
     if (!problemMap[probId]) {

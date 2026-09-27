@@ -18,9 +18,9 @@ const CONFIG_HEADERS = [
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
 const QUEST_HEADERS = [
-  'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt',
+  'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt', 'ImageUrl',
   'OptionA', 'OptionB', 'OptionC', 'OptionD', 'Answer',
-  'Hints', 'Explanation', 'PosX', 'PosZ'
+  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ'
 ];
 
 // Tiêu đề các cột cho sheet LOGS
@@ -213,6 +213,7 @@ function handleSeedDatabase(ss, payload) {
           prob.title || '',
           prob.subtitle || '',
           escapeSheetsText(step.prompt || ''),
+          escapeSheetsText(step.imageUrl || ''),
           escapeSheetsText(optA),
           escapeSheetsText(optB),
           escapeSheetsText(optC),
@@ -220,6 +221,7 @@ function handleSeedDatabase(ss, payload) {
           escapeSheetsText(step.answer || ''),
           escapeSheetsText(hints),
           escapeSheetsText(step.explanation || ''),
+          escapeSheetsText(step.explanationImageUrl || ''),
           posX,
           posZ
         ]);
@@ -480,10 +482,12 @@ function fetchQuestionsFromSheet(ss, sheetName) {
     const stepObj = {
       stepId: String(rowObj.StepId || probId + '_' + r).trim(),
       prompt: cleanSheetText(rowObj.Prompt || ''),
+      imageUrl: cleanSheetText(rowObj.ImageUrl || ''),
       options: rawOptions,
       answer: cleanAnswer,
       hints: rawHints,
-      explanation: cleanSheetText(rowObj.Explanation || '')
+      explanation: cleanSheetText(rowObj.Explanation || ''),
+      explanationImageUrl: cleanSheetText(rowObj.ExplanationImageUrl || '')
     };
 
     if (!problemMap[probId]) {
@@ -1929,6 +1933,7 @@ const SEED_DATA = {
           {
             "stepId": "326_1",
             "prompt": "Cho hình cánh bướm ABCD có giao điểm 2 đường chéo AC và BD tại E. Khẳng định \"3 điểm B, E, D là 3 điểm thẳng hàng\" là Đúng hay Sai?",
+            "imageUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 300 160\" width=\"300\" height=\"160\"><rect width=\"300\" height=\"160\" fill=\"%23f8fafc\" rx=\"8\" stroke=\"%23cbd5e1\"/><polygon points=\"40,30 260,30 260,130 40,130\" fill=\"none\" stroke=\"%2394a3b8\" stroke-dasharray=\"4\" stroke-width=\"1.5\"/><line x1=\"40\" y1=\"30\" x2=\"260\" y2=\"130\" stroke=\"%233b82f6\" stroke-width=\"2.5\"/><line x1=\"40\" y1=\"130\" x2=\"260\" y2=\"30\" stroke=\"%23ec4899\" stroke-width=\"2.5\"/><line x1=\"40\" y1=\"30\" x2=\"40\" y2=\"130\" stroke=\"%2310b981\" stroke-width=\"2.5\"/><line x1=\"260\" y1=\"30\" x2=\"260\" y2=\"130\" stroke=\"%2310b981\" stroke-width=\"2.5\"/><circle cx=\"40\" cy=\"30\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"260\" cy=\"30\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"40\" cy=\"130\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"260\" cy=\"130\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"150\" cy=\"80\" r=\"5\" fill=\"%23ef4444\"/><text x=\"25\" y=\"28\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">A</text><text x=\"270\" y=\"28\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">B</text><text x=\"25\" y=\"145\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">D</text><text x=\"270\" y=\"145\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">C</text><text x=\"156\" y=\"75\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%23ef4444\" font-size=\"14\">E</text></svg>",
             "options": [
               {
                 "label": "Đúng",
@@ -1948,11 +1953,13 @@ const SEED_DATA = {
               "Đoạn thẳng BD đi qua điểm E.",
               "Ba điểm cùng nằm trên một đoạn thẳng là ba điểm thẳng hàng."
             ],
-            "explanation": "E là giao điểm của AC và BD nên B, E, D thẳng hàng là Đúng."
+            "explanation": "E là giao điểm của AC và BD nên B, E, D thẳng hàng là Đúng.",
+            "explanationImageUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 300 160\" width=\"300\" height=\"160\"><rect width=\"300\" height=\"160\" fill=\"%23f8fafc\" rx=\"8\" stroke=\"%23cbd5e1\"/><line x1=\"260\" y1=\"30\" x2=\"40\" y2=\"130\" stroke=\"%23eab308\" stroke-width=\"5\" stroke-linecap=\"round\"/><circle cx=\"260\" cy=\"30\" r=\"6\" fill=\"%23ca8a04\"/><circle cx=\"150\" cy=\"80\" r=\"6\" fill=\"%23ca8a04\"/><circle cx=\"40\" cy=\"130\" r=\"6\" fill=\"%23ca8a04\"/><text x=\"270\" y=\"28\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%23854d0e\" font-size=\"14\">B</text><text x=\"156\" y=\"72\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%23854d0e\" font-size=\"14\">E</text><text x=\"25\" y=\"145\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%23854d0e\" font-size=\"14\">D</text><text x=\"150\" y=\"130\" font-family=\"sans-serif\" font-size=\"12\" fill=\"%2315803d\" text-anchor=\"middle\">Đoạn thẳng BD đi qua điểm E</text></svg>"
           },
           {
             "stepId": "326_2",
             "prompt": "Hình vẽ gồm đoạn AB, CD và hai đoạn chéo AC, BD cắt nhau tại E có tất cả bao nhiêu đoạn thẳng?",
+            "imageUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 300 160\" width=\"300\" height=\"160\"><rect width=\"300\" height=\"160\" fill=\"%23f8fafc\" rx=\"8\" stroke=\"%23cbd5e1\"/><polygon points=\"40,30 260,30 260,130 40,130\" fill=\"none\" stroke=\"%2394a3b8\" stroke-dasharray=\"4\" stroke-width=\"1.5\"/><line x1=\"40\" y1=\"30\" x2=\"260\" y2=\"130\" stroke=\"%233b82f6\" stroke-width=\"2.5\"/><line x1=\"40\" y1=\"130\" x2=\"260\" y2=\"30\" stroke=\"%23ec4899\" stroke-width=\"2.5\"/><line x1=\"40\" y1=\"30\" x2=\"40\" y2=\"130\" stroke=\"%2310b981\" stroke-width=\"2.5\"/><line x1=\"260\" y1=\"30\" x2=\"260\" y2=\"130\" stroke=\"%2310b981\" stroke-width=\"2.5\"/><circle cx=\"40\" cy=\"30\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"260\" cy=\"30\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"40\" cy=\"130\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"260\" cy=\"130\" r=\"4.5\" fill=\"%231e293b\"/><circle cx=\"150\" cy=\"80\" r=\"5\" fill=\"%23ef4444\"/><text x=\"25\" y=\"28\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">A</text><text x=\"270\" y=\"28\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">B</text><text x=\"25\" y=\"145\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">D</text><text x=\"270\" y=\"145\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%231e293b\" font-size=\"14\">C</text><text x=\"156\" y=\"75\" font-family=\"sans-serif\" font-weight=\"bold\" fill=\"%23ef4444\" font-size=\"14\">E</text></svg>",
             "options": [
               {
                 "label": "8 đoạn thẳng",
@@ -2849,6 +2856,7 @@ const SEED_DATA = {
           {
             "stepId": "flower_7",
             "prompt": "Nếu Chủ nhật tuần này là ngày 22 tháng 5 thì thứ Bảy tuần sau là ngày bao nhiêu tháng 5?",
+            "imageUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 280 140\" width=\"280\" height=\"140\"><rect width=\"280\" height=\"140\" fill=\"%23ffffff\" rx=\"10\" stroke=\"%23cbd5e1\" stroke-width=\"1.5\"/><path d=\"M0 10A10 10 0 0 1 10 0h260a10 10 0 0 1 10 10v22H0z\" fill=\"%232563eb\"/><text x=\"140\" y=\"22\" fill=\"%23ffffff\" font-family=\"sans-serif\" font-weight=\"bold\" font-size=\"14\" text-anchor=\"middle\">LỊCH THÁNG 5</text><g font-family=\"sans-serif\" font-size=\"11\" font-weight=\"bold\" fill=\"%2364748b\" text-anchor=\"middle\"><text x=\"30\" y=\"50\">T2</text><text x=\"70\" y=\"50\">T3</text><text x=\"110\" y=\"50\">T4</text><text x=\"150\" y=\"50\">T5</text><text x=\"190\" y=\"50\">T6</text><text x=\"230\" y=\"50\">T7</text><text x=\"260\" y=\"50\" fill=\"%23ef4444\">CN</text></g><g font-family=\"sans-serif\" font-size=\"12\" fill=\"%23334155\" text-anchor=\"middle\"><text x=\"30\" y=\"75\">16</text><text x=\"70\" y=\"75\">17</text><text x=\"110\" y=\"75\">18</text><text x=\"150\" y=\"75\">19</text><text x=\"190\" y=\"75\">20</text><text x=\"230\" y=\"75\">21</text><rect x=\"246\" y=\"60\" width=\"28\" height=\"22\" rx=\"4\" fill=\"%23fee2e2\" stroke=\"%23ef4444\"/><text x=\"260\" y=\"75\" font-weight=\"bold\" fill=\"%23dc2626\">22</text><text x=\"30\" y=\"105\">23</text><text x=\"70\" y=\"105\">24</text><text x=\"110\" y=\"105\">25</text><text x=\"150\" y=\"105\">26</text><text x=\"190\" y=\"105\">27</text><rect x=\"216\" y=\"90\" width=\"28\" height=\"22\" rx=\"4\" fill=\"%23fef08a\" stroke=\"%23ca8a04\"/><text x=\"230\" y=\"105\" font-weight=\"bold\" fill=\"%23854d0e\">?</text><text x=\"260\" y=\"105\">29</text></g></svg>",
             "options": [
               {
                 "label": "Ngày 28 tháng 5",

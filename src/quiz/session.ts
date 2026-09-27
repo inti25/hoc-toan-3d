@@ -90,6 +90,8 @@ export interface FlowerChallenge extends BaseChallenge {
   answer: string;
   hints: string[];
   explanation: string;
+  imageUrl?: string;
+  explanationImageUrl?: string;
   flowerQuestion: FlowerQuestion;
 }
 
@@ -107,6 +109,8 @@ export interface ArchimedesChallenge extends BaseChallenge {
   answer: string;
   hints: string[];
   explanation: string;
+  imageUrl?: string;
+  explanationImageUrl?: string;
   diagramSvg?: string;
   monolith: ArchimedesMonolith;
   step: ArchimedesStep;
@@ -153,6 +157,8 @@ export function createFlowerChallenge(index: number): FlowerChallenge {
     answer: q.answer,
     hints: q.hints,
     explanation: q.explanation,
+    imageUrl: q.imageUrl,
+    explanationImageUrl: q.explanationImageUrl,
     flowerQuestion: q
   };
 }
@@ -177,6 +183,8 @@ export function createArchimedesChallenge(monolithIndex: number, stepIndex = 0):
     answer: step.answer,
     hints: step.hints,
     explanation: step.explanation,
+    imageUrl: step.imageUrl,
+    explanationImageUrl: step.explanationImageUrl,
     diagramSvg: step.diagramSvg,
     monolith: m,
     step

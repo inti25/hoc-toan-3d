@@ -2,10 +2,12 @@ export interface FlowerQuestion {
   id: number;
   title: string;
   question: string;
+  imageUrl?: string;
   options: { label: string; value: string }[];
   answer: string;
   hints: string[];
   explanation: string;
+  explanationImageUrl?: string;
   color: number;
   badge: string;
 }
@@ -129,6 +131,7 @@ export const FLOWER_QUESTIONS: FlowerQuestion[] = [
     id: 7,
     title: 'Bài 7: Xem lịch ngày trong tuần',
     question: 'Nếu Chủ nhật tuần này là ngày 22 tháng 5 thì thứ Bảy tuần sau là ngày bao nhiêu tháng 5?',
+    imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 140" width="280" height="140"><rect width="280" height="140" fill="%23ffffff" rx="10" stroke="%23cbd5e1" stroke-width="1.5"/><path d="M0 10A10 10 0 0 1 10 0h260a10 10 0 0 1 10 10v22H0z" fill="%232563eb"/><text x="140" y="22" fill="%23ffffff" font-family="sans-serif" font-weight="bold" font-size="14" text-anchor="middle">LỊCH THÁNG 5</text><g font-family="sans-serif" font-size="11" font-weight="bold" fill="%2364748b" text-anchor="middle"><text x="30" y="50">T2</text><text x="70" y="50">T3</text><text x="110" y="50">T4</text><text x="150" y="50">T5</text><text x="190" y="50">T6</text><text x="230" y="50">T7</text><text x="260" y="50" fill="%23ef4444">CN</text></g><g font-family="sans-serif" font-size="12" fill="%23334155" text-anchor="middle"><text x="30" y="75">16</text><text x="70" y="75">17</text><text x="110" y="75">18</text><text x="150" y="75">19</text><text x="190" y="75">20</text><text x="230" y="75">21</text><rect x="246" y="60" width="28" height="22" rx="4" fill="%23fee2e2" stroke="%23ef4444"/><text x="260" y="75" font-weight="bold" fill="%23dc2626">22</text><text x="30" y="105">23</text><text x="70" y="105">24</text><text x="110" y="105">25</text><text x="150" y="105">26</text><text x="190" y="105">27</text><rect x="216" y="90" width="28" height="22" rx="4" fill="%23fef08a" stroke="%23ca8a04"/><text x="230" y="105" font-weight="bold" fill="%23854d0e">?</text><text x="260" y="105">29</text></g></svg>',
     options: [
       { label: 'Ngày 28 tháng 5', value: 'Ngày 28 tháng 5' },
       { label: 'Ngày 29 tháng 5', value: 'Ngày 29 tháng 5' },

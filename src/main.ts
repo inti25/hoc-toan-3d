@@ -54,7 +54,8 @@ const icons: Record<string, string> = {
   reset: '<path d="M3 10a9 9 0 1 1 2 8M3 3v7h7"/>',
   jump: '<path d="M12 21V3m-6 6 6-6 6 6"/>',
   save: '<path d="M5 3h12l4 4v14H3V3h2Zm2 0v7h10V3M7 21v-7h10v7"/>',
-  flower: '<circle cx="12" cy="12" r="3"/><path d="M12 2a3 3 0 0 0-3 3c0 2 3 4 3 4s3-2 3-4a3 3 0 0 0-3-3Zm0 13s-3 2-3 4a3 3 0 0 0 6 0c0-2-3-4-3-4ZM2 12a3 3 0 0 0 3 3c2 0 4-3 4-3s-2-3-4-3a3 3 0 0 0-3 3Zm13 0s2 3 4 3a3 3 0 0 0 0-6c-2 0-4 3-4 3Z"/>'
+  flower: '<circle cx="12" cy="12" r="3"/><path d="M12 2a3 3 0 0 0-3 3c0 2 3 4 3 4s3-2 3-4a3 3 0 0 0-3-3Zm0 13s-3 2-3 4a3 3 0 0 0 6 0c0-2-3-4-3-4ZM2 12a3 3 0 0 0 3 3c2 0 4-3 4-3s-2-3-4-3a3 3 0 0 0-3 3Zm13 0s2 3 4 3a3 3 0 0 0 0-6c-2 0-4 3-4 3Z"/>',
+  zoom: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/>'
 };
 
 const icon = (name: string) =>
@@ -207,6 +208,13 @@ app.innerHTML = `
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <footer id="menu-footer" class="menu-footer"><span><b>VƯƠNG QUỐC</b> HỌC TOÁN 3D</span><span>Một thế giới nhỏ. Những khám phá lớn.</span><span>Lưu trên thiết bị này ${icon('save')}</span></footer>
     <dialog id="dialog" aria-labelledby="dialog-title"><button id="close-dialog" class="dialog-close" aria-label="Đóng">${icon('close')}</button><div id="dialog-content"></div></dialog>
+    <div id="image-lightbox" class="image-lightbox" hidden role="dialog" aria-modal="true" aria-label="Phóng to hình ảnh">
+      <div class="lightbox-backdrop"></div>
+      <div class="lightbox-wrapper">
+        <button id="lightbox-close" class="lightbox-close-btn" aria-label="Đóng phóng to">${icon('close')}</button>
+        <img id="lightbox-img" class="lightbox-img" src="" alt="Hình ảnh chi tiết" />
+      </div>
+    </div>
   </main>`;
 
 function toast(message: string) {
@@ -302,6 +310,75 @@ $('dialog').addEventListener('close', () => {
 });
 
 $('close-dialog').onclick = closeDialog;
+
+function openLightbox(src: string, alt?: string) {
+  const lightbox = $('image-lightbox');
+  const img = $<HTMLImageElement>('lightbox-img');
+  if (!lightbox || !img) return;
+  img.src = src;
+  img.alt = alt || 'Hình ảnh chi tiết';
+  lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  const lightbox = $('image-lightbox');
+  if (!lightbox || lightbox.hidden) return;
+  lightbox.hidden = true;
+  const img = $<HTMLImageElement>('lightbox-img');
+  if (img) img.src = '';
+}
+
+$('lightbox-close').onclick = closeLightbox;
+$('image-lightbox').addEventListener('click', (e) => {
+  if (e.target === $('image-lightbox') || (e.target as HTMLElement).classList.contains('lightbox-backdrop')) {
+    closeLightbox();
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const lightbox = $('image-lightbox');
+    if (lightbox && !lightbox.hidden) {
+      closeLightbox();
+      e.stopPropagation();
+    }
+  }
+});
+
+document.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const container = target.closest<HTMLElement>('.question-image-container');
+  if (container && !container.classList.contains('img-error')) {
+    const img = container.querySelector<HTMLImageElement>('.question-inline-img');
+    if (img && img.src) {
+      openLightbox(img.src, img.alt);
+    }
+  }
+});
+
+function renderQuestionImage(imageUrl?: string, altText?: string, isExplanation = false): string {
+  if (!imageUrl) return '';
+  return `
+    <div class="question-image-container ${isExplanation ? 'explanation-img-container' : ''}">
+      <div class="question-image-wrapper">
+        <img
+          class="question-inline-img"
+          src="${imageUrl}"
+          alt="${altText || 'Hình minh họa'}"
+          loading="lazy"
+          onerror="const c = this.closest('.question-image-container'); if(c) c.classList.add('img-error');"
+        />
+        <div class="img-zoom-overlay">
+          <span class="img-zoom-badge">${icon('zoom')} Phóng to</span>
+        </div>
+      </div>
+      <div class="img-error-fallback">
+        <span>⚠️ Không thể nạp hình ảnh</span>
+        ${/^https?:\/\//.test(imageUrl) ? `<a href="${imageUrl}" target="_blank" rel="noopener noreferrer" class="img-fallback-link">Mở link ↗</a>` : ''}
+      </div>
+    </div>
+  `;
+}
 
 function start() {
   adventure.setStarted(true);
@@ -632,18 +709,22 @@ function openFlowerDialog(index: number) {
       badge: remoteQ.badge || `🌸 Hoa Tri Thức #${index + 1}`,
       color: remoteQ.color || 0xec4899,
       prompt: step.prompt,
+      imageUrl: step.imageUrl,
       options: step.options.map((o) => ({ value: o.value, label: o.label })),
       answer: step.answer,
       hints: step.hints,
       explanation: step.explanation,
+      explanationImageUrl: step.explanationImageUrl,
       flowerQuestion: {
         id: typeof remoteQ.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ.id), 10) || index + 1),
         title: remoteQ.subtitle || remoteQ.title,
         question: step.prompt,
+        imageUrl: step.imageUrl,
         options: step.options,
         answer: step.answer,
         hints: step.hints,
         explanation: step.explanation,
+        explanationImageUrl: step.explanationImageUrl,
         badge: remoteQ.badge || '',
         color: remoteQ.color || 0xec4899
       }
@@ -661,9 +742,11 @@ function openFlowerDialog(index: number) {
     const area = $('flower-hint-area');
     area.hidden = false;
     const stage = currentSession?.getHintStage() ?? 1;
+    const explImg = challenge.explanationImageUrl || q.explanationImageUrl;
     area.innerHTML = `
       <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
       ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
+      ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
     `;
   }
 
@@ -786,6 +869,7 @@ function openFlowerDialog(index: number) {
     <div class="flower-question-box">
       <div class="flower-question-title">${q.title}</div>
       <div class="flower-question-prompt">${q.question}</div>
+      ${renderQuestionImage(challenge.imageUrl || q.imageUrl, q.title)}
     </div>
     ${bodyControls}
     <div id="flower-feedback" class="feedback" aria-live="polite"></div>
@@ -1174,10 +1258,12 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     if (remoteProblem && remoteProblem.steps && remoteProblem.steps[stepIndex]) {
       const rStep = remoteProblem.steps[stepIndex];
       challenge.prompt = rStep.prompt;
+      challenge.imageUrl = rStep.imageUrl;
       challenge.options = rStep.options.map((o) => ({ value: o.value, label: o.label }));
       challenge.answer = rStep.answer;
       challenge.hints = rStep.hints;
       challenge.explanation = rStep.explanation;
+      challenge.explanationImageUrl = rStep.explanationImageUrl;
       if (rStep.diagramSvg) challenge.diagramSvg = rStep.diagramSvg;
       if (remoteProblem.title) challenge.title = remoteProblem.subtitle || remoteProblem.title;
       if (remoteProblem.badge) challenge.badge = remoteProblem.badge;
@@ -1185,10 +1271,12 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
       challenge.step = {
         stepId: rStep.stepId,
         prompt: rStep.prompt,
+        imageUrl: rStep.imageUrl,
         options: rStep.options,
         answer: rStep.answer,
         hints: rStep.hints,
         explanation: rStep.explanation,
+        explanationImageUrl: rStep.explanationImageUrl,
         diagramSvg: rStep.diagramSvg
       };
     }
@@ -1213,10 +1301,12 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
       badge: remoteProblem.badge || '🏆 Thử Thách',
       color: remoteProblem.color || 0x38bdf8,
       prompt: rStep.prompt,
+      imageUrl: rStep.imageUrl,
       options: rStep.options.map((o) => ({ value: o.value, label: o.label })),
       answer: rStep.answer,
       hints: rStep.hints,
       explanation: rStep.explanation,
+      explanationImageUrl: rStep.explanationImageUrl,
       diagramSvg: rStep.diagramSvg,
       monolith: {
         id: pId,
@@ -1247,9 +1337,11 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     const area = $('arch-hint-area');
     area.hidden = false;
     const stage = currentSession?.getHintStage() ?? 1;
+    const explImg = step.explanationImageUrl || challenge.explanationImageUrl;
     area.innerHTML = `
       <p><strong>💡 Gợi ý bước ${stage}:</strong> ${hintText}</p>
       ${explanation ? `<p class="hint-explanation"><em>Lời giải chi tiết: ${explanation}</em></p>` : ''}
+      ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
     `;
   }
 
@@ -1393,6 +1485,7 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     </div>
     <div class="flower-question-box">
       <div class="flower-question-prompt">${step.prompt}</div>
+      ${renderQuestionImage(step.imageUrl || challenge.imageUrl, challenge.title)}
     </div>
     ${bodyControls}
     <div id="arch-feedback" class="feedback" aria-live="polite"></div>

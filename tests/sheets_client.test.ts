@@ -156,3 +156,44 @@ test('ExplorerProfile and AppsScriptUrl persistence roundtrip', () => {
   assert.equal(profile.className, '2A1 Archimedes');
   assert.equal(profile.isAnonymous, false);
 });
+
+test('sanitizeRemoteProblems resolves Google Drive links, Base64, and extracts markdown images', () => {
+  const problems = [
+    {
+      id: 201,
+      title: 'Bài 201: Hình học',
+      steps: [
+        {
+          stepId: '201_1',
+          prompt: 'Đếm hình: ![Hình vẽ](https://example.com/shape.png) Có bao nhiêu hình vuông?',
+          imageUrl: 'https://drive.google.com/file/d/DRIVE_123456/view?usp=sharing',
+          options: ['4', '5'],
+          answer: '5',
+          explanation: 'Quan sát: ![Lời giải](https://drive.google.com/open?id=DRIVE_EXPLAIN_789) Ta thấy có 5 hình vuông.',
+          explanationImageUrl: ''
+        },
+        {
+          stepId: '201_2',
+          prompt: 'Quan sát hình: ![Đoạn thẳng](https://example.com/line.png)',
+          options: ['2', '3'],
+          answer: '3',
+          explanation: 'Có 3 đoạn thẳng.'
+        }
+      ]
+    }
+  ];
+
+  const sanitized = sanitizeRemoteProblems(problems);
+  assert.equal(sanitized.length, 1);
+  const s1 = sanitized[0].steps[0];
+  // Direct imageUrl takes precedence and converts Google Drive share link
+  assert.equal(s1.imageUrl, 'https://lh3.googleusercontent.com/d/DRIVE_123456');
+  // ExplanationImageUrl extracted from markdown in explanation and converts Google Drive link
+  assert.equal(s1.explanationImageUrl, 'https://lh3.googleusercontent.com/d/DRIVE_EXPLAIN_789');
+  assert.equal(s1.explanation, 'Quan sát: Ta thấy có 5 hình vuông.');
+
+  const s2 = sanitized[0].steps[1];
+  // When imageUrl is empty, extracted from markdown in prompt
+  assert.equal(s2.imageUrl, 'https://example.com/line.png');
+  assert.equal(s2.prompt, 'Quan sát hình:');
+});

@@ -5,10 +5,12 @@ export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 export interface RemoteStep {
   stepId: string;
   prompt: string;
+  imageUrl?: string;
   options: { label: string; value: string }[];
   answer: string;
   hints: string[];
   explanation: string;
+  explanationImageUrl?: string;
   diagramSvg?: string;
 }
 

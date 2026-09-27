@@ -7,6 +7,7 @@ import {
   type RemoteProblem,
   type ExplorerProfile
 } from '../data/remoteTypes';
+import { resolveImageUrl, extractMarkdownImage } from './imageResolver';
 
 export const APPS_SCRIPT_URL_KEY = 'aigame3d_apps_script_url';
 export const EXPLORER_PROFILE_KEY = 'aigame3d_explorer_profile';
@@ -185,10 +186,12 @@ export function getBundledFallbackData(): {
       steps: m.steps.map((s) => ({
         stepId: s.stepId,
         prompt: s.prompt,
+        imageUrl: s.imageUrl,
         options: [...s.options],
         answer: s.answer,
         hints: [...s.hints],
         explanation: s.explanation,
+        explanationImageUrl: s.explanationImageUrl,
         diagramSvg: s.diagramSvg
       }))
     }));
@@ -205,10 +208,12 @@ export function getBundledFallbackData(): {
       {
         stepId: `flower_${fq.id}`,
         prompt: fq.question,
+        imageUrl: fq.imageUrl,
         options: fq.options.map((opt) => ({ label: opt.label, value: opt.value })),
         answer: fq.answer,
         hints: [...fq.hints],
-        explanation: fq.explanation
+        explanation: fq.explanation,
+        explanationImageUrl: fq.explanationImageUrl
       }
     ]
   }));
@@ -284,13 +289,36 @@ export function sanitizeRemoteProblems(rawList: any[]): RemoteProblem[] {
           hints = s.hints.split(/[|;]/).map((h: string) => h.trim()).filter((h: string) => h.length > 0);
         }
 
+        // Xử lý ImageUrl và Prompt (hỗ trợ cả cột ImageUrl và cú pháp Markdown ![alt](url))
+        let imageUrl = resolveImageUrl(s.imageUrl);
+        if (!imageUrl && prompt) {
+          const extractedPrompt = extractMarkdownImage(prompt);
+          prompt = extractedPrompt.cleanText;
+          if (extractedPrompt.imageUrl) {
+            imageUrl = extractedPrompt.imageUrl;
+          }
+        }
+
+        // Xử lý ExplanationImageUrl và Explanation (hỗ trợ cả cột ExplanationImageUrl và Markdown)
+        let explanation = String(s.explanation || '').trim();
+        let explanationImageUrl = resolveImageUrl(s.explanationImageUrl);
+        if (!explanationImageUrl && explanation) {
+          const extractedExpl = extractMarkdownImage(explanation);
+          explanation = extractedExpl.cleanText;
+          if (extractedExpl.imageUrl) {
+            explanationImageUrl = extractedExpl.imageUrl;
+          }
+        }
+
         return {
           stepId: String(s.stepId || `${id}_${sIdx + 1}`).trim(),
           prompt: prompt || 'Giải bài toán sau:',
+          imageUrl,
           options,
           answer: answer || (options[0]?.value ?? ''),
           hints,
-          explanation: String(s.explanation || '').trim(),
+          explanation,
+          explanationImageUrl,
           diagramSvg: s.diagramSvg ? String(s.diagramSvg) : undefined
         };
       })

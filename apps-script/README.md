@@ -72,9 +72,16 @@ Mở tab `CONFIG`, thêm một dòng mới:
 Tạo một sheet mới trùng với `SheetName` khai báo ở trên:
 - **`ProblemId`**: Mã bài toán (VD: `101`). Nếu bài toán có nhiều bước, điền cùng một `ProblemId` cho các dòng liên tiếp.
 - **`StepId`**: Mã bước (VD: `101_1`, `101_2`).
+- **`Title`, `Subtitle`**: Tiêu đề và chủ đề bài toán.
 - **`Prompt`**: Đề bài toán cho bé.
+- **`ImageUrl`**: *(Mới)* Đường dẫn ảnh minh họa đề bài. Hỗ trợ:
+  - Link chia sẻ Google Drive (VD: `https://drive.google.com/file/d/.../view?usp=sharing` - *Lưu ý cần bật quyền "Bất kỳ ai có liên kết đều có thể xem"*).
+  - Link ảnh trực tiếp từ Web (.png, .jpg, .webp, .svg từ Imgur, Cloudinary, Github...).
+  - Chuỗi Base64 Data URI (`data:image/png;base64,...`) hoặc chuỗi Base64 thô (ảnh < 35KB để vừa giới hạn 50.000 ký tự của ô Google Sheets).
+  - *(Tùy chọn)* Có thể nhúng cú pháp Markdown `![Mô tả](link_ảnh)` trực tiếp vào ô `Prompt`.
 - **`OptionA`, `OptionB`, `OptionC`, `OptionD`**: Các đáp án trắc nghiệm lựa chọn.
 - **`Answer`**: Đáp án chính xác.
-- **`Hints`**: Các tầng gợi ý dẫn dắt, phân tách bằng dấu gạch đứng `|` (VD: `Gợi ý 1 | Gợi ý 2 | Lời giải chi tiết`).
+- **`Hints`**: Các tầng gợi ý dẫn dắt, phân tách bằng dấu gạch đứng `|` (VD: `Gợi ý 1 | Gợi ý 2`).
 - **`Explanation`**: Lời giải thích khi bé hoàn thành.
+- **`ExplanationImageUrl`**: *(Mới)* Đường dẫn ảnh minh họa cho phần gợi ý hoặc lời giải chi tiết (hỗ trợ Drive, URL web, Base64 tương tự `ImageUrl`).
 - **`PosX`, `PosZ`**: *(Không bắt buộc)* Tọa độ bia đá nếu muốn đặt chính xác vị trí; nếu để trống game sẽ tự tính toán theo Template.
