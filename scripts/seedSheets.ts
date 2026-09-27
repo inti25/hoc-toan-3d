@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getBundledFallbackData } from '../src/core/sheetsClient';
 
 function parseEnvFile(filePath: string): Record<string, string> {
   const env: Record<string, string> = {};
@@ -37,8 +36,9 @@ async function main() {
   console.log(`🔗 Apps Script URL: ${scriptUrl}`);
   if (sheetUrl) console.log(`📊 Google Sheets URL: ${sheetUrl}`);
 
-  // 1. Lấy toàn bộ kho dữ liệu hiện có (40 bài Archimedes + 10 bài Vườn hoa)
-  const bundle = getBundledFallbackData();
+  // 1. Lấy toàn bộ kho dữ liệu mẫu từ seedData.json (40 bài Archimedes + 10 bài Vườn hoa)
+  const seedPath = path.resolve(process.cwd(), 'src/data/seedData.json');
+  const bundle = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
   const zoneCount = bundle.zones.length;
   const sheetKeys = Object.keys(bundle.questionsBySheet);
   let totalProblems = 0;

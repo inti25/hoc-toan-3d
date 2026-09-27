@@ -383,8 +383,10 @@ export class World {
       [14, -6.0], [18, -6.0], [22, -8.5], [26, -6.0], [30, -6.0],
       [14, 6.0], [18, 6.0], [22, 8.5], [26, 6.0], [30, 6.0]
     ];
+    const FLOWER_PALETTE = [0xf06292, 0xffb300, 0x42a5f5, 0xe91e63, 0xab47bc, 0xff7043, 0x26a69a, 0xffa726, 0x5c6bc0, 0xffd54f];
     FLOWER_COORDS.forEach(([x, z], i) => {
       const q = FLOWER_QUESTIONS[i];
+      const flowerColor = q?.color ?? FLOWER_PALETTE[i % FLOWER_PALETTE.length];
       const group = new THREE.Group();
       group.position.set(x, 0, z);
 
@@ -401,7 +403,7 @@ export class World {
       sign.position.set(.85, 0, .85);
       this.cylinder(sign, 0, .45, 0, .05, .05, .9, 0x8a623f, 6);
       this.box(sign, 0, .85, 0, .45, .32, .08, 0xfce9bf);
-      this.sphere(sign, 0, 1.1, 0, .1, q.color);
+      this.sphere(sign, 0, 1.1, 0, .1, flowerColor);
       group.add(sign);
 
       // Stem & Leaves
@@ -415,7 +417,7 @@ export class World {
       const bud = new THREE.Group();
       bud.position.set(0, 1.75, 0);
       this.cylinder(bud, 0, 0, 0, .22, .08, .3, 0x43a047, 6);
-      const budBall = this.sphere(bud, 0, .18, 0, .28, q.color);
+      const budBall = this.sphere(bud, 0, .18, 0, .28, flowerColor);
       budBall.scale.y = 1.3;
       const beacon = this.sphere(bud, 0, .75, 0, .13, 0xffd54f);
       beacon.userData.beacon = true;
@@ -428,7 +430,7 @@ export class World {
       this.sphere(bloom, 0, .06, 0, .32, 0xffd54f);
       for (let p = 0; p < 8; p++) {
         const angle = p * Math.PI / 4;
-        const petal = this.box(bloom, Math.cos(angle) * .55, .02, Math.sin(angle) * .55, .36, .08, .55, q.color);
+        const petal = this.box(bloom, Math.cos(angle) * .55, .02, Math.sin(angle) * .55, .36, .08, .55, flowerColor);
         petal.rotation.y = -angle;
         petal.rotation.x = .15;
       }

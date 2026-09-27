@@ -50,6 +50,23 @@ export function resolveImageUrl(rawSource?: string | null): string | undefined {
     return trimmed;
   }
 
+  // 5. Nếu là file ảnh cục bộ hoặc đường dẫn tương đối (VD: "Screenshot 2026-09-27 160421.png" hoặc "/images/...")
+  if (/\.(png|jpe?g|webp|svg|gif)($|\?)/i.test(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('./')) {
+    let baseUrl = '/';
+    try {
+      if (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL) {
+        baseUrl = (import.meta as any).env.BASE_URL;
+      }
+    } catch (_) {}
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+    if (trimmed.startsWith(normalizedBase)) {
+      return trimmed;
+    }
+    const cleanPath = trimmed.replace(/^\.?\//, '');
+    return `${normalizedBase}${cleanPath}`;
+  }
+
   return undefined;
 }
 

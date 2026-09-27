@@ -7,7 +7,10 @@ import {
   ChallengeSession,
   parseAnswer
 } from '../src/quiz/session';
-import { FLOWER_QUESTIONS } from '../src/data/flowerQuestions';
+import seedData from '../src/data/seedData.json';
+
+const flowerSeeds = seedData.questionsBySheet['VuonHoa'];
+const archSeeds = seedData.questionsBySheet['Zone_1_Archimedes'];
 
 test('MultiplicationChallenge session validates answers and advances hints on wrong attempts', () => {
   const challenge = createMultiplicationChallenge(5, 4, 'bridge');
@@ -37,8 +40,8 @@ test('MultiplicationChallenge session validates answers and advances hints on wr
 });
 
 test('FlowerChallenge session validates answers and advances through tiered hints', () => {
-  const q = FLOWER_QUESTIONS[0]; // 100
-  const challenge = createFlowerChallenge(0);
+  const q = flowerSeeds[0]; // 100
+  const challenge = createFlowerChallenge(q);
   assert.equal(challenge.kind, 'flower');
   assert.equal(challenge.answer, '100');
 
@@ -47,14 +50,14 @@ test('FlowerChallenge session validates answers and advances through tiered hint
   // Manual hint request
   const hint1 = session.requestHint();
   assert.equal(session.getHintStage(), 1);
-  assert.equal(hint1, q.hints[0]);
+  assert.equal(hint1, challenge.hints[0]);
 
   // Wrong submission advances hint stage
   const wrongChoice = challenge.options.find(o => o.value !== '100')!.value;
   const resWrong = session.submit(wrongChoice);
   assert.equal(resWrong.isCorrect, false);
   assert.equal(session.getHintStage(), 2);
-  assert.equal(resWrong.hint, q.hints[1]);
+  assert.equal(resWrong.hint, challenge.hints[1]);
 
   // Correct submission completes session
   const resCorrect = session.submit('100');
@@ -76,7 +79,8 @@ test('Repeated wrong attempts in multiplication cap at stage 3 and provide full 
 });
 
 test('ArchimedesChallenge session supports multi-step monoliths, tiered hints, and explanations', () => {
-  const challenge = createArchimedesChallenge(0, 0); // Bài 306, step 0
+  const m = archSeeds[0];
+  const challenge = createArchimedesChallenge(m as any, 0); // Bài 306, step 0
   assert.equal(challenge.kind, 'archimedes');
   assert.equal(challenge.monolithId, 306);
   assert.equal(challenge.answer, '893');
@@ -143,26 +147,26 @@ test('Bridge mode validates missing factor as well as product', () => {
 });
 
 test('FlowerChallenge accepts typed number for questions with units', () => {
-  const flower1 = createFlowerChallenge(1); // Bài 2: answer '22kg'
+  const flower1 = createFlowerChallenge(flowerSeeds[1]); // Bài 2: answer '22kg'
   const session = new ChallengeSession(flower1);
 
   // Typing pure number 22
   assert.equal(session.submit('22').isCorrect, true);
 
-  const flower3 = createFlowerChallenge(3); // Bài 4: answer '50 quyển'
+  const flower3 = createFlowerChallenge(flowerSeeds[3]); // Bài 4: answer '50 quyển'
   const session2 = new ChallengeSession(flower3);
   assert.equal(session2.submit(50).isCorrect, true);
 });
 
 test('ArchimedesChallenge accepts comparison operators and typed numbers with units', () => {
   // Bài 307 step 0: answer '707 kg'
-  const arch1 = createArchimedesChallenge(1, 0);
+  const arch1 = createArchimedesChallenge(archSeeds[1] as any, 0);
   assert.equal(arch1.answer, '707 kg');
   const s1 = new ChallengeSession(arch1);
   assert.equal(s1.submit(707).isCorrect, true);
 
   // Bài 308 step 0: answer '='
-  const archComp = createArchimedesChallenge(2, 0);
+  const archComp = createArchimedesChallenge(archSeeds[2] as any, 0);
   assert.equal(archComp.answer, '=');
   const s2 = new ChallengeSession(archComp);
   assert.equal(s2.submit('=').isCorrect, true);

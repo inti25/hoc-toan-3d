@@ -19,28 +19,34 @@ test('table filter and hint levels are correct',()=>{const s=freshState();s.tabl
 test('save roundtrip preserves progression, preferences, and review history',()=>{const s=freshState();s.started=true;s.xp=80;s.coins=45;s.bridge=6;s.questAccepted=true;s.questComplete=true;s.avatar='girl';s.table=5;recordAnswer(s,makeQuestion(5,7,'practice'),false,3210);assert.deepEqual(parseSave(JSON.stringify(s)),s);});
 test('corrupted save safely defaults or sanitizes',()=>{assert.deepEqual(parseSave('{oops'),freshState());assert.deepEqual(parseSave('null'),freshState());assert.deepEqual(parseSave('{"version":2}'),freshState());const s=parseSave('{"version":1,"xp":-50,"bridge":99,"coins":"oops","review":["evil","m2_1"],"questComplete":true}');assert.equal(s.xp,0);assert.equal(s.bridge,6);assert.equal(s.coins,0);assert.deepEqual(s.review,['m2_1']);});
 test('level thresholds match the game design',()=>{assert.deepEqual([0,99,100,249,250,449,450,699,700].map(getLevel),[1,1,2,2,3,3,4,4,5]);});
-test('all 10 flower questions are correctly configured with valid answers and hints',()=>{
-  assert.equal(FLOWER_QUESTIONS.length, 10);
-  FLOWER_QUESTIONS.forEach((q: any, i: number) => {
+import seedData from '../src/data/seedData.json';
+
+test('all 10 flower questions are correctly configured with valid answers and hints in seed data', () => {
+  assert.equal(FLOWER_QUESTIONS.length, 0, 'FE bundle must contain 0 hardcoded flower questions');
+  const flowers = seedData.questionsBySheet['VuonHoa'];
+  assert.equal(flowers.length, 10);
+  flowers.forEach((q: any, i: number) => {
     assert.equal(q.id, i + 1);
     assert(q.title.length > 0);
-    assert(q.question.length > 0);
-    assert.equal(q.options.length, 3);
-    assert.equal(new Set(q.options.map((o: any) => o.value)).size, 3);
-    assert(q.options.some((o: any) => o.value === q.answer));
-    assert(q.hints.length >= 2);
-    assert(q.explanation.length > 0);
+    assert(q.steps && q.steps.length >= 1);
+    const step = q.steps[0];
+    assert(step.prompt.length > 0);
+    assert.equal(step.options.length, 3);
+    assert.equal(new Set(step.options.map((o: any) => o.value)).size, 3);
+    assert(step.options.some((o: any) => o.value === step.answer));
+    assert(step.hints.length >= 2);
+    assert(step.explanation.length > 0);
   });
-  assert.equal(FLOWER_QUESTIONS[0].answer, '100');
-  assert.equal(FLOWER_QUESTIONS[1].answer, '22kg');
-  assert.equal(FLOWER_QUESTIONS[2].answer, '0');
-  assert.equal(FLOWER_QUESTIONS[3].answer, '50 quyển');
-  assert.equal(FLOWER_QUESTIONS[4].answer, '40 tuổi');
-  assert.equal(FLOWER_QUESTIONS[5].answer, '100');
-  assert.equal(FLOWER_QUESTIONS[6].answer, 'Ngày 28 tháng 5');
-  assert.equal(FLOWER_QUESTIONS[7].answer, '13');
-  assert.equal(FLOWER_QUESTIONS[8].answer, '53');
-  assert.equal(FLOWER_QUESTIONS[9].answer, '9 số');
+  assert.equal(flowers[0].steps[0].answer, '100');
+  assert.equal(flowers[1].steps[0].answer, '22kg');
+  assert.equal(flowers[2].steps[0].answer, '0');
+  assert.equal(flowers[3].steps[0].answer, '50 quyển');
+  assert.equal(flowers[4].steps[0].answer, '40 tuổi');
+  assert.equal(flowers[5].steps[0].answer, '100');
+  assert.equal(flowers[6].steps[0].answer, 'Ngày 28 tháng 5');
+  assert.equal(flowers[7].steps[0].answer, '13');
+  assert.equal(flowers[8].steps[0].answer, '53');
+  assert.equal(flowers[9].steps[0].answer, '9 số');
 });
 test('flower blooming state is preserved across save and load',()=>{
   const s = freshState();

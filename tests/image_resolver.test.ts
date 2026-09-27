@@ -22,12 +22,18 @@ test('resolveImageUrl converts various Google Drive share links to direct thumbn
   );
 });
 
-test('resolveImageUrl preserves standard direct image URLs', () => {
+test('resolveImageUrl preserves standard direct image URLs and local filenames', () => {
   const cdnUrl = 'https://images.unsplash.com/photo-sample.png?w=500';
   assert.equal(resolveImageUrl(cdnUrl), cdnUrl);
 
   const githubRaw = 'https://raw.githubusercontent.com/user/repo/main/image.webp';
   assert.equal(resolveImageUrl(githubRaw), githubRaw);
+
+  const localFile = 'Screenshot 2026-09-27 160421.png';
+  assert.equal(resolveImageUrl(localFile), '/Screenshot 2026-09-27 160421.png');
+
+  const relativePath = './images/diagram.svg';
+  assert.equal(resolveImageUrl(relativePath), '/images/diagram.svg');
 });
 
 test('resolveImageUrl handles Base64 data URIs and prefixes raw Base64 strings', () => {

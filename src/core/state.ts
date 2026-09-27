@@ -7,8 +7,9 @@ export interface SaveState {
   flowers: boolean[];
   monoliths: boolean[];
   zoneBadges: boolean[];
+  solvedProblems: Record<string, boolean>;
 }
-export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false) });
+export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false), solvedProblems: {} });
 const positive = (v: unknown, max = 10000000): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0;
 export function parseSave(raw: string | null): SaveState {
   const base = freshState();
@@ -33,13 +34,29 @@ export function parseSave(raw: string | null): SaveState {
       }
     }
     if (Array.isArray(d.review)) base.review = [...new Set(d.review.filter((id): id is string => typeof id === 'string' && /^m([1-9]|10)_([1-9]|10)$/.test(id)))].slice(0, 100);
+    if (d.solvedProblems && typeof d.solvedProblems === 'object') {
+      for (const [k, val] of Object.entries(d.solvedProblems as Record<string, unknown>)) {
+        if (val === true) base.solvedProblems[String(k)] = true;
+      }
+    }
     if (Array.isArray(d.flowers)) {
       const fl = d.flowers;
       base.flowers = Array.from({ length: 10 }, (_, i) => fl[i] === true);
+      base.flowers.forEach((isDone, idx) => {
+        if (isDone) {
+          base.solvedProblems[`flower_${idx + 1}`] = true;
+          base.solvedProblems[String(idx + 1)] = true;
+        }
+      });
     }
     if (Array.isArray(d.monoliths)) {
       const mo = d.monoliths;
       base.monoliths = Array.from({ length: Math.max(40, mo.length) }, (_, i) => mo[i] === true);
+      base.monoliths.forEach((isDone, idx) => {
+        if (isDone) {
+          base.solvedProblems[String(306 + idx)] = true;
+        }
+      });
     }
     if (Array.isArray(d.zoneBadges)) {
       const zb = d.zoneBadges;

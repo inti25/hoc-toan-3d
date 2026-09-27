@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getBundledFallbackData } from '../src/core/sheetsClient';
 
 function buildAppsScriptCode() {
-  const bundle = getBundledFallbackData();
+  const seedPath = path.resolve(process.cwd(), 'src/data/seedData.json');
+  const bundle = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
 
   // Tạo mã nguồn JavaScript của Google Apps Script
   const code = `/**

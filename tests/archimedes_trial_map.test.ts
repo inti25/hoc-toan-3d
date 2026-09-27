@@ -10,26 +10,32 @@ import {
 import { Adventure } from '../src/core/Adventure';
 import { freshState, parseSave } from '../src/core/state';
 import { SpatialWorld } from '../src/world/SpatialWorld';
+import seedData from '../src/data/seedData.json';
 
+const seedMonoliths = Object.entries(seedData.questionsBySheet)
+  .filter(([sheet]) => sheet.startsWith('Zone_'))
+  .flatMap(([, list]) => list);
+const sortedMonoliths = [...seedMonoliths].sort((a: any, b: any) => a.id - b.id);
 
-test('ArchimedesTrialMap contains all 40 monoliths corresponding to pages 128 to 139', () => {
-  assert.equal(ARCHIMEDES_MONOLITHS.length, 40, 'Must have exactly 40 monoliths (Bài 306 - 345)');
+test('ArchimedesTrialMap runtime bundle has 0 hardcoded monoliths, while seedData contains all 40 monoliths corresponding to pages 128 to 139', () => {
+  assert.equal(ARCHIMEDES_MONOLITHS.length, 0, 'FE bundle must have 0 hardcoded monoliths');
+  assert.equal(sortedMonoliths.length, 40, 'Must have exactly 40 monoliths in seed data (Bài 306 - 345)');
 
   // Verify IDs are consecutive 306 to 345
   for (let i = 0; i < 40; i++) {
     const expectedId = 306 + i;
-    assert.equal(ARCHIMEDES_MONOLITHS[i].id, expectedId, `Index ${i} must have id ${expectedId}`);
+    assert.equal(sortedMonoliths[i].id, expectedId, `Index ${i} must have id ${expectedId}`);
   }
 });
 
-test('ArchimedesTrialMap zones partition all 40 monoliths correctly', () => {
+test('ArchimedesTrialMap zones partition all 40 monoliths correctly in seedData', () => {
   assert.equal(ARCHIMEDES_ZONES.length, 5, 'Must have 5 thematic zones');
 
-  const zone1 = getMonolithsByZone(1);
-  const zone2 = getMonolithsByZone(2);
-  const zone3 = getMonolithsByZone(3);
-  const zone4 = getMonolithsByZone(4);
-  const zone5 = getMonolithsByZone(5);
+  const zone1 = seedData.questionsBySheet['Zone_1_Archimedes'];
+  const zone2 = seedData.questionsBySheet['Zone_2_Archimedes'];
+  const zone3 = seedData.questionsBySheet['Zone_3_Archimedes'];
+  const zone4 = seedData.questionsBySheet['Zone_4_Archimedes'];
+  const zone5 = seedData.questionsBySheet['Zone_5_Archimedes'];
 
   assert.equal(zone1.length, 10, 'Zone 1 (Tính toán & Đại lượng) has 10 monoliths');
   assert.equal(zone2.length, 6, 'Zone 2 (Tính nhanh & Dãy số) has 6 monoliths');
@@ -54,23 +60,25 @@ test('Seam 1: ArchimedesTrialMap zones and monoliths are compact within the 5 sa
     const expected = expectedCenters[zone.id];
     assert.deepEqual(zone.center, expected, `Zone ${zone.id} must be centered at compact island (${expected.x}, ${expected.z})`);
 
-    const monoliths = getMonolithsByZone(zone.id);
+    const monoliths = (seedData.questionsBySheet as any)[zone.sheetName] || [];
     for (const m of monoliths) {
-      const distToCenter = Math.hypot(m.position.x - zone.center.x, m.position.z - zone.center.z);
-      assert.ok(
-        distToCenter <= 13.5,
-        `Monolith ${m.id} at (${m.position.x}, ${m.position.z}) must be within 13.5m radius of Zone ${zone.id} center (${zone.center.x}, ${zone.center.z}), actual: ${distToCenter.toFixed(1)}m`
-      );
+      if (m.position) {
+        const distToCenter = Math.hypot(m.position.x - zone.center.x, m.position.z - zone.center.z);
+        assert.ok(
+          distToCenter <= 13.5,
+          `Monolith ${m.id} at (${m.position.x}, ${m.position.z}) must be within 13.5m radius of Zone ${zone.id} center (${zone.center.x}, ${zone.center.z}), actual: ${distToCenter.toFixed(1)}m`
+        );
+      }
     }
   }
 });
 
-
-test('Every Archimedes monolith has valid structure, options, hints, and correct answers', () => {
-  for (const monolith of ARCHIMEDES_MONOLITHS) {
+test('Every Archimedes monolith has valid structure, options, hints, and correct answers in seed data', () => {
+  for (const monolith of seedMonoliths) {
     assert.ok(monolith.title.length > 0, `Monolith ${monolith.id} has title`);
-    assert.ok(monolith.page >= 128 && monolith.page <= 139, `Monolith ${monolith.id} has valid page (${monolith.page})`);
-    assert.ok(monolith.position && typeof monolith.position.x === 'number' && typeof monolith.position.z === 'number', `Monolith ${monolith.id} has 3D coords`);
+    if (monolith.page !== undefined) {
+      assert.ok(monolith.page >= 128 && monolith.page <= 139, `Monolith ${monolith.id} has valid page (${monolith.page})`);
+    }
     assert.ok(monolith.steps.length >= 1, `Monolith ${monolith.id} has at least 1 step`);
 
     for (let sIdx = 0; sIdx < monolith.steps.length; sIdx++) {
@@ -78,7 +86,7 @@ test('Every Archimedes monolith has valid structure, options, hints, and correct
       assert.ok(step.prompt.length > 0, `Monolith ${monolith.id} step ${sIdx} has non-empty prompt`);
       assert.ok(step.options.length >= 3, `Monolith ${monolith.id} step ${sIdx} has at least 3 options`);
       
-      const optionValues = step.options.map(o => o.value);
+      const optionValues = step.options.map((o: any) => o.value);
       const uniqueValues = new Set(optionValues);
       assert.equal(uniqueValues.size, optionValues.length, `Monolith ${monolith.id} step ${sIdx} options must be unique`);
       assert.ok(optionValues.includes(step.answer), `Monolith ${monolith.id} step ${sIdx} answer '${step.answer}' must be in options [${optionValues.join(', ')}]`);
@@ -144,6 +152,10 @@ test('Seam 2: SpatialWorld permits movement on compact islands and blocks void b
   assert.equal(world.canMove(150, 0), false, 'Void between Sanctuary 2 and 4 must be blocked');
 
   // 5. Monolith proximity on compact layout
+  world.setDynamicData(
+    ARCHIMEDES_ZONES,
+    seedMonoliths.filter((m: any) => m.position).map((m: any) => m.position)
+  );
   // Monolith 306 is at (104, -65)
   world.teleport(104, -65);
   assert.equal(world.nearMonolithIndex(), 0, 'Standing right next to Monolith 306 in Sanctuary 1');

@@ -143,8 +143,41 @@ export function createMultiplicationChallenge(
   };
 }
 
-export function createFlowerChallenge(index: number): FlowerChallenge {
-  const q = FLOWER_QUESTIONS[index];
+export function createFlowerChallenge(target: number | FlowerQuestion | ArchimedesMonolith | any): FlowerChallenge {
+  let q: FlowerQuestion;
+  if (typeof target === 'object' && target !== null) {
+    if (target.steps && target.steps[0]) {
+      const step = target.steps[0];
+      q = {
+        id: target.id,
+        title: target.subtitle || target.title || `Hoa Thử Thách #${target.id}`,
+        question: step.prompt,
+        options: step.options,
+        answer: step.answer,
+        hints: step.hints || [],
+        explanation: step.explanation || '',
+        imageUrl: step.imageUrl || target.imageUrl,
+        explanationImageUrl: step.explanationImageUrl || target.explanationImageUrl,
+        badge: target.badge || '🌸 Hoa Tri Thức',
+        color: target.color || 0xec4899
+      };
+    } else {
+      q = target as FlowerQuestion;
+    }
+  } else {
+    q = (FLOWER_QUESTIONS[target] || {
+      id: target + 1,
+      title: `Hoa Thử Thách #${target + 1}`,
+      question: 'Đang kết nối thư viện tri thức...',
+      options: [{ label: '...', value: '...' }],
+      answer: '...',
+      hints: ['Đang tải gợi ý từ Google Sheets'],
+      explanation: '',
+      color: 0xec4899,
+      badge: '🌸 Hoa Tri Thức'
+    });
+  }
+  const index = typeof target === 'number' ? target : (q.id - 1);
   return {
     id: `flower_${index}`,
     kind: 'flower',
@@ -153,36 +186,74 @@ export function createFlowerChallenge(index: number): FlowerChallenge {
     badge: q.badge,
     color: q.color,
     prompt: q.question,
-    options: q.options.map(o => ({ value: o.value, label: o.label })),
+    options: (q.options || []).map(o => ({ value: o.value, label: o.label })),
     answer: q.answer,
-    hints: q.hints,
-    explanation: q.explanation,
+    hints: q.hints || [],
+    explanation: q.explanation || '',
     imageUrl: q.imageUrl,
     explanationImageUrl: q.explanationImageUrl,
     flowerQuestion: q
   };
 }
 
-export function createArchimedesChallenge(monolithIndex: number, stepIndex = 0): ArchimedesChallenge {
-  const m = ARCHIMEDES_MONOLITHS[monolithIndex];
-  const step = m.steps[Math.min(stepIndex, m.steps.length - 1)];
+export function createArchimedesChallenge(
+  target: number | ArchimedesMonolith,
+  stepIndex = 0
+): ArchimedesChallenge {
+  const m: ArchimedesMonolith = typeof target === 'object'
+    ? target
+    : (ARCHIMEDES_MONOLITHS[target] || {
+        id: 306 + target,
+        zoneId: 1,
+        zoneName: 'Thung Lũng Tính Toán & Đại Lượng',
+        page: 128,
+        title: `Bia Đá ${306 + target}`,
+        subtitle: 'Thử thách tri thức',
+        position: { x: 0, z: 0 },
+        color: 0x38bdf8,
+        badge: '🏆 Bia Đá Tri Thức',
+        steps: [
+          {
+            stepId: `${306 + target}_1`,
+            prompt: 'Đang kết nối thư viện tri thức từ Google Sheets...',
+            options: [{ label: '...', value: '...' }],
+            answer: '...',
+            hints: ['Đang tải gợi ý...'],
+            explanation: ''
+          }
+        ]
+      });
+
+  const monolithIndex = typeof target === 'number' ? target : 0;
+  const steps = m.steps && m.steps.length > 0 ? m.steps : [
+    {
+      stepId: `${m.id}_1`,
+      prompt: 'Đang kết nối thư viện tri thức...',
+      options: [{ label: '...', value: '...' }],
+      answer: '...',
+      hints: [],
+      explanation: ''
+    }
+  ];
+  const step = steps[Math.min(stepIndex, steps.length - 1)];
+
   return {
     id: `archimedes_${m.id}_${stepIndex}`,
     kind: 'archimedes',
     monolithId: m.id,
     monolithIndex,
     stepIndex,
-    totalSteps: m.steps.length,
+    totalSteps: steps.length,
     title: m.title,
     zoneName: m.zoneName,
     page: m.page,
     badge: m.badge,
     color: m.color,
     prompt: step.prompt,
-    options: step.options.map(o => ({ value: o.value, label: o.label })),
+    options: (step.options || []).map(o => ({ value: o.value, label: o.label })),
     answer: step.answer,
-    hints: step.hints,
-    explanation: step.explanation,
+    hints: step.hints || [],
+    explanation: step.explanation || '',
     imageUrl: step.imageUrl,
     explanationImageUrl: step.explanationImageUrl,
     diagramSvg: step.diagramSvg,

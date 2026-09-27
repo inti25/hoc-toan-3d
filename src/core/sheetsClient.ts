@@ -1,5 +1,4 @@
-import { ARCHIMEDES_ZONES, ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
-import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
+import { ARCHIMEDES_ZONES } from '../data/archimedesTrialMap';
 import {
   computeProceduralEntityPositions,
   computeArchipelagoOrbitalPosition,
@@ -90,23 +89,16 @@ export const DEFAULT_APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycby1BaZUX9yfq1aW543kiSBnSP7-LP0AGQJkHUGF44hf5HB73p6WCAdNTvv13vSh0hvf/exec';
 
 /**
- * Lấy cấu hình URL Apps Script (ưu tiên localStorage, rồi .env, fallback sang DEFAULT_APPS_SCRIPT_URL)
+ * Lấy cấu hình URL Apps Script (ưu tiên biến môi trường VITE_APPS_SCRIPT_URL, fallback sang DEFAULT_APPS_SCRIPT_URL)
+ * Không cho phép thay đổi từ giao diện người dùng.
  */
 export function getAppsScriptUrl(): string {
-  const saved = safeStorage.getItem(APPS_SCRIPT_URL_KEY);
-  if (saved && saved.trim()) return saved.trim();
   try {
-    const envUrl = (import.meta as any)?.env?.VITE_APPS_SCRIPT_URL;
+    const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_APPS_SCRIPT_URL) ||
+      (typeof globalThis !== 'undefined' && (globalThis as any)?.process?.env?.VITE_APPS_SCRIPT_URL);
     if (envUrl && typeof envUrl === 'string' && envUrl.trim()) return envUrl.trim();
   } catch (_) {}
   return DEFAULT_APPS_SCRIPT_URL;
-}
-
-/**
- * Lưu URL Apps Script tùy chỉnh từ người dùng/giáo viên
- */
-export function setAppsScriptUrl(url: string): void {
-  safeStorage.setItem(APPS_SCRIPT_URL_KEY, url.trim());
 }
 
 /**
@@ -169,56 +161,7 @@ export function getBundledFallbackData(): {
     }
   ];
 
-  const questionsBySheet: Record<string, RemoteProblem[]> = {};
-
-  ARCHIMEDES_ZONES.forEach((z) => {
-    const sheetName = `Zone_${z.id}_Archimedes`;
-    const monoliths = ARCHIMEDES_MONOLITHS.filter((m) => m.zoneId === z.id);
-    questionsBySheet[sheetName] = monoliths.map((m) => ({
-      id: m.id,
-      zoneId: m.zoneId,
-      zoneName: m.zoneName,
-      title: m.title,
-      subtitle: m.subtitle,
-      position: { ...m.position },
-      color: m.color,
-      badge: m.badge,
-      steps: m.steps.map((s) => ({
-        stepId: s.stepId,
-        prompt: s.prompt,
-        imageUrl: s.imageUrl,
-        options: [...s.options],
-        answer: s.answer,
-        hints: [...s.hints],
-        explanation: s.explanation,
-        explanationImageUrl: s.explanationImageUrl,
-        diagramSvg: s.diagramSvg
-      }))
-    }));
-  });
-
-  questionsBySheet['VuonHoa'] = FLOWER_QUESTIONS.map((fq) => ({
-    id: fq.id,
-    title: `Hoa Thử Thách #${fq.id}`,
-    subtitle: fq.title,
-    position: null, // Sẽ tự tính toán theo FLOWER_BEDS template
-    color: fq.color,
-    badge: fq.badge,
-    steps: [
-      {
-        stepId: `flower_${fq.id}`,
-        prompt: fq.question,
-        imageUrl: fq.imageUrl,
-        options: fq.options.map((opt) => ({ label: opt.label, value: opt.value })),
-        answer: fq.answer,
-        hints: [...fq.hints],
-        explanation: fq.explanation,
-        explanationImageUrl: fq.explanationImageUrl
-      }
-    ]
-  }));
-
-  return { zones: defaultZones, questionsBySheet };
+  return { zones: defaultZones, questionsBySheet: {} };
 }
 
 /**
@@ -352,30 +295,47 @@ export function sanitizeRemoteProblems(rawList: any[]): RemoteProblem[] {
 export async function loadZonesAndQuestions(
   onFreshData?: (data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) => void
 ): Promise<{ zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }> {
-  // 1. Kiểm tra cache và thời hạn 30 phút
+  // 1. Kiểm tra cache
   const { data: cachedData, isExpired } = getCachedRemoteData();
-  const initialData = cachedData || getBundledFallbackData();
-
-  // Nếu cache còn hiệu lực (< 30 phút) và đã có dữ liệu: hoàn toàn không gọi mạng
-  if (!isExpired && cachedData) {
-    return initialData;
-  }
-
-  // 2. Cache hết hạn (> 30 phút) hoặc chưa có cache: Ngầm kích hoạt fetch nếu có URL (Stale-While-Revalidate)
   const scriptUrl = getAppsScriptUrl();
-  if (scriptUrl) {
-    fetchRemoteData(scriptUrl)
-      .then((fresh) => {
-        if (fresh && onFreshData) {
-          onFreshData(fresh);
-        }
-      })
-      .catch((err) => {
-        console.warn('Apps Script background sync bypassed, using cached/bundled data:', err.message);
-      });
+
+  const hasCachedData = cachedData && Array.isArray(cachedData.zones) && cachedData.zones.length > 0;
+
+  // Nếu cache còn hiệu lực (< 30 phút) và đã có dữ liệu:
+  if (!isExpired && hasCachedData) {
+    return cachedData!;
   }
 
-  return initialData;
+  // Nếu có cache nhưng đã hết hạn: trả về cache trước, ngầm fetch cập nhật mới (Stale-While-Revalidate)
+  if (hasCachedData) {
+    if (scriptUrl) {
+      fetchRemoteData(scriptUrl)
+        .then((fresh) => {
+          if (fresh && onFreshData) {
+            onFreshData(fresh);
+          }
+        })
+        .catch((err) => {
+          console.warn('Apps Script background sync bypassed:', err.message);
+        });
+    }
+    return cachedData!;
+  }
+
+  // 2. Chưa có cache câu hỏi (lần đầu vào game): nạp từ Apps Script
+  if (scriptUrl) {
+    try {
+      const fresh = await fetchRemoteData(scriptUrl);
+      if (fresh) {
+        if (onFreshData) onFreshData(fresh);
+        return fresh;
+      }
+    } catch (err: any) {
+      console.warn('Lần đầu nạp dữ liệu từ Apps Script thất bại:', err?.message);
+    }
+  }
+
+  return getBundledFallbackData();
 }
 
 /**

@@ -11,7 +11,6 @@ import {
   resolveZoneProblemsWithPositions,
   saveExplorerProfile,
   getExplorerProfile,
-  setAppsScriptUrl,
   getAppsScriptUrl
 } from '../src/core/sheetsClient';
 
@@ -93,9 +92,8 @@ test('getBundledFallbackData provides complete fallback for 5 Archimedes zones +
   assert.ok(flowerZone);
   assert.equal(flowerZone.template, 'FLOWER_BEDS');
 
-  // Kiểm tra các bài toán của Flower Garden
-  const flowerQuestions = fallback.questionsBySheet['VuonHoa'];
-  assert.equal(flowerQuestions.length, 10);
+  // Toàn bộ câu hỏi được nạp động từ Google Sheets (questionsBySheet ban đầu rỗng)
+  assert.deepEqual(fallback.questionsBySheet, {});
 });
 
 test('resolveZoneProblemsWithPositions preserves explicit coordinates and computes procedural ones', () => {
@@ -141,9 +139,8 @@ test('resolveZoneProblemsWithPositions preserves explicit coordinates and comput
   assert.equal(resolved[1].zoneId, 1);
 });
 
-test('ExplorerProfile and AppsScriptUrl persistence roundtrip', () => {
-  setAppsScriptUrl('https://script.google.com/macros/s/test-url/exec');
-  assert.equal(getAppsScriptUrl(), 'https://script.google.com/macros/s/test-url/exec');
+test('ExplorerProfile persistence and immutable AppsScriptUrl', () => {
+  assert.ok(getAppsScriptUrl().startsWith('https://script.google.com/macros/s/'));
 
   saveExplorerProfile({
     nickname: 'Bé Minh Anh',

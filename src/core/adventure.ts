@@ -192,8 +192,13 @@ export class Adventure {
     };
   }
 
-  bloomFlower(index: number): FlowerBloomDelta {
-    if (this.state.flowers[index]) {
+  bloomFlower(index: number, flowerId?: number | string): FlowerBloomDelta {
+    const fIdKey = flowerId !== undefined ? String(flowerId) : String(index + 1);
+    const alreadyBloomed = (index >= 0 && index < this.state.flowers.length && this.state.flowers[index]) ||
+      this.state.solvedProblems[fIdKey] === true ||
+      this.state.solvedProblems[`flower_${fIdKey}`] === true;
+
+    if (alreadyBloomed) {
       return {
         alreadyBloomed: true,
         xpGained: 0,
@@ -206,7 +211,11 @@ export class Adventure {
     }
 
     const oldLevel = getLevel(this.state.xp);
-    this.state.flowers[index] = true;
+    if (index >= 0 && index < this.state.flowers.length) {
+      this.state.flowers[index] = true;
+    }
+    this.state.solvedProblems[fIdKey] = true;
+    this.state.solvedProblems[`flower_${fIdKey}`] = true;
     let xpGained = 15;
     let coinsGained = 5;
 
@@ -263,11 +272,20 @@ export class Adventure {
     };
   }
 
-  activateMonolith(index: number): MonolithActivationDelta {
-    const monolith = ARCHIMEDES_MONOLITHS[index];
-    const zoneId = monolith ? monolith.zoneId : 1;
+  isProblemSolved(problemId: number | string): boolean {
+    const key = String(problemId);
+    return this.state.solvedProblems[key] === true || this.state.solvedProblems[`flower_${key}`] === true;
+  }
 
-    if (this.state.monoliths[index]) {
+  activateMonolith(index: number, problemId?: number | string, zoneIdInput?: number): MonolithActivationDelta {
+    const idKey = problemId !== undefined ? String(problemId) : String(306 + index);
+    const monolith = ARCHIMEDES_MONOLITHS[index];
+    const zoneId = zoneIdInput || (monolith ? monolith.zoneId : 1);
+
+    const alreadyActivated = (index >= 0 && index < this.state.monoliths.length && this.state.monoliths[index]) ||
+      this.state.solvedProblems[idKey] === true;
+
+    if (alreadyActivated) {
       return {
         alreadyActivated: true,
         monolithIndex: index,
@@ -283,15 +301,18 @@ export class Adventure {
     }
 
     const oldLevel = getLevel(this.state.xp);
-    this.state.monoliths[index] = true;
+    if (index >= 0 && index < this.state.monoliths.length) {
+      this.state.monoliths[index] = true;
+    }
+    this.state.solvedProblems[idKey] = true;
     let xpGained = 20;
     let coinsGained = 10;
 
     const zoneMonoliths = getMonolithsByZone(zoneId);
-    const zoneCompletedNow = zoneMonoliths.every(m => this.state.monoliths[m.id - 306]);
+    const zoneCompletedNow = zoneMonoliths.length > 0 && zoneMonoliths.every(m => this.state.solvedProblems[String(m.id)] || this.state.monoliths[m.id - 306]);
     let zoneCompleted = false;
 
-    if (zoneCompletedNow && !this.state.zoneBadges[zoneId - 1]) {
+    if (zoneCompletedNow && zoneId >= 1 && zoneId <= 5 && !this.state.zoneBadges[zoneId - 1]) {
       this.state.zoneBadges[zoneId - 1] = true;
       zoneCompleted = true;
       xpGained += 50;
