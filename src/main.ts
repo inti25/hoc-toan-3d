@@ -204,13 +204,13 @@ app.innerHTML = `
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <footer id="menu-footer" class="menu-footer"><span><b>VƯƠNG QUỐC</b> HỌC TOÁN 3D</span><span>Một thế giới nhỏ. Những khám phá lớn.</span><span>Lưu trên thiết bị này ${icon('save')}</span></footer>
     <dialog id="dialog" aria-labelledby="dialog-title"><button id="close-dialog" class="dialog-close" aria-label="Đóng">${icon('close')}</button><div id="dialog-content"></div></dialog>
-    <div id="image-lightbox" class="image-lightbox" hidden role="dialog" aria-modal="true" aria-label="Phóng to hình ảnh">
+    <dialog id="image-lightbox" class="image-lightbox" aria-label="Phóng to hình ảnh">
       <div class="lightbox-backdrop"></div>
       <div class="lightbox-wrapper">
         <button id="lightbox-close" class="lightbox-close-btn" aria-label="Đóng phóng to">${icon('close')}</button>
         <img id="lightbox-img" class="lightbox-img" src="" alt="Hình ảnh chi tiết" />
       </div>
-    </div>
+    </dialog>
   </main>`;
 
 function toast(message: string) {
@@ -307,38 +307,44 @@ $('dialog').addEventListener('close', () => {
 
 $('close-dialog').onclick = closeDialog;
 
+function isLightboxOpen(): boolean {
+  const lightbox = $<HTMLDialogElement>('image-lightbox');
+  return !!(lightbox && lightbox.open);
+}
+
 function openLightbox(src: string, alt?: string) {
-  const lightbox = $('image-lightbox');
+  const lightbox = $<HTMLDialogElement>('image-lightbox');
   const img = $<HTMLImageElement>('lightbox-img');
   if (!lightbox || !img) return;
   img.src = src;
   img.alt = alt || 'Hình ảnh chi tiết';
-  lightbox.hidden = false;
+  if (!lightbox.open) {
+    lightbox.showModal();
+  }
 }
 
 function closeLightbox() {
-  const lightbox = $('image-lightbox');
-  if (!lightbox || lightbox.hidden) return;
-  lightbox.hidden = true;
+  const lightbox = $<HTMLDialogElement>('image-lightbox');
+  if (!lightbox || !lightbox.open) return;
+  lightbox.close();
   const img = $<HTMLImageElement>('lightbox-img');
   if (img) img.src = '';
 }
 
-$('lightbox-close').onclick = closeLightbox;
+$('lightbox-close').onclick = (e) => {
+  e.stopPropagation();
+  closeLightbox();
+};
+
 $('image-lightbox').addEventListener('click', (e) => {
   if (e.target === $('image-lightbox') || (e.target as HTMLElement).classList.contains('lightbox-backdrop')) {
     closeLightbox();
   }
 });
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    const lightbox = $('image-lightbox');
-    if (lightbox && !lightbox.hidden) {
-      closeLightbox();
-      e.stopPropagation();
-    }
-  }
+$('image-lightbox').addEventListener('cancel', (e) => {
+  e.preventDefault();
+  closeLightbox();
 });
 
 document.addEventListener('click', (e) => {
@@ -1337,16 +1343,16 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
               <div class="completion-rewards">
                 <span>★ +50 XP</span><span>◉ +25 xu</span>
               </div>
-              <button id="close-zone-grand" class="primary wide">Mở Bản Đồ ${icon('arrow')}</button>
+              <button id="close-zone-grand" class="primary wide">Tiếp tục khám phá ${icon('arrow')}</button>
               `,
               'complete'
             );
             updateHUD();
-            $('close-zone-grand').onclick = () => openArchimedesMapDialog(m.zoneId);
+            $('close-zone-grand').onclick = closeDialog;
           }, 1200);
         }
 
-        $('arch-finish-btn').onclick = () => openArchimedesMapDialog(m.zoneId);
+        $('arch-finish-btn').onclick = closeDialog;
       }
     } else {
       logRemoteProgress({
@@ -1676,6 +1682,13 @@ $('sound').onclick = () => {
 $('jump').onclick = () => world.jump();
 
 document.addEventListener('keydown', e => {
+  if (isLightboxOpen()) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeLightbox();
+    }
+    return;
+  }
   if (e.repeat && ['e', ' ', 'Escape'].includes(e.key)) return;
   if ($<HTMLDialogElement>('dialog').open) {
     if (currentDialog === 'quiz' || currentDialog === 'flowerQuiz' || currentDialog === 'archimedesQuiz') {
