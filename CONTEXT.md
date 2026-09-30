@@ -92,9 +92,21 @@ _Avoid_: Tên đăng nhập, Username, Họ và tên đầy đủ
 Bảng thông tin nhỏ gọn ghim ở góc trên bên trái HUD khi vào game, hiển thị Avatar đồng hành, Tên dũng sĩ ở dòng trên nổi bật, Chức danh khám phá kèm Huy hiệu Cấp độ ở dòng dưới, và thanh tiến độ XP.
 _Avoid_: Bảng thông tin user, Profile card
 
+**Nhân Vật Đồng Hành (Companion Avatar)**:
+Thực thể đại diện trực quan cho người chơi trong thế giới 3D mang phong cách và danh hiệu riêng do học sinh tùy chọn (hiện gồm 6 nhân vật: Nhà thám hiểm, Nhà khám phá, Kuromi, Hello Kitty, My Melody, Cinnamoroll).
+_Avoid_: Skin, Tướng, Nhân vật người chơi, Avatar 2D
+
 **Chức Danh Khám Phá (Explorer Title)**:
-Danh hiệu đồng hành của người chơi gắn với nhân vật lựa chọn ("Nhà thám hiểm" cho bé trai 👦, "Nhà khám phá" cho bé gái 👧), hiển thị với kích thước chữ nhỏ gọn dưới Tên Dũng Sĩ.
-_Avoid_: Rank người chơi, Chức vụ, Nghề nghiệp
+Danh hiệu độc bản gắn với từng Nhân Vật Đồng Hành, hiển thị trang trọng dưới Tên Dũng Sĩ trên Thẻ Người Chơi (ví dụ: Dũng Sĩ Bóng Tối, Công Chúa Điều Tốt, Nàng Thơ Hoa Cỏ, Thám Tử Mây Bông).
+_Avoid_: Rank người chơi, Cấp bậc, Chức vụ, Nghề nghiệp
+
+**Mô Hình Đồng Hành 3D (3D Companion Model)**:
+Hình tượng không gian ba chiều chi tiết của nhân vật đồng hành trong thế giới toán học, thể hiện diện mạo đặc trưng và nhịp nhún nhảy vui nhộn khi di chuyển.
+_Avoid_: File 3D, Mesh nhân vật, Asset đồ họa
+
+**Hiển Thị Đồng Hành Đệm (Progressive Avatar Rendering)**:
+Cơ chế hiển thị tức thì hình tượng nhân vật cơ bản ngay khi lựa chọn và tự động nâng cấp mượt mà sang Mô Hình Đồng Hành 3D chi tiết ngay khi hoàn tất nạp dữ liệu.
+_Avoid_: Màn hình chờ tải, Loading bar, Chờ nạp mesh
 
 **Kho Dự Phòng Cục Bộ (Bundled Fallback Cache)**:
 Tập dữ liệu câu hỏi và bản đồ dựng sẵn trong mã nguồn client kết hợp bộ nhớ đệm trình duyệt, đảm bảo thế giới 3D luôn khởi động tức thì 60fps trước khi đồng bộ Apps Script.
