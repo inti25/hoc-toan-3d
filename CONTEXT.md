@@ -81,8 +81,20 @@ Quy tắc hình học tự động sắp xếp các thực thể học tập (Bi
 _Avoid_: Thuật toán xếp map, Auto layout
 
 **Hồ Sơ Dũng Sĩ (Explorer Profile)**:
-Thông tin định danh nhẹ của học sinh gồm biệt danh và lớp học, được lưu cục bộ trên thiết bị và đính kèm vào Nhật Ký Thám Hiểm khi nộp bài.
-_Avoid_: Tài khoản người dùng, User account
+Thông tin định danh nhẹ của học sinh gồm biệt danh (Tên dũng sĩ) và lớp học, được thiết lập ngay tại Màn Hình Chào Mừng lần đầu vào game (hoặc tinh chỉnh trong Cài Đặt), lưu cục bộ trên thiết bị và đính kèm vào Nhật Ký Thám Hiểm khi nộp bài.
+_Avoid_: Tài khoản người dùng, User account, Form đăng ký
+
+**Tên Dũng Sĩ (Explorer Nickname)**:
+Tên hoặc biệt danh do học sinh tự điền trên Màn Hình Chào Mừng trước khi bắt đầu cuộc phiêu lưu, hiển thị trên Thẻ Người Chơi và trong lời chào của Milo. Nếu để trống, hệ thống tự động gán biệt danh ngẫu nhiên (Friendly Fallback).
+_Avoid_: Tên đăng nhập, Username, Họ và tên đầy đủ
+
+**Thẻ Người Chơi (Player Card)**:
+Bảng thông tin nhỏ gọn ghim ở góc trên bên trái HUD khi vào game, hiển thị Avatar đồng hành, Tên dũng sĩ ở dòng trên nổi bật, Chức danh khám phá kèm Huy hiệu Cấp độ ở dòng dưới, và thanh tiến độ XP.
+_Avoid_: Bảng thông tin user, Profile card
+
+**Chức Danh Khám Phá (Explorer Title)**:
+Danh hiệu đồng hành của người chơi gắn với nhân vật lựa chọn ("Nhà thám hiểm" cho bé trai 👦, "Nhà khám phá" cho bé gái 👧), hiển thị với kích thước chữ nhỏ gọn dưới Tên Dũng Sĩ.
+_Avoid_: Rank người chơi, Chức vụ, Nghề nghiệp
 
 **Kho Dự Phòng Cục Bộ (Bundled Fallback Cache)**:
 Tập dữ liệu câu hỏi và bản đồ dựng sẵn trong mã nguồn client kết hợp bộ nhớ đệm trình duyệt, đảm bảo thế giới 3D luôn khởi động tức thì 60fps trước khi đồng bộ Apps Script.

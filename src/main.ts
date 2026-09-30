@@ -133,7 +133,7 @@ app.innerHTML = `
     <div id="loading" class="loading"><span class="loading-crown">${icon('crown')}</span><strong>Đang mở cánh cổng…</strong></div>
     <header class="topbar">
       <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
-      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
+      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhiệm vụ & Tiến độ" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
       <div class="chapter"><span></span> MỘT CUỘC PHIÊU LƯU NHỎ</div>
@@ -141,13 +141,34 @@ app.innerHTML = `
       <p>Mỗi phép nhân, một điều kỳ diệu.<br>Cùng Milo xây cầu và khám phá Vườn Hoa Tri Thức!</p>
       <div class="choose-label">Chọn người bạn đồng hành</div>
       <div class="avatar-options" role="group" aria-label="Chọn nhân vật"><button id="boy" class="avatar-option" aria-pressed="true"><span>👦</span>Nhà thám hiểm</button><button id="girl" class="avatar-option" aria-pressed="false"><span>👧</span>Nhà khám phá</button></div>
+      <div class="welcome-profile-inputs">
+        <div class="welcome-input-col name-col">
+          <label for="welcome-name" class="welcome-input-label">Tên dũng sĩ của bạn</label>
+          <input id="welcome-name" class="welcome-input" type="text" maxlength="24" placeholder="Ví dụ: Minh Khôi..." autocomplete="off" />
+        </div>
+        <div class="welcome-input-col class-col">
+          <label for="welcome-class" class="welcome-input-label">Lớp</label>
+          <input id="welcome-class" class="welcome-input" type="text" maxlength="8" placeholder="Lớp 2" autocomplete="off" />
+        </div>
+      </div>
       <button id="play" class="primary play-button">Bắt đầu phiêu lưu ${icon('arrow')}</button>
       <button id="learn-welcome" class="text-button">${icon('book')} Khám phá bảng cửu chương</button>
       <div class="welcome-notes"><span>✦ Học qua những chuyến đi</span><span>Không giới hạn thời gian</span></div>
     </section>
     <div id="world-caption" class="world-caption"><span>01</span><div>Làng Khởi Đầu<small>Bảng cửu chương ×1 – ×10 & Vườn Hoa</small></div></div>
     <div id="hud" class="hud" hidden>
-      <div class="player-card"><span id="avatar-face" class="avatar-face">👦</span><div><strong>Nhà thám hiểm <span id="level">1</span></strong><div class="xp-track" role="progressbar" aria-label="Tiến độ cấp độ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="xp-fill"></i></div><small id="xp-text">0 / 100 XP</small></div></div>
+      <div class="player-card" title="Chạm để mở Cài đặt & Hồ sơ">
+        <span id="avatar-face" class="avatar-face">👦</span>
+        <div class="player-info">
+          <strong id="player-name" class="player-name">Dũng Sĩ Tí Hon</strong>
+          <div class="player-meta">
+            <span id="player-title" class="player-title">Nhà thám hiểm</span>
+            <span id="level" class="level-badge" title="Cấp độ hiện tại">1</span>
+          </div>
+          <div class="xp-track" role="progressbar" aria-label="Tiến độ cấp độ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="xp-fill"></i></div>
+          <small id="xp-text">0 / 100 XP</small>
+        </div>
+      </div>
       <div class="wallet">${icon('coin')}<strong id="coins">0</strong><span>xu</span></div>
       <aside class="quest-card">
         <div class="eyebrow">${icon('flag')} CHUYẾN PHIÊU LƯU ĐẦU TIÊN</div>
@@ -230,7 +251,11 @@ function updateHUD() {
     start = LEVEL_XP[level - 1],
     next = LEVEL_XP[level];
   const profile = getExplorerProfile();
-  $('level').textContent = `${level} · ${profile.nickname}`;
+  const playerNameEl = document.getElementById('player-name');
+  if (playerNameEl) playerNameEl.textContent = profile.nickname || 'Dũng Sĩ Tí Hon';
+  const playerTitleEl = document.getElementById('player-title');
+  if (playerTitleEl) playerTitleEl.textContent = state.avatar === 'girl' ? 'Nhà khám phá' : 'Nhà thám hiểm';
+  $('level').textContent = String(level);
   $('coins').textContent = String(state.coins);
   $('xp-text').textContent = next ? `${state.xp - start} / ${next - start} XP` : `${state.xp} XP · Cấp cao nhất`;
   const percent = next ? Math.min(100, ((state.xp - start) / (next - start)) * 100) : 100;
@@ -386,7 +411,49 @@ function renderQuestionImage(imageUrl?: string, altText?: string, isExplanation 
   `;
 }
 
+function initWelcomeProfile() {
+  const profile = getExplorerProfile();
+  const nameInput = $<HTMLInputElement>('welcome-name');
+  const classInput = $<HTMLInputElement>('welcome-class');
+  if (nameInput) {
+    nameInput.value = profile.isAnonymous ? '' : profile.nickname;
+  }
+  if (classInput) {
+    classInput.value = profile.className || 'Lớp 2';
+  }
+}
+
 function start() {
+  const nameInput = $<HTMLInputElement>('welcome-name');
+  const classInput = $<HTMLInputElement>('welcome-class');
+  const currentProfile = getExplorerProfile();
+  let nickname = nameInput?.value.trim() || '';
+  const className = classInput?.value.trim() || 'Lớp 2';
+  let isAnonymous = false;
+
+  if (!nickname) {
+    if (!currentProfile.isAnonymous && currentProfile.nickname) {
+      nickname = currentProfile.nickname;
+    } else {
+      const friendlyNicknames = [
+        'Dũng Sĩ Tí Hon',
+        'Hiệp Sĩ Rồng',
+        'Mèo Dũng Cảm',
+        'Nhà Thám Hiểm Nhí',
+        'Chiến Binh Ánh Sáng',
+        'Sao Băng Nhí'
+      ];
+      nickname = friendlyNicknames[Math.floor(Math.random() * friendlyNicknames.length)];
+      isAnonymous = true;
+    }
+  }
+
+  saveExplorerProfile({
+    nickname,
+    className,
+    isAnonymous
+  });
+
   adventure.setStarted(true);
   audio.music(adventure.getState().music);
   world.active = true;
@@ -407,7 +474,7 @@ function start() {
     syncDynamicContent(data);
   });
 
-  toast('Chào bạn! Di chuyển đến Milo, hoặc nhấn "Đến Vườn Hoa" để khám phá!');
+  toast(`Chào mừng ${nickname}! Cùng Milo khám phá Vương Quốc nhé! ✨`);
 }
 
 function menu() {
@@ -419,11 +486,26 @@ function menu() {
   $('world-caption').hidden = false;
   $('menu-footer').hidden = false;
   document.body.classList.remove('playing');
+  initWelcomeProfile();
   updateHUD();
   audio.music(false);
 }
 
 $('play').onclick = start;
+$('welcome-name')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    $('play').click();
+  }
+});
+$('welcome-class')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    $('play').click();
+  }
+});
+initWelcomeProfile();
+
 for (const avatar of ['boy', 'girl'] as const)
   $(avatar).onclick = () => {
     adventure.setAvatar(avatar);
@@ -1699,6 +1781,96 @@ $('travel').onclick = () => {
   }
 };
 
+function openQuestDialog() {
+  const state = adventure.getState();
+  const bloomedCount = state.flowers.filter(Boolean).length;
+  const monolithCount = state.monoliths.filter(Boolean).length;
+  const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
+  const zonesForBadges = activeRemoteZones.length > 0
+    ? activeRemoteZones.filter((z) => z.id !== 6 && z.sheetName !== 'VuonHoa')
+    : ARCHIMEDES_ZONES;
+
+  const questCopy = state.questComplete
+    ? 'Bạn đã nối liền hai bờ! Hãy sang Vườn Hoa Tri Thức hoặc quay lại Milo để luyện tập.'
+    : state.bridge === BRIDGE_PARTS
+      ? 'Cây cầu đã sẵn sàng! Hãy đi qua cầu sang Vườn Hoa Tri Thức bên kia sông.'
+      : state.questAccepted
+        ? 'Giúp Milo chọn phép nhân đúng. Mỗi câu trả lời sẽ xây thêm một đoạn cầu.'
+        : 'Milo đang chờ bạn bên dòng sông. Đến gần và chào bạn ấy nhé!';
+
+  const questTitle = state.questComplete ? 'Cây cầu tình bạn đã hoàn thành!' : 'Một cây cầu, ngàn niềm vui';
+
+  const bridgeStepsHtml = Array.from(
+    { length: BRIDGE_PARTS },
+    (_, i) =>
+      `<span class="${i < state.bridge ? 'done' : ''}" aria-label="Đoạn ${i + 1}: ${i < state.bridge ? 'đã xây' : 'chưa xây'}">${i < state.bridge ? icon('check') : i + 1}</span>`
+  ).join('');
+
+  const flowerDotsHtml = state.flowers
+    .map(
+      (bloomed, i) =>
+        `<span class="flower-dot ${bloomed ? 'bloomed' : ''}" title="Cây hoa ${i + 1}: ${bloomed ? 'Đã nở hoa' : 'Đang ấp nụ'}">${bloomed ? '🌸' : '🌱'}</span>`
+    )
+    .join('');
+
+  const archBadgesHtml = zonesForBadges.map((z, i) => {
+    const earned = state.zoneBadges[i];
+    return `<span class="archimedes-badge-dot ${earned ? 'earned' : ''}" title="${z.name} (${earned ? 'Đã đạt' : 'Chưa đạt'})">${earned ? '🏆' : '✦'}</span>`;
+  }).join('');
+
+  const questProgressText = state.questComplete
+    ? '✓ Hoàn thành'
+    : state.bridge === BRIDGE_PARTS
+      ? 'Đi qua cầu để hoàn thành'
+      : state.questAccepted
+        ? `${state.bridge} / ${BRIDGE_PARTS} đoạn cầu`
+        : 'Gặp người dẫn đường';
+
+  const body = `
+    <div class="quest-dialog-content">
+      <section class="quest-dialog-section">
+        <div class="eyebrow">${icon('flag')} CHUYẾN PHIÊU LƯU ĐẦU TIÊN</div>
+        <h3 class="quest-dialog-title">${questTitle}</h3>
+        <p class="dialog-copy" style="font-size:14px;line-height:1.55;margin:0 0 12px">${questCopy}</p>
+        <div class="quest-steps">${bridgeStepsHtml}</div>
+        <div class="quest-bottom" style="margin-top:12px">
+          <span><b>Tiến độ:</b> ${questProgressText}</span>
+          <span class="reward">${icon('star')} +10 XP / câu</span>
+        </div>
+      </section>
+
+      <section class="quest-dialog-section">
+        <div class="flower-quest-header">
+          <span style="font-size:13px">🌸 Vườn Hoa Tri Thức</span>
+          <strong style="font-size:13px;color:#2e6332">${bloomedCount} / 10 hoa nở</strong>
+        </div>
+        <div class="flower-dots" style="margin:8px 0">${flowerDotsHtml}</div>
+        <small style="color:#6d7e6b;display:block">Tương tác với các cây hoa bên bờ đông để trả lời các thử thách toán học.</small>
+      </section>
+
+      <section class="quest-dialog-section">
+        <div class="archimedes-tracker-header">
+          <span style="font-size:13px">🏛️ Vùng Đất Archimedes</span>
+          <strong style="font-size:13px;color:#855416">${monolithCount} / ${totalMonoliths} Bia Đá</strong>
+        </div>
+        <div class="archimedes-badges" style="margin:8px 0">${archBadgesHtml}</div>
+        <button id="quest-dialog-map-btn" class="secondary" style="margin-top:10px;width:100%;padding:10px 14px;font-size:13px;border-radius:10px">${icon('star')} Mở Bản Đồ Khám Phá</button>
+      </section>
+
+      <button id="quest-dialog-close-btn" class="primary wide" style="margin-top:10px">Tiếp tục khám phá ${icon('arrow')}</button>
+    </div>
+  `;
+
+  openDialog('Nhiệm Vụ & Tiến Độ', body, 'quest');
+  $('quest-dialog-close-btn').onclick = closeDialog;
+  const mapBtn = $('quest-dialog-map-btn');
+  if (mapBtn) {
+    mapBtn.onclick = () => {
+      closeDialog();
+      openArchimedesMapDialog();
+    };
+  }
+}
 
 function help() {
   openDialog(
@@ -1850,6 +2022,7 @@ function settings() {
         isAnonymous: false
       });
       updateHUD();
+      initWelcomeProfile();
       toast('Đã lưu hồ sơ dũng sĩ!');
     }
   };
@@ -1888,6 +2061,8 @@ $('sound').onclick = () => {
   updateHUD();
 };
 $('jump').onclick = () => world.jump();
+$('quest-btn').onclick = () => openQuestDialog();
+$('help').onclick = () => help();
 
 document.addEventListener('keydown', e => {
   if (isLightboxOpen()) {
