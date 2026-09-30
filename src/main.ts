@@ -3,6 +3,7 @@ import { Vector3 } from 'three';
 import { World } from './world/World';
 import { Adventure } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
+import { CHARACTERS, getCharacter } from './data/characters';
 import { generateQuestion } from './quiz/engine';
 import {
   createMultiplicationChallenge,
@@ -140,7 +141,9 @@ app.innerHTML = `
       <h1>Vương Quốc<br><span>Học Toán</span><sup>3D</sup></h1>
       <p>Mỗi phép nhân, một điều kỳ diệu.<br>Cùng Milo xây cầu và khám phá Vườn Hoa Tri Thức!</p>
       <div class="choose-label">Chọn người bạn đồng hành</div>
-      <div class="avatar-options" role="group" aria-label="Chọn nhân vật"><button id="boy" class="avatar-option" aria-pressed="true"><span>👦</span>Nhà thám hiểm</button><button id="girl" class="avatar-option" aria-pressed="false"><span>👧</span>Nhà khám phá</button></div>
+      <div class="avatar-options" role="group" aria-label="Chọn nhân vật">${CHARACTERS.map(c =>
+        `<button id="avatar-${c.id}" class="avatar-option" aria-pressed="${c.id === 'boy'}" data-avatar="${c.id}"><span>${c.emoji}</span>${c.label}</button>`
+      ).join('')}</div>
       <div class="welcome-profile-inputs">
         <div class="welcome-input-col name-col">
           <label for="welcome-name" class="welcome-input-label">Tên dũng sĩ của bạn</label>
@@ -253,17 +256,21 @@ function updateHUD() {
   const profile = getExplorerProfile();
   const playerNameEl = document.getElementById('player-name');
   if (playerNameEl) playerNameEl.textContent = profile.nickname || 'Dũng Sĩ Tí Hon';
+  const ch = getCharacter(state.avatar);
+  $('avatar-face').textContent = ch.emoji;
   const playerTitleEl = document.getElementById('player-title');
-  if (playerTitleEl) playerTitleEl.textContent = state.avatar === 'girl' ? 'Nhà khám phá' : 'Nhà thám hiểm';
+  if (playerTitleEl) playerTitleEl.textContent = ch.title;
   $('level').textContent = String(level);
   $('coins').textContent = String(state.coins);
   $('xp-text').textContent = next ? `${state.xp - start} / ${next - start} XP` : `${state.xp} XP · Cấp cao nhất`;
   const percent = next ? Math.min(100, ((state.xp - start) / (next - start)) * 100) : 100;
   $('xp-fill').style.width = `${percent}%`;
   $('xp-fill').parentElement!.setAttribute('aria-valuenow', String(Math.round(percent)));
-  $('avatar-face').textContent = state.avatar === 'girl' ? '👧' : '👦';
-  $('boy').setAttribute('aria-pressed', String(state.avatar === 'boy'));
-  $('girl').setAttribute('aria-pressed', String(state.avatar === 'girl'));
+  // Update avatar button pressed state for all characters
+  CHARACTERS.forEach(c => {
+    const btn = document.getElementById(`avatar-${c.id}`);
+    if (btn) btn.setAttribute('aria-pressed', String(state.avatar === c.id));
+  });
   $('play').innerHTML = `${state.started ? 'Tiếp tục phiêu lưu' : 'Bắt đầu phiêu lưu'} ${icon('arrow')}`;
   $('quest-copy').textContent = state.questComplete
     ? 'Bạn đã nối liền hai bờ! Hãy sang Vườn Hoa Tri Thức hoặc quay lại Milo để luyện tập.'
@@ -506,12 +513,14 @@ $('welcome-class')?.addEventListener('keydown', (e) => {
 });
 initWelcomeProfile();
 
-for (const avatar of ['boy', 'girl'] as const)
-  $(avatar).onclick = () => {
-    adventure.setAvatar(avatar);
-    world.setAvatar(avatar);
+for (const ch of CHARACTERS) {
+  const btn = document.getElementById(`avatar-${ch.id}`);
+  if (btn) btn.onclick = () => {
+    adventure.setAvatar(ch.id);
+    world.setAvatar(ch.id);
     updateHUD();
   };
+}
 
 function talk() {
   if (!world.active || world.paused) return;

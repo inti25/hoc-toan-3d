@@ -1,4 +1,5 @@
 import { BRIDGE_PARTS, LEVEL_XP, SAVE_KEY, getLevel, type Table } from '../data/config';
+import type { AvatarId } from '../data/characters';
 import { ARCHIMEDES_MONOLITHS, getMonolithsByZone } from '../data/archimedesTrialMap';
 import { freshState, parseSave, type SaveState } from './state';
 
@@ -92,7 +93,7 @@ export class Adventure {
     }
   }
 
-  setAvatar(avatar: 'boy' | 'girl') {
+  setAvatar(avatar: AvatarId) {
     this.state.avatar = avatar;
     this.save();
   }

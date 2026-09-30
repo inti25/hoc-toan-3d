@@ -1,8 +1,9 @@
 import { BRIDGE_PARTS, SAVE_KEY, TABLES, type Table } from '../data/config';
+import { ALL_AVATAR_IDS, type AvatarId } from '../data/characters';
 export interface QuestionStat { attempts: number; correct: number; wrong: number; lastAnsweredAt: string; responseTime: number }
 export interface SaveState {
   version: 1; xp: number; coins: number; bridge: number; questAccepted: boolean; questComplete: boolean;
-  avatar: 'boy' | 'girl'; table: Table | 0; sound: boolean; music: boolean; combo: number;
+  avatar: AvatarId; table: Table | 0; sound: boolean; music: boolean; combo: number;
   questionStats: Record<string, QuestionStat>; review: string[]; started: boolean;
   flowers: boolean[];
   monoliths: boolean[];
@@ -21,7 +22,7 @@ export function parseSave(raw: string | null): SaveState {
     base.xp = positive(d.xp); base.coins = positive(d.coins); base.bridge = positive(d.bridge, BRIDGE_PARTS);
     base.questAccepted = d.questAccepted === true || base.bridge > 0;
     base.questComplete = d.questComplete === true && base.bridge === BRIDGE_PARTS;
-    base.avatar = d.avatar === 'girl' ? 'girl' : 'boy';
+    base.avatar = ALL_AVATAR_IDS.includes(d.avatar as AvatarId) ? d.avatar as AvatarId : 'boy';
     base.table = TABLES.includes(d.table as Table) ? d.table as Table : 0;
     base.sound = d.sound !== false; base.music = d.music === true; base.started = d.started === true;
     base.combo = positive(d.combo, 10000);

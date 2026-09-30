@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
+import { getCharacter, type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
@@ -52,9 +53,7 @@ export class World {
   private windmill = new THREE.Group();
   private water: THREE.Mesh;
   private legs: THREE.Mesh[] = [];
-  private shirt!: THREE.Mesh;
-  private hair!: THREE.Mesh;
-  private ponytail!: THREE.Mesh;
+  private avatarAccessories: THREE.Object3D[] = [];
   private clock = new THREE.Clock();
   private target = new THREE.Vector3(-5, 0, 0);
   private destination?: THREE.Vector3;
@@ -876,16 +875,7 @@ export class World {
   }
 
 
-  private createPlayer() {
-    const p = this.player;
-    this.shirt = this.box(p, 0, .93, 0, .7, .8, .47, 0xebae42);
-    this.sphere(p, 0, 1.67, 0, .45, 0xffd5ae);
-    this.hair = this.sphere(p, 0, 1.93, -.035, .43, 0x513c32); this.hair.scale.y = .65;
-    this.ponytail = this.sphere(p, 0, 1.66, -.39, .25, 0x513c32); this.ponytail.visible = false;
-    for (const x of [-.16, .16]) { const leg = this.box(p, x, .3, 0, .25, .55, .28, 0x425f70); this.box(leg, 0, -.19, .08, .29, .16, .4, 0xfaf2d6); this.legs.push(leg); }
-    this.box(p, -.48, .94, 0, .2, .65, .23, 0xffd5ae); this.box(p, .48, .94, 0, .2, .65, .23, 0xffd5ae);
-    this.box(p, 0, 1, -.36, .52, .65, .3, 0x599989); this.box(p, 0, 1, -.54, .32, .25, .1, 0xf0cd76);
-  }
+  private createPlayer() { this.buildBoyMesh(); }
 
   private createMilo() {
     this.cylinder(this.milo, 0, .65, 0, .45, .7, 1.25, 0x537e7e);
@@ -898,7 +888,211 @@ export class World {
     const beacon = this.sphere(this.milo, 0, 3.0, 0, .19, 0xffcf5d); beacon.userData.beacon = true;
   }
 
-  setAvatar(avatar: 'boy' | 'girl') { this.shirt.material = this.material(avatar === 'girl' ? 0x9774b8 : 0xebae42); this.ponytail.visible = avatar === 'girl'; }
+  // ─── Clear all player mesh children and walking-leg refs ───────────────────
+  private clearPlayerMesh() {
+    while (this.player.children.length > 0) {
+      const obj = this.player.children[0];
+      this.player.remove(obj);
+      obj.traverse(child => { if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).geometry.dispose(); });
+    }
+    this.legs = [];
+    this.avatarAccessories = [];
+  }
+
+  // ─── BOY: classic adventurer ─────────────────────────────────────────────
+  private buildBoyMesh() {
+    const p = this.player;
+    this.box(p, 0, .93, 0, .7, .8, .47, 0xebae42);
+    this.sphere(p, 0, 1.67, 0, .45, 0xffd5ae);
+    const hair = this.sphere(p, 0, 1.93, -.035, .43, 0x513c32); hair.scale.y = .65;
+    for (const x of [-.16, .16]) { const leg = this.box(p, x, .3, 0, .25, .55, .28, 0x425f70); this.box(leg, 0, -.19, .08, .29, .16, .4, 0xfaf2d6); this.legs.push(leg); }
+    this.box(p, -.48, .94, 0, .2, .65, .23, 0xffd5ae); this.box(p, .48, .94, 0, .2, .65, .23, 0xffd5ae);
+    this.box(p, 0, 1, -.36, .52, .65, .3, 0x599989); this.box(p, 0, 1, -.54, .32, .25, .1, 0xf0cd76);
+  }
+
+  // ─── GIRL: explorer with ponytail ─────────────────────────────────────────
+  private buildGirlMesh() {
+    const p = this.player;
+    this.box(p, 0, .93, 0, .7, .8, .47, 0x9774b8);
+    this.sphere(p, 0, 1.67, 0, .45, 0xffd5ae);
+    const hair = this.sphere(p, 0, 1.93, -.035, .43, 0x513c32); hair.scale.y = .65;
+    this.sphere(p, 0, 1.66, -.39, .25, 0x513c32); // ponytail
+    for (const x of [-.16, .16]) { const leg = this.box(p, x, .3, 0, .25, .55, .28, 0x425f70); this.box(leg, 0, -.19, .08, .29, .16, .4, 0xfaf2d6); this.legs.push(leg); }
+    this.box(p, -.48, .94, 0, .2, .65, .23, 0xffd5ae); this.box(p, .48, .94, 0, .2, .65, .23, 0xffd5ae);
+    this.box(p, 0, 1, -.36, .52, .65, .3, 0x9774b8); this.box(p, 0, 1, -.54, .32, .25, .1, 0xf0cd76);
+  }
+
+  // ─── KUROMI: gothic dark robed figure ────────────────────────────────────
+  private buildKuromiMesh() {
+    const p = this.player;
+    // Long dark robe (taller + narrower than boy)
+    this.box(p, 0, 0.9, 0, 0.60, 1.15, 0.42, 0x1a1a2e);
+    // Pale slender arms
+    this.box(p, -.43, .94, 0, .17, .62, .19, 0xf5f0ff);
+    this.box(p, .43, .94, 0, .17, .62, .19, 0xf5f0ff);
+    // Dark legs just visible below robe hem
+    for (const x of [-.12, .12]) {
+      const leg = this.box(p, x, 0.22, 0, 0.20, 0.44, 0.23, 0x1a1a2e);
+      this.box(leg, 0, -.16, .06, .24, .13, .34, 0x2d1a4e);
+      this.legs.push(leg);
+    }
+    // White oval face
+    const face = this.sphere(p, 0, 1.72, .04, .38, 0xffffff); face.scale.set(0.95, 1.0, 0.88);
+    // Small dark beady eyes
+    const eL = this.sphere(p, -.14, 1.77, .37, .065, 0x0a0520); eL.scale.set(0.8, 1.0, 0.5);
+    const eR = this.sphere(p, .14, 1.77, .37, .065, 0x0a0520); eR.scale.set(0.8, 1.0, 0.5);
+    // Large black hood covering top of head
+    const hood = this.sphere(p, 0, 1.99, 0, .46, 0x1a1a2e); hood.scale.set(1.0, 0.80, 0.95);
+    // Pointed hood tip (iconic Kuromi spike)
+    this.cylinder(p, 0, 2.44, 0, 0.04, 0.22, 0.56, 0x1a1a2e, 6);
+    // Tiny white skull on front of hood
+    const skull = this.sphere(p, 0, 2.12, .42, .10, 0xf5f0ff); skull.scale.set(1, 0.85, 0.7);
+    // Skull eye dots
+    this.sphere(p, -.04, 2.14, .50, .025, 0x1a1a2e);
+    this.sphere(p, .04, 2.14, .50, .025, 0x1a1a2e);
+    // Purple bow on hood tip
+    const bL = this.sphere(p, -.13, 2.56, 0, .12, 0x7c3aed); bL.scale.set(1.0, 0.65, 0.5);
+    const bR = this.sphere(p, .13, 2.56, 0, .12, 0x7c3aed); bR.scale.set(1.0, 0.65, 0.5);
+    this.sphere(p, 0, 2.56, 0, .055, 0x0a0520);
+  }
+
+  // ─── HELLO KITTY: round white cat ────────────────────────────────────────
+  private buildHelloKittyMesh() {
+    const p = this.player;
+    // Chubby white body
+    this.box(p, 0, 0.80, 0, 0.84, 0.80, 0.54, 0xffffff);
+    // Red overalls front bib
+    this.box(p, 0, 0.86, 0.28, 0.66, 0.68, 0.06, 0xe11d48);
+    // Short wide arms
+    this.box(p, -.56, 0.84, 0, .20, .54, .24, 0xffffff);
+    this.box(p, .56, 0.84, 0, .20, .54, .24, 0xffffff);
+    // Short stumpy legs with red boots
+    for (const x of [-.18, .18]) {
+      const leg = this.box(p, x, 0.20, 0, 0.28, 0.40, 0.30, 0xfcd5e0);
+      this.box(leg, 0, -.12, .04, .30, .12, .38, 0xff4d6d);
+      this.legs.push(leg);
+    }
+    // Very large round white head (signature big head)
+    this.sphere(p, 0, 1.82, 0, .58, 0xffffff);
+    // Round cat ears
+    const earL = this.sphere(p, -.38, 2.36, 0, .17, 0xffffff); earL.scale.set(0.9, 0.85, 0.7);
+    this.sphere(p, -.38, 2.37, .09, .08, 0xffd0e6); // inner ear pink
+    const earR = this.sphere(p, .38, 2.36, 0, .17, 0xffffff); earR.scale.set(0.9, 0.85, 0.7);
+    this.sphere(p, .38, 2.37, .09, .08, 0xffd0e6);
+    // BIG RED BOW on right ear (iconic)
+    const bwL = this.sphere(p, .22, 2.41, .07, .17, 0xe11d48); bwL.scale.set(0.98, 0.65, 0.52);
+    const bwR = this.sphere(p, .52, 2.41, .07, .17, 0xe11d48); bwR.scale.set(0.98, 0.65, 0.52);
+    this.sphere(p, .37, 2.41, .09, .075, 0xb91c1c); // bow knot center
+    // Two tiny oval eyes (no mouth on Hello Kitty!)
+    const eyeL = this.sphere(p, -.19, 1.86, .53, .07, 0x111111); eyeL.scale.set(0.7, 1.1, 0.4);
+    const eyeR = this.sphere(p, .19, 1.86, .53, .07, 0x111111); eyeR.scale.set(0.7, 1.1, 0.4);
+    // Tiny yellow nose dot
+    this.sphere(p, 0, 1.79, .55, .032, 0xffd700);
+    // Whisker suggestion (3 tiny dots each side)
+    for (let i = 0; i < 3; i++) {
+      this.sphere(p, -.22 - i * .1, 1.80 + (i - 1) * .04, .52, .015, 0xcccccc);
+      this.sphere(p, .22 + i * .1, 1.80 + (i - 1) * .04, .52, .015, 0xcccccc);
+    }
+    // Gold collar ribbon
+    this.box(p, 0, 1.28, .22, .52, .07, .05, 0xfbbf24);
+  }
+
+  // ─── MY MELODY: pink bunny with hood ─────────────────────────────────────
+  private buildMyMelodyMesh() {
+    const p = this.player;
+    // Soft pink rounded dress
+    this.box(p, 0, 0.88, 0, 0.70, 0.92, 0.48, 0xfce7f3);
+    // Arms
+    this.box(p, -.47, .92, 0, .20, .60, .22, 0xfdf2f8);
+    this.box(p, .47, .92, 0, .20, .60, .22, 0xfdf2f8);
+    // Pink legs below dress
+    for (const x of [-.15, .15]) {
+      const leg = this.box(p, x, 0.22, 0, 0.22, 0.44, 0.25, 0xfce7f3);
+      this.box(leg, 0, -.13, .04, .26, .12, .32, 0xf9a8d4); // pink shoes
+      this.legs.push(leg);
+    }
+    // White round face
+    const face = this.sphere(p, 0, 1.72, 0, .40, 0xfff5f8); face.scale.set(0.95, 1.0, 0.92);
+    // Pink bunny hood covering back of head
+    const hood = this.sphere(p, 0, 1.92, -.07, .48, 0xfce7f3); hood.scale.set(1.06, 0.90, 1.0);
+    // Left bunny ear inside hood (signature tall pink ears)
+    const earLG = new THREE.Group(); earLG.position.set(-.20, 2.06, -.04); earLG.rotation.z = .20;
+    this.cylinder(earLG, 0, .30, 0, .082, .10, .64, 0xfce7f3, 6);
+    this.cylinder(earLG, 0, .30, .02, .046, .056, .50, 0xf9a8d4, 6);
+    p.add(earLG);
+    // Right bunny ear
+    const earRG = new THREE.Group(); earRG.position.set(.20, 2.06, -.04); earRG.rotation.z = -.20;
+    this.cylinder(earRG, 0, .30, 0, .082, .10, .64, 0xfce7f3, 6);
+    this.cylinder(earRG, 0, .30, .02, .046, .056, .50, 0xf9a8d4, 6);
+    p.add(earRG);
+    // Small black eyes
+    const eL = this.sphere(p, -.13, 1.76, .36, .07, 0x111111); eL.scale.set(0.8, 1.0, 0.5);
+    const eR = this.sphere(p, .13, 1.76, .36, .07, 0x111111); eR.scale.set(0.8, 1.0, 0.5);
+    // Small pink oval nose
+    const nose = this.sphere(p, 0, 1.68, .38, .055, 0xf9a8d4); nose.scale.set(1.2, 0.7, 0.5);
+    // Tiny rosy cheeks
+    const ckL = this.sphere(p, -.24, 1.69, .34, .09, 0xfcbad5); ckL.scale.set(1.3, 0.65, 0.35);
+    const ckR = this.sphere(p, .24, 1.69, .34, .09, 0xfcbad5); ckR.scale.set(1.3, 0.65, 0.35);
+    // Red heart detail on dress
+    const heart = this.sphere(p, 0, 1.1, .25, .08, 0xf43f5e); heart.scale.set(0.9, 0.75, 0.4);
+  }
+
+  // ─── CINNAMOROLL: chubby white puppy ─────────────────────────────────────
+  private buildCinnamorollMesh() {
+    const p = this.player;
+    // Very round chubby white body
+    const body = this.sphere(p, 0, 0.82, 0, .54, 0xf0f9ff); body.scale.set(0.94, 0.86, 0.80);
+    // Light blue belly highlight
+    const belly = this.sphere(p, 0, 0.79, .22, .37, 0xe0f2fe); belly.scale.set(0.86, 0.76, 0.46);
+    // Small round arms/paws
+    const aL = this.sphere(p, -.54, 0.78, 0, .20, 0xf0f9ff); aL.scale.set(0.72, 0.65, 0.62);
+    const aR = this.sphere(p, .54, 0.78, 0, .20, 0xf0f9ff); aR.scale.set(0.72, 0.65, 0.62);
+    // Very short stubby legs with blue feet
+    for (const x of [-.15, .15]) {
+      const leg = this.box(p, x, 0.20, 0, 0.26, 0.40, 0.28, 0xf0f9ff);
+      this.box(leg, 0, -.12, .04, .30, .13, .36, 0xbae6fd); // sky-blue foot
+      this.legs.push(leg);
+    }
+    // Very large round white head (biggest head of all characters)
+    const head = this.sphere(p, 0, 1.80, 0, .57, 0xffffff); head.scale.set(1.0, 0.97, 0.96);
+    // Large floppy left ear (drooping down the side)
+    const earLG = new THREE.Group(); earLG.position.set(-.44, 1.96, 0); earLG.rotation.z = .55;
+    const earLM = this.sphere(earLG, 0, .22, -.06, .25, 0xf0f9ff); earLM.scale.set(0.55, 1.28, 0.46);
+    p.add(earLG);
+    // Large floppy right ear
+    const earRG = new THREE.Group(); earRG.position.set(.44, 1.96, 0); earRG.rotation.z = -.55;
+    const earRM = this.sphere(earRG, 0, .22, -.06, .25, 0xf0f9ff); earRM.scale.set(0.55, 1.28, 0.46);
+    p.add(earRG);
+    // Large expressive blue eyes (Cinnamoroll's most iconic feature)
+    const eL = this.sphere(p, -.19, 1.87, .50, .105, 0x0284c7); eL.scale.set(0.78, 1.05, 0.42);
+    const eR = this.sphere(p, .19, 1.87, .50, .105, 0x0284c7); eR.scale.set(0.78, 1.05, 0.42);
+    // Eye shine dots
+    this.sphere(p, -.14, 1.90, .54, .042, 0xffffff);
+    this.sphere(p, .23, 1.90, .54, .042, 0xffffff);
+    // Rosy blush cheeks
+    const bL = this.sphere(p, -.33, 1.77, .44, .115, 0xfecdd3); bL.scale.set(1.35, 0.65, 0.36);
+    const bR = this.sphere(p, .33, 1.77, .44, .115, 0xfecdd3); bR.scale.set(1.35, 0.65, 0.36);
+    // Tiny pink nose
+    const nose = this.sphere(p, 0, 1.79, .54, .032, 0xffd0e6); nose.scale.set(1.2, 0.7, 0.5);
+    // Small curled tail at back
+    const tail = this.sphere(p, 0, 0.80, -.54, .16, 0xf0f9ff); tail.scale.set(0.8, 0.8, 0.52);
+    // Blue stripe on each ear tip (Cinnamoroll's detail)
+    this.sphere(earLG, 0, .56, -.06, .09, 0xbae6fd);
+    this.sphere(earRG, 0, .56, -.06, .09, 0xbae6fd);
+  }
+
+  // ─── Dispatch: clear player mesh and rebuild for given avatar ─────────────
+  setAvatar(avatarId: AvatarId) {
+    this.clearPlayerMesh();
+    switch (avatarId) {
+      case 'boy':         this.buildBoyMesh();          break;
+      case 'girl':        this.buildGirlMesh();         break;
+      case 'kuromi':      this.buildKuromiMesh();       break;
+      case 'hellokitty':  this.buildHelloKittyMesh();   break;
+      case 'mymelody':    this.buildMyMelodyMesh();     break;
+      case 'cinnamoroll': this.buildCinnamorollMesh();  break;
+    }
+  }
 
   private createBridge() {
     for (let i = 0; i < BRIDGE_PARTS; i++) {
