@@ -112,8 +112,10 @@ export class PlayerAvatar {
   }
 
   private loadGLTF(avatarId: Avatar3DId): void {
+    if (typeof window === 'undefined') return;
     if (this.gltfCache.has(avatarId)) return;
-    const url = `${import.meta.env.BASE_URL}3dmodel/${avatarId}/scene.gltf`;
+    const baseUrl = import.meta.env?.BASE_URL ?? '/';
+    const url = `${baseUrl}3dmodel/${avatarId}/scene.gltf`;
 
     this.gltfLoader.load(
       url,
@@ -128,12 +130,23 @@ export class PlayerAvatar {
           }
         });
 
+        // Per-model orientation calibration: align authored forward facing to +Z
+        const MODEL_ROTATION_Y: Partial<Record<Avatar3DId, number>> = {
+          mymelody: -Math.PI / 2
+        };
+        const rotY = MODEL_ROTATION_Y[avatarId];
+        if (rotY !== undefined) {
+          raw.rotation.y = rotY;
+          raw.updateMatrixWorld(true);
+        }
+
         // Compute bounds and scale to target height ~2.2
         const box = new THREE.Box3().setFromObject(raw);
         const size = box.getSize(new THREE.Vector3());
         const targetHeight = 2.2;
         const scale = targetHeight / (size.y > 0 ? size.y : 1);
         raw.scale.setScalar(scale);
+        raw.updateMatrixWorld(true);
 
         // Center on X and Z, and rest base on Y=0
         const scaledBox = new THREE.Box3().setFromObject(raw);

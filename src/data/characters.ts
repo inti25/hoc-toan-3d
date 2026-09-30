@@ -1,10 +1,10 @@
 export const CHARACTERS = [
-  { id: 'boy',         emoji: '👦', label: 'Nhà thám hiểm',   title: 'Nhà thám hiểm'      },
-  { id: 'girl',        emoji: '👧', label: 'Nhà khám phá',    title: 'Nhà khám phá'        },
-  { id: 'kuromi',      emoji: '🖤', label: 'Kuromi',          title: 'Dũng Sĩ Bóng Tối'   },
-  { id: 'hellokitty',  emoji: '🎀', label: 'Hello Kitty',     title: 'Công Chúa Điều Tốt'  },
-  { id: 'mymelody',    emoji: '🌸', label: 'My Melody',       title: 'Nàng Thơ Hoa Cỏ'    },
-  { id: 'cinnamoroll', emoji: '☁️', label: 'Cinnamoroll',     title: 'Thám Tử Mây Bông'    },
+  { id: 'boy', emoji: '👦', label: 'Nhà thám hiểm', title: 'Nhà thám hiểm' },
+  { id: 'girl', emoji: '👧', label: 'Nhà khám phá', title: 'Nhà khám phá' },
+  { id: 'kuromi', emoji: '🖤', label: 'Kuromi', title: 'Kuromi' },
+  { id: 'hellokitty', emoji: '🎀', label: 'Hello Kitty', title: 'Hello Kitty' },
+  { id: 'mymelody', emoji: '🌸', label: 'My Melody', title: 'My Melody' },
+  { id: 'cinnamoroll', emoji: '☁️', label: 'Cinnamoroll', title: 'Cinnamoroll' },
 ] as const;
 
 export type AvatarId = typeof CHARACTERS[number]['id'];
