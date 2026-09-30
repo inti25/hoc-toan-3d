@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
-import { getCharacter, type AvatarId } from '../data/characters';
+import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
@@ -54,6 +56,10 @@ export class World {
   private water: THREE.Mesh;
   private legs: THREE.Mesh[] = [];
   private avatarAccessories: THREE.Object3D[] = [];
+  private gltfLoader = new GLTFLoader();
+  private gltfCache = new Map<AvatarId, THREE.Group>();
+  private gltfActiveModel?: THREE.Group;
+  private currentAvatar: AvatarId = 'boy';
   private clock = new THREE.Clock();
   private target = new THREE.Vector3(-5, 0, 0);
   private destination?: THREE.Vector3;
@@ -98,6 +104,7 @@ export class World {
     }
     this.village();
     this.createPlayer(); this.createMilo(); this.createBridge(); this.createFlowers(); this.createArchimedesPortals(); this.createArchimedesMonoliths(); this.decorate();
+    this.preloadGLTFModels();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -893,10 +900,15 @@ export class World {
     while (this.player.children.length > 0) {
       const obj = this.player.children[0];
       this.player.remove(obj);
-      obj.traverse(child => { if ((child as THREE.Mesh).isMesh) (child as THREE.Mesh).geometry.dispose(); });
+      obj.traverse(child => {
+        if ((child as THREE.Mesh).isMesh && !child.userData.isGLTF) {
+          (child as THREE.Mesh).geometry.dispose();
+        }
+      });
     }
     this.legs = [];
     this.avatarAccessories = [];
+    this.gltfActiveModel = undefined;
   }
 
   // ─── BOY: classic adventurer ─────────────────────────────────────────────
@@ -1083,15 +1095,123 @@ export class World {
 
   // ─── Dispatch: clear player mesh and rebuild for given avatar ─────────────
   setAvatar(avatarId: AvatarId) {
+    this.currentAvatar = avatarId;
     this.clearPlayerMesh();
     switch (avatarId) {
       case 'boy':         this.buildBoyMesh();          break;
       case 'girl':        this.buildGirlMesh();         break;
-      case 'kuromi':      this.buildKuromiMesh();       break;
-      case 'hellokitty':  this.buildHelloKittyMesh();   break;
-      case 'mymelody':    this.buildMyMelodyMesh();     break;
-      case 'cinnamoroll': this.buildCinnamorollMesh();  break;
+      case 'kuromi':      this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh()); break;
+      case 'hellokitty':  this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh()); break;
+      case 'mymelody':    this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh()); break;
+      case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh()); break;
     }
+  }
+
+  private preloadGLTFModels() {
+    this.loadGLTF('kuromi');
+    this.loadGLTF('hellokitty');
+    this.loadGLTF('mymelody');
+    this.loadGLTF('cinnamoroll');
+  }
+
+  private applyOrLoadGLTF(avatarId: 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll', fallback: () => void) {
+    const cached = this.gltfCache.get(avatarId);
+    if (cached) {
+      const clone = SkeletonUtils.clone(cached) as THREE.Group;
+      this.player.add(clone);
+      this.gltfActiveModel = clone;
+      return;
+    }
+
+    fallback();
+    this.loadGLTF(avatarId);
+  }
+
+  private attachCinnamorollFace(wrapper: THREE.Group) {
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
+    const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const blushMat = new THREE.MeshStandardMaterial({ color: 0xfecdd3, roughness: 0.5 });
+    const noseMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.4 });
+
+    const geomEye = new THREE.SphereGeometry(0.08, 12, 12);
+    geomEye.scale(0.85, 1.1, 0.4);
+    const geomShine = new THREE.SphereGeometry(0.028, 8, 8);
+    const geomBlush = new THREE.SphereGeometry(0.1, 12, 12);
+    geomBlush.scale(1.3, 0.65, 0.3);
+    const geomNose = new THREE.SphereGeometry(0.03, 8, 8);
+    geomNose.scale(1.2, 0.7, 0.5);
+
+    // Left eye & shine
+    const eL = new THREE.Mesh(geomEye, eyeMat); eL.position.set(-0.24, 1.48, 0.48);
+    const sL = new THREE.Mesh(geomShine, shineMat); sL.position.set(-0.21, 1.51, 0.51);
+    // Right eye & shine
+    const eR = new THREE.Mesh(geomEye, eyeMat); eR.position.set(0.24, 1.48, 0.48);
+    const sR = new THREE.Mesh(geomShine, shineMat); sR.position.set(0.27, 1.51, 0.51);
+    // Cheeks
+    const bL = new THREE.Mesh(geomBlush, blushMat); bL.position.set(-0.38, 1.38, 0.44);
+    const bR = new THREE.Mesh(geomBlush, blushMat); bR.position.set(0.38, 1.38, 0.44);
+    // Nose
+    const nose = new THREE.Mesh(geomNose, noseMat); nose.position.set(0, 1.42, 0.50);
+
+    const faceGroup = new THREE.Group();
+    faceGroup.add(eL, sL, eR, sR, bL, bR, nose);
+    faceGroup.traverse(child => { child.userData.isGLTF = true; });
+    wrapper.add(faceGroup);
+  }
+
+  private loadGLTF(avatarId: 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll') {
+    if (this.gltfCache.has(avatarId)) return;
+    const url = `${import.meta.env.BASE_URL}3dmodel/${avatarId}/scene.gltf`;
+    this.gltfLoader.load(
+      url,
+      gltf => {
+        const raw = gltf.scene;
+        raw.traverse(child => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.isGLTF = true;
+          }
+        });
+
+        // Compute bounds and scale
+        const box = new THREE.Box3().setFromObject(raw);
+        const size = box.getSize(new THREE.Vector3());
+        const targetHeight = 2.2;
+        const scale = targetHeight / (size.y > 0 ? size.y : 1);
+        raw.scale.setScalar(scale);
+
+        // Center on X and Z, and place base at Y=0
+        const scaledBox = new THREE.Box3().setFromObject(raw);
+        raw.position.x = -(scaledBox.min.x + scaledBox.max.x) / 2;
+        raw.position.y = -scaledBox.min.y;
+        raw.position.z = -(scaledBox.min.z + scaledBox.max.z) / 2;
+
+        const wrapper = new THREE.Group();
+        wrapper.add(raw);
+        wrapper.userData.isGLTF = true;
+
+        if (avatarId === 'cinnamoroll') {
+          this.attachCinnamorollFace(wrapper);
+        }
+
+        this.gltfCache.set(avatarId, wrapper);
+
+        // If the user is currently this avatar, apply the 3D model immediately!
+        if (this.currentAvatar === avatarId) {
+          this.clearPlayerMesh();
+          const clone = SkeletonUtils.clone(wrapper) as THREE.Group;
+          this.player.add(clone);
+          this.gltfActiveModel = clone;
+          this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+        }
+      },
+      undefined,
+      err => {
+        console.warn(`[World] Failed to load 3D model for ${avatarId}:`, err);
+      }
+    );
   }
 
   private createBridge() {
@@ -1188,8 +1308,16 @@ export class World {
     this.player.rotation.y = pose.rotation;
     if (pose.moving) {
       this.legs.forEach((leg, i) => leg.rotation.x = Math.sin(this.time * 12 + i * Math.PI) * .55);
+      if (this.legs.length === 0 && this.gltfActiveModel) {
+        this.gltfActiveModel.position.y = Math.abs(Math.sin(this.time * 12)) * 0.12;
+        this.gltfActiveModel.rotation.z = Math.sin(this.time * 6) * 0.05;
+      }
     } else {
       this.legs.forEach(leg => leg.rotation.x *= .8);
+      if (this.gltfActiveModel) {
+        this.gltfActiveModel.position.y = 0;
+        this.gltfActiveModel.rotation.z *= 0.8;
+      }
       if (this.destination) this.destination = undefined;
     }
   }
