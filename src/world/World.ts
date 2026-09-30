@@ -5,6 +5,7 @@ import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
+import { GeometryBuilder } from './geom';
 import type { RemoteZoneConfig } from '../data/remoteTypes';
 
 interface Obstacle { x: number; z: number; radius: number }
@@ -48,7 +49,7 @@ export class World {
   readonly goal = new THREE.Vector3(16, 0, 0);
   readonly keys = new Set<string>();
   readonly spatial = new SpatialWorld(-6, 6);
-  private materials = new Map<number, THREE.MeshStandardMaterial>();
+  private geom = new GeometryBuilder();
   private obstacles: Obstacle[] = [];
   private sparks: Spark[] = [];
   private clouds: THREE.Group[] = [];
@@ -117,13 +118,10 @@ export class World {
     this.animate();
   }
 
-  private material(color: number) { let mat = this.materials.get(color); if (!mat) { mat = new THREE.MeshStandardMaterial({ color, roughness: .9, metalness: 0 }); this.materials.set(color, mat); } return mat; }
-  private mesh(parent: THREE.Object3D, geo: THREE.BufferGeometry, color: number, x: number, y: number, z: number) {
-    const mesh = new THREE.Mesh(geo, this.material(color)); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh;
-  }
-  private box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, color: number) { return this.mesh(parent, new THREE.BoxGeometry(w, h, d), color, x, y, z); }
-  private sphere(parent: THREE.Object3D, x: number, y: number, z: number, r: number, color: number) { return this.mesh(parent, new THREE.IcosahedronGeometry(r, 1), color, x, y, z); }
-  private cylinder(parent: THREE.Object3D, x: number, y: number, z: number, top: number, bottom: number, h: number, color: number, segments = 8) { return this.mesh(parent, new THREE.CylinderGeometry(top, bottom, h, segments), color, x, y, z); }
+  private material(color: number) { return this.geom.material(color); }
+  private box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, color: number) { return this.geom.box(parent, x, y, z, w, h, d, color); }
+  private sphere(parent: THREE.Object3D, x: number, y: number, z: number, r: number, color: number) { return this.geom.sphere(parent, x, y, z, r, color); }
+  private cylinder(parent: THREE.Object3D, x: number, y: number, z: number, top: number, bottom: number, h: number, color: number, segments = 8) { return this.geom.cylinder(parent, x, y, z, top, bottom, h, color, segments); }
 
   private createStoneTrail(x1: number, z1: number, x2: number, z2: number, count = 12) {
     for (let i = 0; i <= count; i++) {
