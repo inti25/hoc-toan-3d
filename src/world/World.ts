@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
-import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
 import { GeometryBuilder } from './geom';
+import { ArchimedesZoneBuilder, type MonolithItem, type Obstacle } from './ArchimedesZoneBuilder';
 import type { RemoteZoneConfig } from '../data/remoteTypes';
 
-interface Obstacle { x: number; z: number; radius: number }
+export { type MonolithItem, ArchimedesZoneBuilder };
+
 interface Spark { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }
 
 export interface FlowerItem {
@@ -23,19 +24,6 @@ export interface FlowerItem {
   animating: boolean;
 }
 
-export interface MonolithItem {
-  id: number;
-  position: THREE.Vector3;
-  group: THREE.Group;
-  pedestal: THREE.Mesh;
-  pillar: THREE.Mesh;
-  crystal: THREE.Mesh;
-  beam?: THREE.Mesh;
-  activated: boolean;
-  color: number;
-  glowAnim: number;
-}
-
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -45,7 +33,7 @@ export class World {
   readonly milo = new THREE.Group();
   readonly bridge = new THREE.Group();
   readonly flowers: FlowerItem[] = [];
-  readonly monoliths: MonolithItem[] = [];
+  readonly archimedes: ArchimedesZoneBuilder;
   readonly goal = new THREE.Vector3(16, 0, 0);
   readonly keys = new Set<string>();
   readonly spatial = new SpatialWorld(-6, 6);
@@ -76,7 +64,14 @@ export class World {
   onMonolithClick?: (index: number) => void;
   onPortalClick?: () => void;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
-  private portalGroups: THREE.Group[] = [];
+
+  get monoliths(): MonolithItem[] {
+    return this.archimedes.monoliths;
+  }
+
+  get portalGroups(): THREE.Group[] {
+    return this.archimedes.portalGroups;
+  }
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -104,7 +99,8 @@ export class World {
       },
     });
     this.player.add(this.avatar.group);
-    this.createMilo(); this.createBridge(); this.createFlowers(); this.createArchimedesPortals(); this.createArchimedesMonoliths(); this.decorate();
+    this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
+    this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -456,142 +452,12 @@ export class World {
     });
   }
 
-  private createPortalArch(x: number, z: number, color: number, rotationY = 0) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    group.rotation.y = rotationY;
-
-    // Stone base with steps
-    this.cylinder(group, 0, .12, 0, 1.8, 2.0, .24, 0x8a927d, 12);
-    this.cylinder(group, 0, .26, 0, 1.5, 1.7, .12, 0x5a634e, 12);
-
-    // Two ancient pillars wide enough for player to pass through center
-    this.cylinder(group, 0, 1.8, -1.5, .22, .28, 3.4, 0x93a388, 8);
-    this.cylinder(group, 0, 1.8, 1.5, .22, .28, 3.4, 0x93a388, 8);
-
-    // Grand Arch top
-    this.box(group, 0, 3.5, 0, .6, .45, 3.6, 0x76876c);
-
-    // Floating crystal prism above the arch
-    const crystal = this.sphere(group, 0, 4.3, 0, .32, color);
-    crystal.scale.set(0.7, 1.4, 0.7);
-    crystal.userData.portalCrystal = true;
-
-    // Glowing energy arch aura
-    const portalEnergy = this.box(group, 0, 1.8, 0, .05, 3.0, 2.7, color);
-    portalEnergy.userData.portalEnergy = true;
-
-    this.scene.add(group);
-    this.portalGroups.push(group);
-
-    const cos = Math.cos(rotationY);
-    const sin = Math.sin(rotationY);
-    this.obstacles.push({ x: x - (-1.5) * sin, z: z + (-1.5) * cos, radius: .45 });
-    this.obstacles.push({ x: x - 1.5 * sin, z: z + 1.5 * cos, radius: .45 });
-
-    return group;
-  }
-
-  private createArchimedesPortals() {
-    // 1. Garden -> Hub Portal
-    this.createPortalArch(32, 0, 0x38bdf8, 0);
-
-    // 2. Hub -> Garden Return Portal
-    this.createPortalArch(52, 0, 0x22c55e, 0);
-
-    // 3. Hub -> Zone 1 (Thung Lũng Tính Toán)
-    this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4);
-
-    // 4. Hub -> Zone 2 (Suối Nguồn Dãy Số)
-    this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6);
-
-    // 5. Hub -> Zone 3 (Đồi Thời Gian)
-    this.createPortalArch(70, 0, 0x8b5cf6, 0);
-
-    // 6. Hub -> Zone 4 (Rừng Hình Học)
-    this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6);
-
-    // 7. Hub -> Zone 5 (Đỉnh Núi Tư Duy Sao)
-    this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
-
-    // 8-12. Sanctuary Return Portals back to Hub
-    this.createPortalArch(100, -60, 0x38bdf8, 0);
-    this.createPortalArch(140, -60, 0x38bdf8, 0);
-    this.createPortalArch(100, 60, 0x38bdf8, 0);
-    this.createPortalArch(138, 60, 0x38bdf8, 0);
-    this.createPortalArch(181, 0, 0x38bdf8, 0);
+  createPortalArch(x: number, z: number, color: number, rotationY = 0) {
+    return this.archimedes.createPortalArch(x, z, color, rotationY);
   }
 
   public createMonolithEntity(id: number | string, x: number, z: number, color: number, title?: string): MonolithItem {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-
-    // 1. Pedestal base (stone cylinder)
-    const pedestal = this.cylinder(group, 0, .14, 0, 1.35, 1.45, .28, 0x64748b, 12);
-    this.cylinder(group, 0, .26, 0, 1.15, 1.15, .08, 0x334155, 12);
-
-    // 2. Small stone approach path
-    this.box(group, 0, .05, 1.3, 1.1, .08, 1.2, 0xd5cbb2);
-
-    // 3. Obelisk column
-    const pillar = this.box(group, 0, 1.1, 0, .68, 1.7, .68, 0x475569);
-
-    // 4. Inscription plaque on front face (Bài number)
-    this.box(group, 0, 1.3, .36, .52, .38, .06, 0xfef08a);
-
-    // 5. Crown stone cap
-    this.cylinder(group, 0, 2.02, 0, .45, .38, .16, 0x334155, 8);
-
-    // 6. Floating Rune Crystal Beacon (Octahedron)
-    const crystalGeo = new THREE.OctahedronGeometry(.32, 0);
-    const crystalMat = new THREE.MeshStandardMaterial({
-      color: 0x64748b,
-      roughness: 0.5,
-      metalness: 0.1
-    });
-    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-    crystal.position.set(0, 2.45, 0);
-    crystal.castShadow = true;
-    group.add(crystal);
-
-    // 7. Celestial Light Beam (inactive at start)
-    const beamGeo = new THREE.CylinderGeometry(.25, .45, 18, 8, 1, true);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: color,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.set(0, 11.5, 0);
-    beam.visible = false;
-    group.add(beam);
-
-    this.scene.add(group);
-    this.obstacles.push({ x, z, radius: 1.35 });
-
-    const numId = typeof id === 'number' ? id : parseInt(String(id), 10) || (306 + this.monoliths.length);
-    const monolithItem: MonolithItem = {
-      id: numId,
-      position: new THREE.Vector3(x, 0, z),
-      group,
-      pedestal,
-      pillar,
-      crystal,
-      beam,
-      activated: false,
-      color,
-      glowAnim: 0
-    };
-    this.monoliths.push(monolithItem);
-    return monolithItem;
-  }
-
-  private createArchimedesMonoliths() {
-    ARCHIMEDES_MONOLITHS.forEach((m) => {
-      this.createMonolithEntity(m.id, m.position.x, m.position.z, m.color, m.title);
-    });
+    return this.archimedes.createMonolithEntity(id, x, z, color, title);
   }
 
   private dynamicIslandIds = new Set<number>();
@@ -786,13 +652,7 @@ export class World {
     });
 
     // 2. Dọn dẹp bất kỳ bia đá nào bị sinh nhầm trong Vườn Hoa (id 1..10)
-    for (let i = this.monoliths.length - 1; i >= 0; i--) {
-      const m = this.monoliths[i];
-      if (typeof m.id === 'number' && m.id <= 10) {
-        this.scene.remove(m.group);
-        this.monoliths.splice(i, 1);
-      }
-    }
+    this.archimedes.removeGardenMonoliths();
 
     // 3. Dựng các bia đá mới nếu có
     const existingIds = new Set(this.monoliths.map((m) => m.id));
@@ -836,34 +696,11 @@ export class World {
   }
 
   activateMonolith(index: number) {
-    const m = this.monoliths[index];
-    if (!m) return;
-    m.activated = true;
-    const mat = m.crystal.material as THREE.MeshStandardMaterial;
-    mat.color.setHex(m.color);
-    mat.emissive = new THREE.Color(m.color);
-    mat.emissiveIntensity = 0.8;
-    if (m.beam) m.beam.visible = true;
-    this.burst(new THREE.Vector3(m.position.x, 2.5, m.position.z));
+    this.archimedes.activateMonolith(index, (pos) => this.burst(pos));
   }
 
   setMonolithsActivated(activatedList: boolean[]) {
-    this.monoliths.forEach((m, i) => {
-      const active = activatedList[i] === true;
-      m.activated = active;
-      const mat = m.crystal.material as THREE.MeshStandardMaterial;
-      if (active) {
-        mat.color.setHex(m.color);
-        mat.emissive = new THREE.Color(m.color);
-        mat.emissiveIntensity = 0.8;
-        if (m.beam) m.beam.visible = true;
-      } else {
-        mat.color.setHex(0x64748b);
-        mat.emissive = new THREE.Color(0x000000);
-        mat.emissiveIntensity = 0;
-        if (m.beam) m.beam.visible = false;
-      }
-    });
+    this.archimedes.setMonolithsActivated(activatedList);
   }
 
   nearMonolith(): number {
@@ -1034,32 +871,9 @@ export class World {
       }
     });
 
-    // Animate the 40 Archimedes monoliths
-    this.monoliths.forEach(m => {
-      if (m.activated) {
-        m.crystal.rotation.y += dt * 2.8;
-        m.crystal.position.y = 2.45 + Math.sin(this.time * 3 + m.id) * 0.12;
-        if (m.beam) {
-          m.beam.rotation.y += dt * 0.4;
-        }
-      } else {
-        m.crystal.rotation.y += dt * 0.8;
-      }
-    });
-
+    this.archimedes.updateAnimations(dt, this.time);
     for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= dt; s.velocity.y -= dt * 6; s.mesh.position.addScaledVector(s.velocity, dt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
     this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += dt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
-    this.portalGroups.forEach(pg => {
-      pg.children.forEach(o => {
-        if (o.userData.portalCrystal) {
-          o.rotation.y += dt * 1.5;
-          o.position.y = 4.3 + Math.sin(this.time * 2.5) * .12;
-        }
-        if (o.userData.portalEnergy) {
-          o.scale.z = 1.0 + Math.sin(this.time * 4) * 0.04;
-        }
-      });
-    });
     this.renderer.render(this.scene, this.camera);
     this.onFrame?.(this.spatial.isNearMilo(), this.spatial.hasCrossedRiver(), 1 / Math.max(dt, .001), this.spatial.nearFlowerIndex(), this.spatial.isNearPortal(), this.spatial.nearMonolithIndex());
   };

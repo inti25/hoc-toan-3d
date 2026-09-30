@@ -7,9 +7,23 @@ import {
   type ExplorerProfile
 } from '../data/remoteTypes';
 import { resolveImageUrl, extractMarkdownImage } from './imageResolver';
+import {
+  EXPLORER_PROFILE_KEY,
+  getExplorerProfile,
+  saveExplorerProfile,
+  profileManager,
+  ExplorerProfileManager
+} from './profile';
+
+export {
+  EXPLORER_PROFILE_KEY,
+  getExplorerProfile,
+  saveExplorerProfile,
+  profileManager,
+  ExplorerProfileManager
+};
 
 export const APPS_SCRIPT_URL_KEY = 'aigame3d_apps_script_url';
-export const EXPLORER_PROFILE_KEY = 'aigame3d_explorer_profile';
 export const REMOTE_CACHE_KEY = 'aigame3d_remote_data_cache';
 export const REMOTE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 phút
 
@@ -99,24 +113,6 @@ export function getAppsScriptUrl(): string {
     if (envUrl && typeof envUrl === 'string' && envUrl.trim()) return envUrl.trim();
   } catch (_) {}
   return DEFAULT_APPS_SCRIPT_URL;
-}
-
-/**
- * Lấy hồ sơ dũng sĩ (biệt danh & lớp)
- */
-export function getExplorerProfile(): ExplorerProfile {
-  try {
-    const raw = safeStorage.getItem(EXPLORER_PROFILE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  return { nickname: 'Dũng Sĩ Tí Hon', className: 'Lớp 2', isAnonymous: true };
-}
-
-/**
- * Lưu hồ sơ dũng sĩ
- */
-export function saveExplorerProfile(profile: ExplorerProfile): void {
-  safeStorage.setItem(EXPLORER_PROFILE_KEY, JSON.stringify(profile));
 }
 
 /**
@@ -435,18 +431,7 @@ export async function logRemoteProgress(record: {
   const scriptUrl = getAppsScriptUrl();
   if (!scriptUrl) return; // Không cấu hình Sheets URL thì bỏ qua âm thầm
 
-  const profile = getExplorerProfile();
-  const payload = {
-    action: 'logProgress',
-    explorerName: profile.nickname || 'Dũng Sĩ Ẩn Danh',
-    className: profile.className || 'Lớp 2',
-    zoneId: record.zoneId,
-    problemId: record.problemId,
-    stepId: record.stepId || '',
-    isCorrect: record.isCorrect,
-    score: record.score || 0,
-    details: record.details
-  };
+  const payload = profileManager.formatTelemetryPayload(record);
 
   try {
     await fetch(scriptUrl, {
