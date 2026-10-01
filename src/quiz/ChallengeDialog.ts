@@ -708,7 +708,15 @@ export class ChallengeDialog {
       monolithId = Number(remoteProblem.id);
     }
 
-    const monolithIndex = typeof monolithRef === 'number' ? monolithRef : monolithId - 306;
+    const probIdx = activeMonolithProblems.findIndex((p) => Number(p.id) === monolithId);
+    const monolithIndex =
+      probIdx !== -1
+        ? probIdx
+        : typeof monolithRef === 'number' && monolithRef < 300
+        ? monolithRef
+        : monolithId >= 306
+        ? monolithId - 306
+        : 0;
 
     if (remoteProblem && remoteProblem.steps && remoteProblem.steps.length > 0) {
       const rStep = remoteProblem.steps[Math.min(stepIndex, remoteProblem.steps.length - 1)] || remoteProblem.steps[0];
@@ -760,7 +768,9 @@ export class ChallengeDialog {
     this.currentSession = new ChallengeSession(challenge);
     this.currentInputValue = '';
     const step = challenge.step;
-    const isDone = this.host.adventure.getState().monoliths[monolithIndex];
+    const isDone =
+      this.host.adventure.isProblemSolved(monolithId) ||
+      (monolithIndex >= 0 && this.host.adventure.getState().monoliths[monolithIndex] === true);
     const parsed = parseAnswer(challenge.answer);
 
     const renderArchimedesHint = (hintText: string, explanation?: string) => {
@@ -825,8 +835,8 @@ export class ChallengeDialog {
             nextStepBtn.focus();
           }
         } else {
-          const delta = this.host.adventure.activateMonolith(monolithIndex);
-          this.host.getWorld().activateMonolith(monolithIndex);
+          const delta = this.host.adventure.activateMonolith(monolithIndex, m.id, m.zoneId);
+          this.host.getWorld().activateMonolith(m.id);
           this.host.playCue('celebrate');
           this.host.burstPlayer();
 

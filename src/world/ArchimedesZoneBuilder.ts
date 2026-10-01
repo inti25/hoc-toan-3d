@@ -185,8 +185,11 @@ export class ArchimedesZoneBuilder {
     }
   }
 
-  activateMonolith(index: number, burstFn?: (pos: THREE.Vector3) => void): void {
-    const m = this.monoliths[index];
+  activateMonolith(ref: number | string, burstFn?: (pos: THREE.Vector3) => void): void {
+    const numRef = typeof ref === 'number' ? ref : parseInt(String(ref), 10);
+    const m =
+      this.monoliths.find((item) => item.id === numRef || String(item.id) === String(ref)) ||
+      (!isNaN(numRef) && numRef >= 0 && numRef < this.monoliths.length ? this.monoliths[numRef] : undefined);
     if (!m) return;
     m.activated = true;
     const mat = m.crystal.material as THREE.MeshStandardMaterial;
@@ -197,9 +200,28 @@ export class ArchimedesZoneBuilder {
     burstFn?.(new THREE.Vector3(m.position.x, 2.5, m.position.z));
   }
 
-  setMonolithsActivated(activatedList: boolean[]): void {
+  setMonolithsActivated(
+    checker:
+      | boolean[]
+      | ((id: number, index: number) => boolean)
+      | { monoliths?: boolean[]; solvedProblems?: Record<string, boolean> }
+  ): void {
     this.monoliths.forEach((m, i) => {
-      const active = activatedList[i] === true;
+      let active = false;
+      if (typeof checker === 'function') {
+        active = checker(m.id, i);
+      } else if (Array.isArray(checker)) {
+        active =
+          checker[i] === true ||
+          (typeof m.id === 'number' && m.id >= 306 && checker[m.id - 306] === true);
+      } else if (checker && typeof checker === 'object') {
+        const solved = checker.solvedProblems;
+        const moList = checker.monoliths;
+        active =
+          (solved && (solved[String(m.id)] === true || solved[String(i)] === true)) ||
+          (moList && (moList[i] === true || (typeof m.id === 'number' && m.id >= 306 && moList[m.id - 306] === true))) ||
+          false;
+      }
       m.activated = active;
       const mat = m.crystal.material as THREE.MeshStandardMaterial;
       if (active) {

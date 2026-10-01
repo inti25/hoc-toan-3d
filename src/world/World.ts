@@ -695,12 +695,17 @@ export class World {
     });
   }
 
-  activateMonolith(index: number) {
-    this.archimedes.activateMonolith(index, (pos) => this.burst(pos));
+  activateMonolith(ref: number | string) {
+    this.archimedes.activateMonolith(ref, (pos) => this.burst(pos));
   }
 
-  setMonolithsActivated(activatedList: boolean[]) {
-    this.archimedes.setMonolithsActivated(activatedList);
+  setMonolithsActivated(
+    checker:
+      | boolean[]
+      | ((id: number, index: number) => boolean)
+      | { monoliths?: boolean[]; solvedProblems?: Record<string, boolean> }
+  ) {
+    this.archimedes.setMonolithsActivated(checker);
   }
 
   nearMonolith(): number {

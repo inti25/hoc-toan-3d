@@ -93,6 +93,15 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     }))
   );
 
+  const currentState = adventure.getState();
+  world.setMonolithsActivated((id, index) => {
+    return (
+      adventure.isProblemSolved(id) ||
+      (typeof id === 'number' && id >= 306 && currentState.monoliths[id - 306] === true) ||
+      currentState.monoliths[index] === true
+    );
+  });
+
   world.spatial.setDynamicData(
     data.zones,
     monolithProblems.filter((p) => p.position).map((p) => p.position!)
@@ -1241,7 +1250,13 @@ try {
   const init = adventure.getState();
   world.setBridge(init.bridge);
   world.setFlowersBloomed(init.flowers);
-  world.setMonolithsActivated(init.monoliths);
+  world.setMonolithsActivated((id, index) => {
+    return (
+      adventure.isProblemSolved(id) ||
+      (typeof id === 'number' && id >= 306 && init.monoliths[id - 306] === true) ||
+      init.monoliths[index] === true
+    );
+  });
   world.setAvatar(init.avatar);
   world.onJump = () => audio.playCue('jump');
   world.onSceneClick = () => interactAction();
