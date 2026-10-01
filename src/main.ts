@@ -20,6 +20,7 @@ import {
 } from './core/sheetsClient';
 import type { RemoteZoneConfig, RemoteProblem } from './data/remoteTypes';
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
+import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -103,9 +104,9 @@ const app = $('app');
 app.innerHTML = `
   <main class="game-shell">
     <canvas id="world" aria-label="Làng Khởi Đầu và Vườn Hoa Tri Thức 3D. Di chuyển bằng WASD, phím mũi tên hoặc chạm xuống đất."></canvas>
-    <div id="loading" class="loading"><span class="loading-crown">${icon('crown')}</span><strong>Đang mở cánh cổng…</strong></div>
+    <div id="loading" class="loading"><div class="loading-logo-box"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="loading-logo-img" /></div><strong>Đang mở cánh cổng…</strong></div>
     <header class="topbar">
-      <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark">${icon('crown')}</span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
+      <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="brand-logo-img" /></span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
       <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhiệm vụ & Tiến độ" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
@@ -114,8 +115,8 @@ app.innerHTML = `
       <p>Mỗi phép nhân, một điều kỳ diệu.<br>Cùng Milo xây cầu và khám phá Vườn Hoa Tri Thức!</p>
       <div class="choose-label">Chọn người bạn đồng hành</div>
       <div class="avatar-options" role="group" aria-label="Chọn nhân vật">${CHARACTERS.map(c =>
-        `<button id="avatar-${c.id}" class="avatar-option" aria-pressed="${c.id === 'boy'}" data-avatar="${c.id}"><span>${c.emoji}</span>${c.label}</button>`
-      ).join('')}</div>
+  `<button id="avatar-${c.id}" class="avatar-option" aria-pressed="${c.id === 'boy'}" data-avatar="${c.id}"><span>${c.emoji}</span>${c.label}</button>`
+).join('')}</div>
       <div class="welcome-profile-inputs">
         <div class="welcome-input-col name-col">
           <label for="welcome-name" class="welcome-input-label">Tên dũng sĩ của bạn</label>
@@ -213,11 +214,26 @@ app.innerHTML = `
     </dialog>
   </main>`;
 
-function toast(message: string) {
-  $('toast').textContent = message;
-  $('toast').hidden = false;
+function toast(message: string, duration = 4200, onClick?: () => void) {
+  const t = $('toast');
+  t.textContent = message;
+  t.hidden = false;
+  if (onClick) {
+    t.classList.add('interactive');
+    t.onclick = () => {
+      onClick();
+      t.hidden = true;
+      t.classList.remove('interactive');
+    };
+  } else {
+    t.classList.remove('interactive');
+    t.onclick = null;
+  }
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => ($('toast').hidden = true), 4200);
+  toastTimer = window.setTimeout(() => {
+    t.hidden = true;
+    t.classList.remove('interactive');
+  }, duration);
 }
 
 function updateHUD() {
@@ -452,7 +468,7 @@ function openFlowerDialog(index: number) {
           activeRemoteQuestions['VuonHoa'] = remoteFlowers;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   challengeDialog.openFlower(index, remoteFlowers);
 }
@@ -964,6 +980,19 @@ function settings() {
       </div>
     </div>
 
+    <div class="sheets-config-box">
+      <h4>${icon('device')} Ứng Dụng Thiết Bị (PWA)</h4>
+      <p>Cài đặt Vương Quốc Học Toán 3D về màn hình chính của máy tính bảng hoặc điện thoại để mở nhanh và học ngoại tuyến.</p>
+      <div class="sheets-action-row">
+        ${isStandalone()
+      ? '<span class="pwa-installed-badge">✓ Đã cài đặt ứng dụng</span>'
+      : canInstallPWA()
+        ? `<button id="install-pwa-btn" class="primary small">${icon('download')} 📲 Cài đặt ứng dụng về máy</button>`
+        : '<span class="book-note">Có thể thêm vào màn hình chính thông qua menu trình duyệt (Chia sẻ ➔ Thêm vào MH chính).</span>'
+    }
+      </div>
+    </div>
+
     <div class="progress-summary">
       <span><strong>${state.xp}</strong>XP tích lũy</span>
       <span><strong>${attempts}</strong>Lượt trả lời</span>
@@ -1036,6 +1065,17 @@ function settings() {
       toast('Đã lưu hồ sơ dũng sĩ!');
     }
   };
+
+  const installPwaBtn = $('install-pwa-btn') as HTMLButtonElement | null;
+  if (installPwaBtn) {
+    installPwaBtn.onclick = async () => {
+      const accepted = await promptInstallPWA();
+      if (accepted) {
+        toast('🎉 Cài đặt ứng dụng thành công!');
+        closeDialog();
+      }
+    };
+  }
 
   $('save-now').onclick = () => {
     if (adventure.save()) toast('Đã lưu hành trình của bạn trên thiết bị này.');
@@ -1362,3 +1402,11 @@ if (modelContext?.registerTool) {
   }
 }
 window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
+
+initPWA({
+  onNeedRefresh(update) {
+    toast('🎉 Đã có bản cập nhật mới! Nhấn để làm mới', 15000, () => {
+      update();
+    });
+  }
+});

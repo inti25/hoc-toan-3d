@@ -152,4 +152,9 @@ _Avoid_: Input box con, Textfield con, Ô gõ số
 Ký tự gạch đứng `|` dùng trong cột `Answer` trên Google Sheets để phân tách các giá trị cần điền theo thứ tự từ trái sang phải hoặc từ trên xuống dưới (ví dụ `88|100`).
 _Avoid_: Dấu phẩy, Dấu gạch chéo, Dấu chấm phẩy
 
+**Biểu Tượng Vương Quốc (Kingdom Brand Mark)**:
+Huy hiệu nhận diện thương hiệu chính thức của thế giới 3D, hiển thị trên thanh điều hướng đỉnh màn hình, màn hình mở cổng tải game và icon ứng dụng khi cài đặt PWA về thiết bị.
+_Avoid_: Logo game, Icon web, Watermark
+
+
 
