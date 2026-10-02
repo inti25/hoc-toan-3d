@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
@@ -85,7 +86,7 @@ export class World {
     this.scene.add(new THREE.HemisphereLight(0xf2fbff, 0x7d9870, 2.4));
     const sun = new THREE.DirectionalLight(0xfff0c9, 3.2);
     sun.position.set(-18, 45, 12); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -40, right: 220, top: 90, bottom: -90, near: 1, far: 260 });
+    sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -75, right: 220, top: 90, bottom: -90, near: 1, far: 260 });
     sun.shadow.normalBias = .045; sun.shadow.bias = -.0003; this.scene.add(sun);
     this.terrain();
     this.water = this.box(this.scene, 7, -.05, 0, 6, .18, 40, 0x48b8cf); this.water.receiveShadow = true;
@@ -102,6 +103,8 @@ export class World {
     this.player.add(this.avatar.group);
     this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
     this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
+    this.createParkBridge();
+    this.loadParkMap();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -328,7 +331,7 @@ export class World {
 
     // Trees encircling village and flower garden perimeter
     [
-      [-20,-14,1.3],[-20,-8,1],[-20,0,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
+      [-20,-14,1.3],[-20,-8,1],[-20,-3.8,1.1],[-20,3.8,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
       [13,-15,1.3],[18,-17,1.5],[25,-16,1.2],[32,-12,1.3],[33,-5,1.1],[33,5,1.1],[32,12,1.3],[25,16,1.2],[18,17,1.5],[13,15,1.3]
     ].forEach(([x,z,s],i)=>this.tree(x,z,s,i));
 
@@ -755,6 +758,130 @@ export class World {
       part.visible = false; this.bridge.add(part);
     }
     for (const x of [3.6, 10.4]) for (const z of [-1.85, 1.85]) { this.cylinder(this.scene, x, .65, z, .23, .3, 1.3, 0xcac09e); this.sphere(this.scene, x, 1.4, z, .28, 0xf4d37c); }
+  }
+
+  private createParkBridge() {
+    const bridgeGroup = new THREE.Group();
+    // Path inside village connecting to western bridgehead
+    this.box(this.scene, -19.5, .055, 0, 5, .08, 3.2, 0xead5a3);
+
+    // Bridge deck beams underneath
+    this.box(bridgeGroup, -24, -.1, -1.2, 6.4, .25, .35, 0x8c6947);
+    this.box(bridgeGroup, -24, -.1, 1.2, 6.4, .25, .35, 0x8c6947);
+    this.box(bridgeGroup, -24, -.1, 0, 6.4, .25, .35, 0x8c6947);
+
+    // Planks
+    const plankCount = 10;
+    for (let i = 0; i <= plankCount; i++) {
+      const px = -21 - (i / plankCount) * 6;
+      const plank = this.box(bridgeGroup, px, .08, 0, .54, .1, 3.2, (i % 2 === 0) ? 0xc3b895 : 0xb5a782);
+      plank.receiveShadow = true;
+    }
+
+    // Handrails on North and South
+    for (const z of [-1.55, 1.55]) {
+      this.box(bridgeGroup, -24, .9, z, 6.4, .12, .15, 0xa98458);
+      this.box(bridgeGroup, -24, .45, z, 6.4, .08, .1, 0x8c6947);
+      for (let p = 0; p <= 4; p++) {
+        const px = -21 - p * 1.5;
+        this.box(bridgeGroup, px, .5, z, .15, 1.0, .15, 0x8c6947);
+      }
+    }
+
+    // Lantern stone pillars at both bridge ends
+    for (const x of [-20.8, -27.2]) {
+      for (const z of [-1.8, 1.8]) {
+        const pillar = this.cylinder(bridgeGroup, x, .6, z, .22, .28, 1.2, 0xcac09e);
+        pillar.castShadow = true;
+        const lamp = this.sphere(bridgeGroup, x, 1.3, z, .24, 0xfef08a);
+        lamp.castShadow = false;
+        const light = new THREE.PointLight(0xfef08a, 0.8, 6);
+        light.position.set(x, 1.3, z);
+        bridgeGroup.add(light);
+      }
+    }
+
+    this.scene.add(bridgeGroup);
+  }
+
+  private loadParkMap() {
+    if (typeof window === 'undefined') return;
+    const loader = new GLTFLoader();
+    const baseUrl = import.meta.env?.BASE_URL ?? '/';
+    const url = `${baseUrl}3dmodel/maps/park.glb`;
+
+    loader.load(
+      url,
+      (gltf) => {
+        const model = gltf.scene;
+
+        // Auto-scale to match Starter Village land area (~26 * 40 = 1040 m^2)
+        const initialBox = new THREE.Box3().setFromObject(model);
+        const initialSize = new THREE.Vector3();
+        initialBox.getSize(initialSize);
+
+        const villageArea = 26 * 40; // 1040 m^2
+        const initialRadius = Math.max(initialSize.x, initialSize.z) / 2;
+        const initialArea = Math.PI * (initialRadius ** 2);
+        const scaleFactor = Math.sqrt(villageArea / initialArea);
+
+        model.scale.setScalar(scaleFactor);
+
+        const parkCx = -45;
+        const parkCz = 0;
+        model.position.set(parkCx, 0, parkCz);
+        model.updateMatrixWorld(true);
+
+        const scaledRadius = initialRadius * scaleFactor;
+
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+
+        this.scene.add(model);
+        this.spatial.setParkZone(parkCx, parkCz, scaledRadius);
+
+        // Detect obstacle objects
+        const parkObstacles: Obstacle[] = [];
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const name = (child.name || child.parent?.name || '').toLowerCase();
+            if (
+              name.includes('tree') ||
+              name.includes('pine') ||
+              name.includes('lamp') ||
+              name.includes('stone') ||
+              name.includes('rock') ||
+              name.includes('cylinder01') ||
+              name.includes('cube00')
+            ) {
+              const box = new THREE.Box3().setFromObject(child);
+              const center = new THREE.Vector3();
+              box.getCenter(center);
+              const size = new THREE.Vector3();
+              box.getSize(size);
+              const radius = Math.max(0.4, Math.min(2.0, Math.max(size.x, size.z) * 0.35));
+              parkObstacles.push({
+                x: Number(center.x.toFixed(2)),
+                z: Number(center.z.toFixed(2)),
+                radius: Number(radius.toFixed(2))
+              });
+            }
+          }
+        });
+
+        this.obstacles.push(...parkObstacles);
+        this.spatial.addObstacles(parkObstacles);
+      },
+      undefined,
+      (err) => {
+        console.error('Failed to load park.glb:', err);
+      }
+    );
   }
 
   setBridge(count: number, animate = false) {

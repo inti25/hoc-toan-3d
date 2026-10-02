@@ -87,7 +87,7 @@ export class SpatialWorld {
 
     // Trees
     [
-      [-20,-14,1.3],[-20,-8,1],[-20,0,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
+      [-20,-14,1.3],[-20,-8,1],[-20,-3.8,1.1],[-20,3.8,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
       [13,-15,1.3],[18,-17,1.5],[25,-16,1.2],[32,-12,1.3],[33,-5,1.1],[33,5,1.1],[32,12,1.3],[25,16,1.2],[18,17,1.5],[13,15,1.3]
     ].forEach(([tx, tz, s]) => {
       this.obstacles.push({ x: tx, z: tz, radius: .45 * s });
@@ -119,6 +119,16 @@ export class SpatialWorld {
     this.obstacles.push(obstacle);
   }
 
+  addObstacles(obstacles: Obstacle[]) {
+    this.obstacles.push(...obstacles);
+  }
+
+  public parkZone: { cx: number; cz: number; radius: number } = { cx: -45, cz: 0, radius: 18.2 };
+
+  setParkZone(cx: number, cz: number, radius: number) {
+    this.parkZone = { cx, cz, radius };
+  }
+
   private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string }[] = [];
   private dynamicPortals: PortalLink[] = [];
   private dynamicMonoliths: { x: number; z: number }[] = [];
@@ -143,6 +153,12 @@ export class SpatialWorld {
   }
 
   isWithinLand(x: number, z: number): boolean {
+    // 0. Park Island (Công Viên Xanh) & Western Connection Bridge
+    if (this.parkZone) {
+      if (Math.hypot(x - this.parkZone.cx, z - this.parkZone.cz) <= this.parkZone.radius) return true;
+      if (x >= this.parkZone.cx + this.parkZone.radius - 1.5 && x <= -20.5 && Math.abs(z - this.parkZone.cz) <= 2.0) return true;
+    }
+
     // 1. Starter Village
     if (x >= -21 && x <= 4 && Math.abs(z) <= 18.8) return true;
     // 2. Friendship Bridge (requires bridge completed)
@@ -182,6 +198,13 @@ export class SpatialWorld {
   }
 
   getCurrentLocationName(): string {
+    if (
+      this.parkZone &&
+      (Math.hypot(this.x - this.parkZone.cx, this.z - this.parkZone.cz) <= this.parkZone.radius + 1.2 ||
+        (this.x <= -20.5 && Math.abs(this.z - this.parkZone.cz) <= 2.2))
+    ) {
+      return 'Công Viên Xanh';
+    }
     if (this.x <= 4) return 'Làng Khởi Đầu';
     if (this.x <= 34) return 'Vườn Hoa Tri Thức';
     if (this.x >= 49 && this.x <= 71 && Math.abs(this.z) <= 11) return 'Đền Cổng Archimedes';

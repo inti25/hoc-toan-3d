@@ -106,3 +106,26 @@ test('SpatialWorld supports dynamic islands and dynamic portal transits', () => 
   assert.equal(world.getPose().z, 295);
 });
 
+test('SpatialWorld supports Công Viên Xanh (park map) boundary, bridge, and location naming', () => {
+  const world = new SpatialWorld(-6, 5);
+  assert.equal(world.getCurrentLocationName(), 'Làng Khởi Đầu');
+
+  // Western bridge connecting village to park (x = -24, z = 0)
+  assert.equal(world.isWithinLand(-24, 0), true);
+
+  // Inside Công Viên Xanh
+  world.teleport(-45, 0);
+  assert.equal(world.isWithinLand(-45, 0), true);
+  assert.equal(world.getCurrentLocationName(), 'Công Viên Xanh');
+  assert.equal(world.canMove(-45, 0), true);
+
+  // Far beyond park perimeter
+  assert.equal(world.isWithinLand(-75, 0), false);
+  assert.equal(world.canMove(-75, 0), false);
+
+  // Adding park obstacles
+  world.addObstacles([{ x: -45, z: 2, radius: 1.0 }]);
+  assert.equal(world.canMove(-45, 2), false); // Blocked by obstacle
+  assert.equal(world.canMove(-45, 0), true); // Clear area still walkable
+});
+

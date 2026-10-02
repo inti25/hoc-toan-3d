@@ -599,9 +599,14 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           <h4>🏡 Làng Khởi Đầu</h4>
           <p>Trung tâm kết nối các vùng đất kỳ thú · Vị trí: (X: 0, Z: 0)</p>
         </div>
-        <button class="zone-teleport-btn zone-banner-teleport" data-x="-6" data-z="5" data-name="Làng Khởi Đầu">
-          🚀 Dịch chuyển về Làng Khởi Đầu
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="zone-teleport-btn zone-banner-teleport" data-x="-6" data-z="5" data-name="Làng Khởi Đầu">
+            🚀 Dịch chuyển về Làng Khởi Đầu
+          </button>
+          <button class="zone-teleport-btn zone-banner-teleport" data-x="-45" data-z="0" data-name="Công Viên Xanh" style="background:#059669">
+            🌳 Đến Công Viên Xanh
+          </button>
+        </div>
       </div>
       <div class="zone-overview-card" style="margin-top:12px">
         <div class="zone-card-title">🌉 Cây cầu tình bạn & Milo</div>
@@ -836,7 +841,10 @@ $('learn-welcome').onclick = () => learn();
 $('travel').onclick = () => {
   if (!world.active || world.paused) return;
   const locName = world.spatial.getCurrentLocationName();
-  if (locName === 'Làng Khởi Đầu') {
+  if (locName === 'Công Viên Xanh') {
+    world.teleport(-6, 5);
+    toast('Đã trở về Làng Khởi Đầu!');
+  } else if (locName === 'Làng Khởi Đầu') {
     world.teleport(13, 0);
     toast('Chào mừng bạn đến với Vườn Hoa Tri Thức!');
   } else if (locName === 'Vườn Hoa Tri Thức') {
@@ -1349,6 +1357,8 @@ try {
     const dynZone = activeRemoteZones.find((z) => z.name === locName);
     if (dynZone) {
       subLabel = `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
+    } else if (locName === 'Công Viên Xanh') {
+      subLabel = 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ';
     } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
     else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
     else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
