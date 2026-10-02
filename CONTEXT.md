@@ -156,5 +156,14 @@ _Avoid_: Dấu phẩy, Dấu gạch chéo, Dấu chấm phẩy
 Huy hiệu nhận diện thương hiệu chính thức của thế giới 3D, hiển thị trên thanh điều hướng đỉnh màn hình, màn hình mở cổng tải game và icon ứng dụng khi cài đặt PWA về thiết bị.
 _Avoid_: Logo game, Icon web, Watermark
 
+**Tọa Độ Thám Hiểm Lưu Lại (Saved Adventure Coordinates)**:
+Cặp tọa độ không gian 3D (X, Z) của người chơi được tự động cập nhật vào Tiến Trình Thám Hiểm, cho phép học sinh xuất hiện ngay tại điểm dừng chân trước đó khi quay lại thế giới 3D.
+_Avoid_: Vị trí spawn, Tọa độ save, Điểm hồi sinh, Last pos
+
+**Khởi Tạo Vị Trí Trì Hoãn (Deferred Spawn)**:
+Cơ chế an toàn tạm thời xuất hiện người chơi tại Làng Khởi Đầu nếu vị trí lưu thuộc về các Ốc Đảo Chuyên Đề chưa nạp xong dữ liệu qua mạng, và tự động dịch chuyển mượt mà về đúng Tọa Độ Thám Hiểm Lưu Lại ngay khi hòn đảo 3D dựng xong.
+_Avoid_: Chờ load map, Fallback vị trí, Spawn trễ
+
+
 
 

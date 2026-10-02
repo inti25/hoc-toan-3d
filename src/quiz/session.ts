@@ -338,6 +338,11 @@ export class ChallengeSession {
     return Math.max(0, Math.round(now - this.startTimestamp));
   }
 
+  isMaxHintStage(): boolean {
+    const maxStages = this.challenge.kind === 'multiplication' ? 3 : this.challenge.hints.length;
+    return this.hintStage >= maxStages;
+  }
+
   requestHint(): string {
     const maxStages = this.challenge.kind === 'multiplication' ? 3 : this.challenge.hints.length;
     this.hintStage = Math.min(maxStages, this.hintStage + 1);
@@ -385,20 +390,13 @@ export class ChallengeSession {
       };
     }
 
-    // Wrong answer advances the hint stage
-    const maxStages = this.challenge.kind === 'multiplication' ? 3 : this.challenge.hints.length;
-    this.hintStage = Math.min(maxStages, this.hintStage + 1);
-    const hint = this.resolveHint(this.hintStage);
-
+    // Wrong answer does not advance hint stage automatically (hints are user-requested)
     return {
       isCorrect: false,
       attempts: this.attempts,
       hintStage: this.hintStage,
-      hint,
-      explanation:
-        this.challenge.kind !== 'multiplication' && this.hintStage >= maxStages
-          ? this.challenge.explanation
-          : undefined,
+      hint: '',
+      explanation: undefined,
       slotResults
     };
   }

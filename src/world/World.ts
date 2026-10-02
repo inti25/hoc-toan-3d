@@ -63,6 +63,7 @@ export class World {
   onFlowerClick?: (index: number) => void;
   onMonolithClick?: (index: number) => void;
   onPortalClick?: () => void;
+  onTeleport?: (x: number, z: number) => void;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
 
   get monoliths(): MonolithItem[] {
@@ -718,6 +719,15 @@ export class World {
     this.target.set(x, 0, z);
     this.destination = undefined;
     this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1, 0)));
+    this.onTeleport?.(x, z);
+  }
+
+  setInitialPosition(x: number, z: number) {
+    this.spatial.teleport(x, z);
+    this.player.position.set(x, this.spatial.floorHeight(), z);
+    this.target.set(x, 0, z);
+    this.destination = undefined;
+    this.resetCamera();
   }
 
   private createMilo() {

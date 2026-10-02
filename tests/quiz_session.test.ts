@@ -12,7 +12,7 @@ import seedData from '../src/data/seedData.json';
 const flowerSeeds = seedData.questionsBySheet['VuonHoa'];
 const archSeeds = seedData.questionsBySheet['Zone_1_Archimedes'];
 
-test('MultiplicationChallenge session validates answers and advances hints on wrong attempts', () => {
+test('MultiplicationChallenge session validates answers and advances hints on demand', () => {
   const challenge = createMultiplicationChallenge(5, 4, 'bridge');
   assert.equal(challenge.kind, 'multiplication');
   assert.equal(challenge.a, 5);
@@ -23,15 +23,20 @@ test('MultiplicationChallenge session validates answers and advances hints on wr
   assert.equal(session.isSolved(), false);
   assert.equal(session.getAttempts(), 0);
 
-  // Wrong answer
+  // Wrong answer does NOT advance hint stage automatically
   const wrongChoice = challenge.options.find(o => Number(o.value) !== 20)!.value;
   const res1 = session.submit(wrongChoice);
 
   assert.equal(res1.isCorrect, false);
   assert.equal(res1.attempts, 1);
-  assert.equal(res1.hintStage, 1);
-  assert(res1.hint.includes('4 nhóm, mỗi nhóm 5 viên đá'));
+  assert.equal(res1.hintStage, 0);
+  assert.equal(res1.hint, '');
   assert.equal(session.isSolved(), false);
+
+  // User manually requests hint
+  const hint1 = session.requestHint();
+  assert.equal(session.getHintStage(), 1);
+  assert(hint1.includes('4 nhóm, mỗi nhóm 5 viên đá'));
 
   // Correct answer
   const res2 = session.submit(20);
@@ -39,7 +44,7 @@ test('MultiplicationChallenge session validates answers and advances hints on wr
   assert.equal(session.isSolved(), true);
 });
 
-test('FlowerChallenge session validates answers and advances through tiered hints', () => {
+test('FlowerChallenge session validates answers and advances through tiered hints on request', () => {
   const q = flowerSeeds[0]; // 100
   const challenge = createFlowerChallenge(q);
   assert.equal(challenge.kind, 'flower');
@@ -52,12 +57,17 @@ test('FlowerChallenge session validates answers and advances through tiered hint
   assert.equal(session.getHintStage(), 1);
   assert.equal(hint1, challenge.hints[0]);
 
-  // Wrong submission advances hint stage
+  // Wrong submission does NOT advance hint stage
   const wrongChoice = challenge.options.find(o => o.value !== '100')!.value;
   const resWrong = session.submit(wrongChoice);
   assert.equal(resWrong.isCorrect, false);
+  assert.equal(session.getHintStage(), 1);
+  assert.equal(resWrong.hint, '');
+
+  // Second hint request advances stage
+  const hint2 = session.requestHint();
   assert.equal(session.getHintStage(), 2);
-  assert.equal(resWrong.hint, challenge.hints[1]);
+  assert.equal(hint2, challenge.hints[1]);
 
   // Correct submission completes session
   const resCorrect = session.submit('100');
@@ -65,20 +75,27 @@ test('FlowerChallenge session validates answers and advances through tiered hint
   assert.equal(session.isSolved(), true);
 });
 
-test('Repeated wrong attempts in multiplication cap at stage 3 and provide full solution', () => {
+test('Repeated manual hint requests in multiplication cap at stage 3', () => {
   const challenge = createMultiplicationChallenge(2, 6, 'practice');
   const session = new ChallengeSession(challenge);
 
-  session.submit(99); // 1
-  session.submit(99); // 2
-  const res3 = session.submit(99); // 3
+  // Wrong attempts do not change hint stage
+  session.submit(99);
+  session.submit(99);
+  session.submit(99);
+  assert.equal(session.getAttempts(), 3);
+  assert.equal(session.getHintStage(), 0);
 
-  assert.equal(res3.attempts, 3);
-  assert.equal(res3.hintStage, 3);
-  assert(res3.hint.includes('= 12'));
+  // Manual requests advance up to stage 3
+  session.requestHint(); // 1
+  session.requestHint(); // 2
+  const hint3 = session.requestHint(); // 3
+  assert.equal(session.getHintStage(), 3);
+  assert.equal(session.isMaxHintStage(), true);
+  assert(hint3.includes('= 12'));
 });
 
-test('ArchimedesChallenge session supports multi-step monoliths, tiered hints, and explanations', () => {
+test('ArchimedesChallenge session supports multi-step monoliths, tiered hints, and explanations on demand', () => {
   const m = archSeeds[0];
   const challenge = createArchimedesChallenge(m as any, 0); // Bài 306, step 0
   assert.equal(challenge.kind, 'archimedes');
@@ -88,12 +105,17 @@ test('ArchimedesChallenge session supports multi-step monoliths, tiered hints, a
   const session = new ChallengeSession(challenge);
   assert.equal(session.isSolved(), false);
 
-  // Wrong attempt
+  // Wrong attempt does not increment hint stage
   const wrongChoice = challenge.options.find(o => o.value !== '893')!.value;
   const resWrong = session.submit(wrongChoice);
   assert.equal(resWrong.isCorrect, false);
-  assert.equal(resWrong.hintStage, 1);
-  assert.ok(resWrong.hint.length > 0);
+  assert.equal(resWrong.hintStage, 0);
+  assert.equal(resWrong.hint, '');
+
+  // Manual hint request
+  const hint = session.requestHint();
+  assert.equal(session.getHintStage(), 1);
+  assert.ok(hint.length > 0);
 
   // Correct attempt
   const resCorrect = session.submit('893');

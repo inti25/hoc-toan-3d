@@ -325,6 +325,12 @@ export class ChallengeDialog {
         if (!this.currentSession) return;
         const hintText = this.currentSession.requestHint();
         this.renderMultiplicationHint(hintText, challenge);
+        this.host.playCue('hint');
+        if (this.currentSession.isMaxHintStage()) {
+          hintBtn.hidden = true;
+        } else {
+          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
       };
     }
 
@@ -413,10 +419,8 @@ export class ChallengeDialog {
       const feedback = document.getElementById('feedback');
       if (feedback) {
         feedback.className = 'feedback gentle';
-        feedback.textContent = '↻ Chưa đúng rồi. Mình cùng đếm lại nhé!';
+        feedback.textContent = "↻ Chưa đúng rồi. Bé hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!";
       }
-      this.renderMultiplicationHint(res.hint, challenge);
-      this.host.playCue('hint');
     }
     this.host.updateHUD();
   }
@@ -591,13 +595,11 @@ export class ChallengeDialog {
           const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
           const totalSlots = res.slotResults ? res.slotResults.length : 0;
           if (totalSlots > 1 && correctCount > 0) {
-            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ và đọc gợi ý nhé!`;
+            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ hoặc bấm 'Gợi ý cho mình' nếu cần nhé!`;
           } else {
-            feedback.textContent = '↻ Chưa đúng rồi. Hãy đọc gợi ý để cùng thử lại nhé!';
+            feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nếu cần nhé!";
           }
         }
-        renderFlowerHint(res.hint, res.explanation);
-        this.host.playCue('hint');
       }
     };
 
@@ -663,7 +665,15 @@ export class ChallengeDialog {
       hintBtn.onclick = () => {
         if (!this.currentSession) return;
         const hintText = this.currentSession.requestHint();
-        renderFlowerHint(hintText);
+        const isMax = this.currentSession.isMaxHintStage();
+        const explanation = isMax ? challenge.explanation : undefined;
+        renderFlowerHint(hintText, explanation);
+        this.host.playCue('hint');
+        if (isMax) {
+          hintBtn.hidden = true;
+        } else {
+          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
       };
     }
   }
@@ -917,13 +927,11 @@ export class ChallengeDialog {
           const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
           const totalSlots = res.slotResults ? res.slotResults.length : 0;
           if (totalSlots > 1 && correctCount > 0) {
-            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ và đọc gợi ý nhé!`;
+            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy tính lại các ô màu đỏ hoặc bấm 'Xem gợi ý' nếu cần nhé!`;
           } else {
-            feedback.textContent = '↻ Chưa chính xác rồi. Hãy đọc gợi ý để làm lại nhé!';
+            feedback.textContent = "↻ Chưa chính xác rồi. Bạn hãy tính lại hoặc bấm 'Xem gợi ý' nếu cần trợ giúp nhé!";
           }
         }
-        renderArchimedesHint(res.hint, res.explanation);
-        this.host.playCue('hint');
       }
     };
 
@@ -995,7 +1003,15 @@ export class ChallengeDialog {
       hintBtn.onclick = () => {
         if (!this.currentSession) return;
         const hint = this.currentSession.requestHint();
-        renderArchimedesHint(hint);
+        const isMax = this.currentSession.isMaxHintStage();
+        const explanation = isMax ? challenge.explanation : undefined;
+        renderArchimedesHint(hint, explanation);
+        this.host.playCue('hint');
+        if (isMax) {
+          hintBtn.hidden = true;
+        } else {
+          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
       };
     }
   }

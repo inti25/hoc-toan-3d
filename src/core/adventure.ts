@@ -114,6 +114,19 @@ export class Adventure {
     this.save();
   }
 
+  savePosition(x: number, z: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    this.state.position = {
+      x: Math.round(x * 100) / 100,
+      z: Math.round(z * 100) / 100
+    };
+    this.save();
+  }
+
+  getPosition(): { x: number; z: number } | undefined {
+    return this.state.position;
+  }
+
   acceptQuest() {
     this.state.questAccepted = true;
     this.save();

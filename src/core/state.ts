@@ -9,6 +9,7 @@ export interface SaveState {
   monoliths: boolean[];
   zoneBadges: boolean[];
   solvedProblems: Record<string, boolean>;
+  position?: { x: number; z: number };
 }
 export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false), solvedProblems: {} });
 const positive = (v: unknown, max = 10000000): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0;
@@ -62,6 +63,14 @@ export function parseSave(raw: string | null): SaveState {
     if (Array.isArray(d.zoneBadges)) {
       const zb = d.zoneBadges;
       base.zoneBadges = Array.from({ length: Math.max(5, zb.length) }, (_, i) => zb[i] === true);
+    }
+    if (d.position && typeof d.position === 'object') {
+      const p = d.position as Record<string, unknown>;
+      const x = typeof p.x === 'number' && Number.isFinite(p.x) ? Math.round(p.x * 100) / 100 : undefined;
+      const z = typeof p.z === 'number' && Number.isFinite(p.z) ? Math.round(p.z * 100) / 100 : undefined;
+      if (x !== undefined && z !== undefined) {
+        base.position = { x, z };
+      }
     }
     return base;
   } catch { return base; }

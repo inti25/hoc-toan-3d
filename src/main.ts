@@ -38,6 +38,28 @@ let frameTick = 0;
 let activeRemoteZones: RemoteZoneConfig[] = [];
 let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
 let activeMonolithProblems: RemoteProblem[] = [];
+let deferredSpawnPosition: { x: number; z: number } | null = null;
+let lastSavedPos = { x: -6, z: 6 };
+let savePositionTimer: number | undefined;
+
+function queueSavePosition(x: number, z: number, immediate = false) {
+  if (!adventure.getState().started) return;
+  const distSq = (x - lastSavedPos.x) ** 2 + (z - lastSavedPos.z) ** 2;
+  if (!immediate && distSq < 0.05) return;
+
+  if (immediate) {
+    if (savePositionTimer) clearTimeout(savePositionTimer);
+    lastSavedPos = { x, z };
+    adventure.savePosition(x, z);
+    return;
+  }
+
+  if (savePositionTimer) clearTimeout(savePositionTimer);
+  savePositionTimer = window.setTimeout(() => {
+    lastSavedPos = { x, z };
+    adventure.savePosition(x, z);
+  }, 1000);
+}
 
 const challengeDialog = new ChallengeDialog({
   openDialog: (title, body, kind) => openDialog(title, body, kind),
@@ -106,6 +128,15 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     data.zones,
     monolithProblems.filter((p) => p.position).map((p) => p.position!)
   );
+
+  if (deferredSpawnPosition && world) {
+    if (world.spatial.isWithinLand(deferredSpawnPosition.x, deferredSpawnPosition.z)) {
+      world.teleport(deferredSpawnPosition.x, deferredSpawnPosition.z);
+      queueSavePosition(deferredSpawnPosition.x, deferredSpawnPosition.z, true);
+      deferredSpawnPosition = null;
+    }
+  }
+
   updateHUD();
 }
 
@@ -360,6 +391,7 @@ function start() {
   } as any);
 
   adventure.setStarted(true);
+  queueSavePosition(world.player.position.x, world.player.position.z, true);
   audio.music(adventure.getState().music);
   world.active = true;
   world.paused = false;
@@ -1098,12 +1130,15 @@ function settings() {
     );
     $('cancel-reset').onclick = settings;
     $('confirm-reset').onclick = () => {
+      if (savePositionTimer) clearTimeout(savePositionTimer);
       adventure.resetProgress();
       const fresh = adventure.getState();
       world.setBridge(0);
       world.setFlowersBloomed(fresh.flowers);
       world.setMonolithsActivated(fresh.monoliths);
-      world.player.position.set(-6, 0, 6);
+      world.setInitialPosition(-6, 6);
+      lastSavedPos = { x: -6, z: 6 };
+      deferredSpawnPosition = null;
 
       world.setAvatar(fresh.avatar);
       world.resetCamera();
@@ -1147,8 +1182,15 @@ window.addEventListener('blur', () => {
 });
 document.addEventListener('visibilitychange', () => {
   world?.clearInput();
-  if (document.hidden) audio.music(false);
-  else if (world?.active) audio.music(adventure.getState().music);
+  if (document.hidden) {
+    audio.music(false);
+    if (world) queueSavePosition(world.player.position.x, world.player.position.z, true);
+  } else if (world?.active) {
+    audio.music(adventure.getState().music);
+  }
+});
+window.addEventListener('beforeunload', () => {
+  if (world) queueSavePosition(world.player.position.x, world.player.position.z, true);
 });
 
 const joystick = $('joystick');
@@ -1247,6 +1289,7 @@ window.addEventListener(
 
 try {
   world = new World($<HTMLCanvasElement>('world'));
+  world.onTeleport = (x, z) => queueSavePosition(x, z, true);
   const init = adventure.getState();
   world.setBridge(init.bridge);
   world.setFlowersBloomed(init.flowers);
@@ -1258,6 +1301,17 @@ try {
     );
   });
   world.setAvatar(init.avatar);
+
+  // Khôi phục Tọa Độ Thám Hiểm Lưu Lại (Saved Adventure Coordinates) hoặc lưu tạm Deferred Spawn nếu đảo chưa nạp
+  if (init.started && init.position) {
+    lastSavedPos = { x: init.position.x, z: init.position.z };
+    if (world.spatial.isWithinLand(init.position.x, init.position.z)) {
+      world.setInitialPosition(init.position.x, init.position.z);
+    } else {
+      deferredSpawnPosition = init.position;
+    }
+  }
+
   world.onJump = () => audio.playCue('jump');
   world.onSceneClick = () => interactAction();
   world.onFlowerClick = idx => openFlowerDialog(idx);
@@ -1273,10 +1327,12 @@ try {
     nearMonolith = nearMonolithIdx;
 
     if (world.active && !world.paused) {
+      queueSavePosition(world.player.position.x, world.player.position.z);
       const transit = world.spatial.checkPortalTransit(0.016);
       if (transit) {
         audio.playCue('jump');
         world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
+        queueSavePosition(world.player.position.x, world.player.position.z, true);
         toast(`✨ ${transit.name}!`);
       }
     }
