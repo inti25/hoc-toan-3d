@@ -8,10 +8,11 @@ export interface SaveState {
   flowers: boolean[];
   monoliths: boolean[];
   zoneBadges: boolean[];
+  parkTrees: boolean[];
   solvedProblems: Record<string, boolean>;
   position?: { x: number; z: number };
 }
-export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false), solvedProblems: {} });
+export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false), parkTrees: Array(20).fill(false), solvedProblems: {} });
 const positive = (v: unknown, max = 10000000): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0;
 export function parseSave(raw: string | null): SaveState {
   const base = freshState();
@@ -63,6 +64,16 @@ export function parseSave(raw: string | null): SaveState {
     if (Array.isArray(d.zoneBadges)) {
       const zb = d.zoneBadges;
       base.zoneBadges = Array.from({ length: Math.max(5, zb.length) }, (_, i) => zb[i] === true);
+    }
+    if (Array.isArray(d.parkTrees)) {
+      const pt = d.parkTrees;
+      base.parkTrees = Array.from({ length: 20 }, (_, i) => pt[i] === true);
+      base.parkTrees.forEach((isDone, idx) => {
+        if (isDone) {
+          base.solvedProblems[`park_tree_${idx + 1}`] = true;
+          base.solvedProblems[`tree_${idx + 1}`] = true;
+        }
+      });
     }
     if (d.position && typeof d.position === 'object') {
       const p = d.position as Record<string, unknown>;

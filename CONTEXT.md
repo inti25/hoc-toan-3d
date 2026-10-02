@@ -12,6 +12,22 @@ _Avoid_: Map 1, Sảnh chờ, Khu vực tân thủ
 Vùng đất bên kia bờ sông chứa 10 cây hoa thử thách, đài phun nước tri thức và các cột đèn trang trí.
 _Avoid_: Map 2, Vườn bí mật, Khu giải đố
 
+**Công Viên Xanh (Green Park Sanctuary)**:
+Vùng đất công viên mở rộng phía Tây Làng Khởi Đầu, nổi bật với đài kỷ niệm trung tâm, các ghế đá thư giãn và cụm 20 Cây Tri Thức (gồm cây thông Pine và cây bóng mát Tree) chuyển từ trạng thái ngủ say hóa xám sang hồi sinh xanh tươi khi giải đúng thử thách.
+_Avoid_: Khu vui chơi, Vườn 2, Map công viên
+
+**Bản Mẫu Công Viên (Park Sanctuary Template / PARK_SANCTUARY)**:
+Bản Mẫu Vùng Đất chuyên biệt định hình cảnh quan công viên hình học 3D, trong đó các vị trí câu hỏi toán học được gắn liền trực tiếp với các thực thể cây cối (Tree và Pine) thay vì cột bia đá hay luống hoa thông thường.
+_Avoid_: Park template, Preset công viên
+
+**Cây Tri Thức (Knowledge Tree)**:
+Một trong 20 thực thể cây (Tree hoặc Pine) trong Công Viên Xanh mang một bài toán thử thách. Ở trạng thái ban đầu cây mang màu xám (Cây Ngủ Say), và sẽ thức tỉnh trở lại màu sắc tươi sáng tự nhiên khi học sinh giải đúng.
+_Avoid_: Cây bài tập, Cây quiz, Điểm trả lời
+
+**Thức Tỉnh Cây Xanh (Tree Awakening)**:
+Hành động giải thành công thử thách toán học gắn với một Cây Tri Thức, kích hoạt hiệu ứng pháo hoa và phục hồi màu sắc nguyên bản đầy sức sống cho cây.
+_Avoid_: Làm xanh cây, Nở cây, Clear bài
+
 **Milo**:
 Nhân vật hướng dẫn đội mũ xanh bên bờ sông, giao nhiệm vụ xây cầu và đồng hành luyện tập cửu chương.
 _Avoid_: NPC nhiệm vụ, Bot hỗ trợ

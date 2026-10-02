@@ -46,6 +46,17 @@ export interface FlowerBloomDelta {
   totalBloomed: number;
 }
 
+export interface ParkTreeAwakenDelta {
+  alreadyAwakened: boolean;
+  treeIndex: number;
+  xpGained: number;
+  coinsGained: number;
+  leveledUp: boolean;
+  newLevel: number;
+  allTreesCompleted: boolean;
+  totalAwakened: number;
+}
+
 export interface CrossingDelta {
   completed: boolean;
   xpGained: number;
@@ -254,6 +265,66 @@ export class Adventure {
       allFlowersCompleted,
       totalBloomed: this.state.flowers.filter(Boolean).length
     };
+  }
+
+  wakeParkTree(index: number, treeId?: number | string): ParkTreeAwakenDelta {
+    if (!this.state.parkTrees) {
+      this.state.parkTrees = Array(20).fill(false);
+    }
+    const tIdKey = treeId !== undefined ? String(treeId) : `park_tree_${index + 1}`;
+    const alreadyAwakened = (index >= 0 && index < this.state.parkTrees.length && this.state.parkTrees[index]) ||
+      this.state.solvedProblems[tIdKey] === true ||
+      this.state.solvedProblems[`tree_${index + 1}`] === true;
+
+    if (alreadyAwakened) {
+      return {
+        alreadyAwakened: true,
+        treeIndex: index,
+        xpGained: 0,
+        coinsGained: 0,
+        leveledUp: false,
+        newLevel: getLevel(this.state.xp),
+        allTreesCompleted: this.state.parkTrees.every(Boolean),
+        totalAwakened: this.state.parkTrees.filter(Boolean).length
+      };
+    }
+
+    const oldLevel = getLevel(this.state.xp);
+    if (index >= 0 && index < this.state.parkTrees.length) {
+      this.state.parkTrees[index] = true;
+    }
+    this.state.solvedProblems[tIdKey] = true;
+    this.state.solvedProblems[`park_tree_${index + 1}`] = true;
+    this.state.solvedProblems[`tree_${index + 1}`] = true;
+    let xpGained = 20;
+    let coinsGained = 5;
+
+    const allTreesCompleted = this.state.parkTrees.every(Boolean);
+    if (allTreesCompleted) {
+      xpGained += 150;
+      coinsGained += 50;
+    }
+
+    this.state.xp += xpGained;
+    this.state.coins += coinsGained;
+    const newLevel = getLevel(this.state.xp);
+    this.save();
+
+    return {
+      alreadyAwakened: false,
+      treeIndex: index,
+      xpGained,
+      coinsGained,
+      leveledUp: newLevel > oldLevel,
+      newLevel,
+      allTreesCompleted,
+      totalAwakened: this.state.parkTrees.filter(Boolean).length
+    };
+  }
+
+  isParkTreeAwakened(index: number): boolean {
+    if (!this.state.parkTrees) return false;
+    return !!this.state.parkTrees[index] || !!this.state.solvedProblems[`park_tree_${index + 1}`] || !!this.state.solvedProblems[`tree_${index + 1}`];
   }
 
   completeRiverCrossing(): CrossingDelta {

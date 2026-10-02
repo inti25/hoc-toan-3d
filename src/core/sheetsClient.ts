@@ -154,6 +154,22 @@ export function getBundledFallbackData(): {
       color: 0xec4899,
       colorHex: '#ec4899',
       badge: '🌸 Tinh Thể Vườn Hoa'
+    },
+    {
+      id: 7,
+      name: 'Công Viên Xanh',
+      title: 'Công Viên Thư Giãn',
+      description: 'Đánh thức 20 Cây Tri Thức trong công viên bằng các bài toán nhân chia nâng cao',
+      template: 'PARK_SANCTUARY',
+      theme: 'GARDEN',
+      decorDensity: 'HIGH',
+      sheetName: 'CongVienXanh',
+      center: { x: -45, z: 0 },
+      width: 36,
+      depth: 36,
+      color: 0x10b981,
+      colorHex: '#10b981',
+      badge: '🌳 Mầm Xanh Tri Thức'
     }
   ];
 
@@ -364,7 +380,7 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       name: String(z.name || z.ZoneName || 'Vùng Đất Mới').trim(),
       title: String(z.title || z.Title || '').trim(),
       description: String(z.description || z.Description || '').trim(),
-      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY'].includes(z.template)
+      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY'].includes(z.template)
         ? z.template
         : 'GRID_SANCTUARY') as any,
       theme: validTheme,

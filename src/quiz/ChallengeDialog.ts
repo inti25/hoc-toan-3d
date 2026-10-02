@@ -14,7 +14,7 @@ import {
   type FlowerChallenge,
   type ArchimedesChallenge
 } from './session';
-import type { RemoteZoneConfig, RemoteProblem } from '../data/remoteTypes';
+import type { RemoteZoneConfig, RemoteProblem, RemoteStep } from '../data/remoteTypes';
 
 export const icons: Record<string, string> = {
   crown: '<path d="m3 6 5 4 4-7 4 7 5-4-2 13H5Z"/><path d="M8 15h8"/>',
@@ -668,6 +668,266 @@ export class ChallengeDialog {
         const isMax = this.currentSession.isMaxHintStage();
         const explanation = isMax ? challenge.explanation : undefined;
         renderFlowerHint(hintText, explanation);
+        this.host.playCue('hint');
+        if (isMax) {
+          hintBtn.hidden = true;
+        } else {
+          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Thử thách Cây Tri Thức (Công Viên Xanh - PARK_SANCTUARY)
+  // -------------------------------------------------------------
+  openParkTree(index: number, remoteParkProblems?: RemoteProblem[]): void {
+    const targetId = index + 1;
+    const remoteQ =
+      remoteParkProblems &&
+      (remoteParkProblems.find((p) => Number(p.id) === targetId) || remoteParkProblems[index]);
+
+    let step: RemoteStep = {
+      stepId: `tree_${targetId}`,
+      prompt: `Cây Tri Thức #${targetId}: Tính giá trị của phép tính`,
+      options: [{ label: '10', value: '10' }, { label: '20', value: '20' }],
+      answer: '10',
+      hints: ['Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.'],
+      explanation: 'Lời giải chi tiết.'
+    };
+
+    if (remoteQ && remoteQ.steps && remoteQ.steps[0]) {
+      step = remoteQ.steps[0];
+    }
+
+    const title = remoteQ?.subtitle || remoteQ?.title || `Cây Tri Thức #${targetId}`;
+    const badge = remoteQ?.badge || `🌳 Cây Tri Thức #${targetId}`;
+
+    const challenge: FlowerChallenge = {
+      id: `park_tree_${index}`,
+      kind: 'flower',
+      index,
+      title,
+      badge,
+      color: remoteQ?.color || 0x10b981,
+      prompt: step.prompt,
+      imageUrl: step.imageUrl,
+      options: step.options.map((o: { label: string; value: string }) => ({ value: o.value, label: o.label })),
+      answer: step.answer,
+      hints: step.hints,
+      explanation: step.explanation,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      flowerQuestion: {
+        id: typeof remoteQ?.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ?.id), 10) || targetId),
+        title,
+        question: step.prompt,
+        imageUrl: step.imageUrl,
+        options: step.options,
+        answer: step.answer,
+        hints: step.hints,
+        explanation: step.explanation,
+        explanationImageUrl: step.explanationImageUrl,
+        badge,
+        color: remoteQ?.color || 0x10b981
+      }
+    };
+
+    this.currentSession = new ChallengeSession(challenge);
+    this.currentInputValue = '';
+    const isAwakened = this.host.adventure.isParkTreeAwakened(index);
+    const parsed = parseAnswer(challenge.answer);
+
+    const renderTreeHint = (hintText: string, explanation?: string) => {
+      const area = document.getElementById('park-tree-hint-area');
+      if (!area) return;
+      area.hidden = false;
+      const stage = this.currentSession?.getHintStage() ?? 1;
+      const explImg = challenge.explanationImageUrl || step.explanationImageUrl;
+      area.innerHTML = `
+        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
+        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
+        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
+      `;
+    };
+
+    const handleTreeSubmit = (choiceVal: string | string[]) => {
+      if (!this.currentSession || this.currentSession.isSolved()) return;
+      const res = this.currentSession.submit(choiceVal);
+      const inputBox = document.getElementById('math-input-box');
+
+      if (res.isCorrect) {
+        if (inputBox) {
+          inputBox.classList.remove('shake', 'error');
+          inputBox.classList.add('correct');
+        }
+        if (this.isMultiSlot) {
+          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
+            b.classList.remove('shake', 'error', 'active');
+            b.classList.add('correct');
+          });
+        }
+        document
+          .querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
+          .forEach((b) => (b.disabled = true));
+        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
+        if (numpadContainer) numpadContainer.style.display = 'none';
+        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
+        if (slotNavBar) slotNavBar.style.display = 'none';
+
+        const feedback = document.getElementById('park-tree-feedback');
+        if (feedback) feedback.className = 'feedback success';
+        const delta = this.host.adventure.wakeParkTree(index, remoteQ?.id);
+
+        if (!delta.alreadyAwakened) {
+          this.host.getWorld().wakeParkTree(index);
+          this.host.playCue('celebrate');
+          if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`;
+          this.host.updateHUD();
+
+          this.host.logRemoteProgress({
+            zoneId: 7,
+            problemId: remoteQ?.id || index + 1,
+            stepId: `tree_${remoteQ?.id || index + 1}`,
+            isCorrect: true,
+            score: 20
+          });
+
+          if (delta.allTreesCompleted) {
+            setTimeout(() => {
+              this.host.openDialog(
+                '🌳 ĐẠI THÀNH CÔNG: CÔNG VIÊN THỨC TỈNH! 🌳',
+                `
+                <div class="completion-medal">${icon('crown')}</div>
+                <p class="dialog-copy centered">
+                  Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong Công Viên Xanh!<br>
+                  Không gian công viên giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
+                </p>
+                <div class="completion-rewards">
+                  <span>★ +150 XP</span><span>◉ +50 xu</span>
+                </div>
+                <button id="close-park-completion" class="primary wide">Tự do dạo chơi công viên ${icon('arrow')}</button>
+                `,
+                'complete'
+              );
+              this.host.updateHUD();
+              const grandBtn = document.getElementById('close-park-completion');
+              if (grandBtn) grandBtn.onclick = this.host.closeDialog;
+            }, 1200);
+          }
+        } else {
+          this.host.playCue('correct');
+          if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`;
+        }
+
+        const hintBtn = document.getElementById('park-tree-hint');
+        if (hintBtn) hintBtn.hidden = true;
+        const closeBtn = document.getElementById('park-tree-close-btn') as HTMLButtonElement | null;
+        if (closeBtn) {
+          closeBtn.hidden = false;
+          closeBtn.onclick = this.host.closeDialog;
+          closeBtn.focus();
+        }
+      } else {
+        if (inputBox) {
+          inputBox.classList.remove('shake');
+          void inputBox.offsetWidth;
+          inputBox.classList.add('shake', 'error');
+        }
+        if (this.isMultiSlot && res.slotResults) {
+          res.slotResults.forEach((correct, idx) => {
+            const box = document.getElementById(`slot-box-${idx}`);
+            if (box) {
+              box.classList.remove('shake', 'error', 'correct');
+              void box.offsetWidth;
+              if (correct) {
+                box.classList.add('correct');
+              } else {
+                box.classList.add('shake', 'error');
+              }
+            }
+          });
+          const firstWrong = res.slotResults.findIndex((c) => !c);
+          if (firstWrong !== -1) {
+            this.selectSlot(firstWrong);
+          }
+        }
+        const feedback = document.getElementById('park-tree-feedback');
+        if (feedback) {
+          feedback.className = 'feedback gentle';
+          feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy tính nhẩm lại hoặc bấm 'Gợi ý cho mình' nhé!";
+        }
+      }
+    };
+
+    let bodyControls = '';
+    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
+      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
+    } else if (parsed.type === 'numeric') {
+      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
+    } else if (parsed.type === 'comparison') {
+      const compOptions =
+        challenge.options && challenge.options.length > 0
+          ? challenge.options.map((o) => String(o.value || o.label).trim())
+          : ['<', '=', '>'];
+      bodyControls = this.renderComparisonControls(compOptions);
+    } else {
+      bodyControls = `
+        <div class="answers flower-answers">
+          ${step.options
+            .map(
+              (o: { label: string; value: string }, i: number) => `
+            <button class="answer flower-opt" data-value="${o.value}">
+              <kbd>${i + 1}</kbd><span>${o.label}</span>
+            </button>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    const state = this.host.adventure.getState();
+    const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
+
+    this.host.openDialog(
+      `Cây Tri Thức #${targetId}: ${badge}`,
+      `
+      <div class="dialog-eyebrow">CÔNG VIÊN XANH · BÀI ${targetId} / 20</div>
+      <div class="flower-status-banner ${isAwakened ? 'bloomed' : 'bud'}">
+        ${isAwakened ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.' : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!'}
+      </div>
+      <div class="flower-question-box">
+        <div class="flower-question-title">${title}</div>
+        <div class="flower-question-prompt">${step.prompt}</div>
+        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
+      </div>
+      ${bodyControls}
+      <div id="park-tree-feedback" class="feedback" aria-live="polite"></div>
+      <div id="park-tree-hint-area" class="hint-area" hidden></div>
+      <div class="quiz-footer">
+        <button id="park-tree-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
+        <span>${awakenedCount} / 20 cây đã thức tỉnh</span>
+      </div>
+      <button id="park-tree-close-btn" class="primary wide" hidden>Ngắm cây xanh ${icon('arrow')}</button>
+      `,
+      'flowerQuiz'
+    );
+
+    this.setupNumpadListeners(handleTreeSubmit);
+
+    document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach((btn) => {
+      btn.onclick = () => handleTreeSubmit(btn.dataset.value ?? '');
+    });
+
+    const hintBtn = document.getElementById('park-tree-hint');
+    if (hintBtn) {
+      hintBtn.onclick = () => {
+        if (!this.currentSession) return;
+        const hintText = this.currentSession.requestHint();
+        const isMax = this.currentSession.isMaxHintStage();
+        const explanation = isMax ? challenge.explanation : undefined;
+        renderTreeHint(hintText, explanation);
         this.host.playCue('hint');
         if (isMax) {
           hintBtn.hidden = true;

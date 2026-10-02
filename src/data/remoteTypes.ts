@@ -1,4 +1,4 @@
-export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY';
+export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY';
 export type ZoneThemeType = 'GARDEN' | 'RUINS' | 'FOREST' | 'CRYSTAL' | 'VILLAGE';
 export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -75,6 +75,29 @@ export function computeArchipelagoOrbitalPosition(
  * Tính toán tọa độ vị trí 3D cho các thực thể học tập (Bia đá / Cây hoa)
  * dựa theo Bản Mẫu Bố Cục Thử Thách (Procedural Layout Template).
  */
+export const PARK_TREE_OFFSETS: { x: number; z: number; type: 'PINE' | 'TREE'; name: string }[] = [
+  { x: 12.5, z: 4.9, type: 'TREE', name: 'Tree009' },
+  { x: 7.6, z: 6.2, type: 'PINE', name: 'Pine011' },
+  { x: 11.9, z: 11.7, type: 'TREE', name: 'Tree011' },
+  { x: 7.3, z: 12.7, type: 'PINE', name: 'Pine012' },
+  { x: 4.6, z: 9.9, type: 'TREE', name: 'Tree010' },
+  { x: -6.9, z: 11.6, type: 'TREE', name: 'Tree002' },
+  { x: -12.4, z: 13.6, type: 'PINE', name: 'Pine002' },
+  { x: -11.7, z: 9.2, type: 'TREE', name: 'Tree003' },
+  { x: -7.6, z: 5.3, type: 'PINE', name: 'Pine003' },
+  { x: -12.9, z: 4.7, type: 'PINE', name: 'Pine004' },
+  { x: -13.6, z: -7.2, type: 'PINE', name: 'Pine009' },
+  { x: -7.9, z: -6.9, type: 'TREE', name: 'Tree006' },
+  { x: -13.0, z: -11.9, type: 'PINE', name: 'Pine006' },
+  { x: -9.3, z: -13.0, type: 'TREE', name: 'Tree005' },
+  { x: -5.9, z: -11.1, type: 'PINE', name: 'Pine008' },
+  { x: 5.5, z: -12.7, type: 'PINE', name: 'Pine010' },
+  { x: 6.7, z: -8.8, type: 'TREE', name: 'Tree007' },
+  { x: 11.3, z: -12.0, type: 'PINE', name: 'Pine005' },
+  { x: 11.9, z: -6.7, type: 'TREE', name: 'Tree008' },
+  { x: 6.4, z: -3.6, type: 'PINE', name: 'Pine007' }
+];
+
 export function computeProceduralEntityPositions(
   template: ZoneTemplateType,
   count: number,
@@ -86,6 +109,17 @@ export function computeProceduralEntityPositions(
   const positions: { x: number; z: number }[] = [];
 
   switch (template) {
+    case 'PARK_SANCTUARY': {
+      for (let i = 0; i < count; i++) {
+        const offset = PARK_TREE_OFFSETS[i % PARK_TREE_OFFSETS.length];
+        positions.push({
+          x: Math.round((center.x + offset.x) * 10) / 10,
+          z: Math.round((center.z + offset.z) * 10) / 10
+        });
+      }
+      break;
+    }
+
     case 'CIRCLE_SANCTUARY': {
       const rx = (width / 2) * 0.65;
       const rz = (depth / 2) * 0.65;

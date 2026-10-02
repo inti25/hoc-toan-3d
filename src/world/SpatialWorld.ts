@@ -129,6 +129,22 @@ export class SpatialWorld {
     this.parkZone = { cx, cz, radius };
   }
 
+  public parkTreePositions: { x: number; z: number }[] = [];
+
+  setParkTreePositions(positions: { x: number; z: number }[]) {
+    this.parkTreePositions = positions;
+  }
+
+  nearParkTreeIndex(): number {
+    for (let i = 0; i < this.parkTreePositions.length; i++) {
+      const p = this.parkTreePositions[i];
+      if (Math.hypot(this.x - p.x, this.z - p.z) <= 2.8) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string }[] = [];
   private dynamicPortals: PortalLink[] = [];
   private dynamicMonoliths: { x: number; z: number }[] = [];

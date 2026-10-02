@@ -108,6 +108,7 @@ export interface FlowerChallenge extends BaseChallenge {
   explanation: string;
   imageUrl?: string;
   explanationImageUrl?: string;
+  diagramSvg?: string;
   flowerQuestion: FlowerQuestion;
 }
 

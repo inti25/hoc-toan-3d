@@ -1,0 +1,148 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { SpatialWorld } from '../src/world/SpatialWorld';
+import { Adventure } from '../src/core/adventure';
+import { freshState, parseSave } from '../src/core/state';
+import { computeProceduralEntityPositions, PARK_TREE_OFFSETS } from '../src/data/remoteTypes';
+import { getBundledFallbackData } from '../src/core/sheetsClient';
+
+test('PARK_SANCTUARY template generates 20 tree coordinates in computeProceduralEntityPositions', () => {
+  const parkZone = {
+    id: 7,
+    name: 'Công Viên Xanh',
+    sheetName: 'CongVienXanh',
+    badge: 'CÔNG VIÊN',
+    center: { x: -45, z: 0 },
+    width: 36,
+    depth: 36,
+    color: 0x22c55e,
+    template: 'PARK_SANCTUARY' as const
+  };
+
+  const positions = computeProceduralEntityPositions(
+    parkZone.template,
+    20,
+    parkZone.center,
+    parkZone.width,
+    parkZone.depth
+  );
+  assert.equal(positions.length, 20);
+  assert.equal(PARK_TREE_OFFSETS.length, 20);
+
+  // Check first offset matches PARK_TREE_OFFSETS translated by center (-45, 0)
+  assert.equal(positions[0].x, -45 + PARK_TREE_OFFSETS[0].x);
+  assert.equal(positions[0].z, 0 + PARK_TREE_OFFSETS[0].z);
+
+  // Fallback data has Zone 7 with PARK_SANCTUARY template
+  const fallback = getBundledFallbackData();
+  const zone7 = fallback.zones.find((z) => z.id === 7 || z.sheetName === 'CongVienXanh');
+  assert.ok(zone7);
+  assert.equal(zone7.template, 'PARK_SANCTUARY');
+  assert.equal(zone7.center.x, -45);
+  assert.equal(zone7.center.z, 0);
+
+  // seedData.json contains 20 pre-seeded CongVienXanh problems
+  const seed = JSON.parse(readFileSync(new URL('../src/data/seedData.json', import.meta.url), 'utf-8'));
+  assert.ok(seed.questionsBySheet['CongVienXanh']);
+  assert.equal(seed.questionsBySheet['CongVienXanh'].length, 20);
+});
+
+test('SpatialWorld detects tree proximity within 2.8m for Cây Tri Thức', () => {
+  const world = new SpatialWorld(-45, 0);
+  const sampleTrees = [
+    { x: -35.2, z: 0.5 },
+    { x: -40.0, z: 8.0 },
+    { x: -50.0, z: -5.0 }
+  ];
+
+  world.setParkTreePositions(sampleTrees);
+
+  // Initially far from all trees
+  assert.equal(world.nearParkTreeIndex(), -1);
+
+  // Walk close to tree 0 (distance < 2.8m)
+  world.teleport(-35.0, 1.0);
+  assert.equal(world.nearParkTreeIndex(), 0);
+
+  // Walk close to tree 1 (distance < 2.8m)
+  world.teleport(-40.5, 7.8);
+  assert.equal(world.nearParkTreeIndex(), 1);
+
+  // Walk far away
+  world.teleport(0, 0);
+  assert.equal(world.nearParkTreeIndex(), -1);
+});
+
+test('SaveState persists and parses parkTrees array and unified solvedProblems', () => {
+  const fresh = freshState();
+  assert.equal(fresh.parkTrees.length, 20);
+  assert.ok(fresh.parkTrees.every((val) => val === false));
+
+  // Simulate awakened trees 0 and 5
+  fresh.parkTrees[0] = true;
+  fresh.parkTrees[5] = true;
+  const serialized = JSON.stringify(fresh);
+
+  const restored = parseSave(serialized);
+  assert.equal(restored.parkTrees.length, 20);
+  assert.equal(restored.parkTrees[0], true);
+  assert.equal(restored.parkTrees[1], false);
+  assert.equal(restored.parkTrees[5], true);
+  assert.equal(restored.solvedProblems['park_tree_1'], true);
+  assert.equal(restored.solvedProblems['park_tree_6'], true);
+});
+
+test('Adventure.wakeParkTree rewards XP and coins, and handles full park completion', () => {
+  // Mock localStorage for headless test
+  const storage: Record<string, string> = {};
+  const mockLocalStorage = {
+    getItem: (k: string) => storage[k] ?? null,
+    setItem: (k: string, v: string) => { storage[k] = v; },
+    removeItem: (k: string) => { delete storage[k]; },
+    clear: () => { Object.keys(storage).forEach(k => delete storage[k]); },
+    key: () => null,
+    length: 0
+  };
+  (globalThis as any).localStorage = mockLocalStorage;
+
+  const adventure = new Adventure();
+  assert.equal(adventure.isParkTreeAwakened(0), false);
+
+  // Wake tree 0
+  const delta1 = adventure.wakeParkTree(0, 1);
+  assert.equal(delta1.alreadyAwakened, false);
+  assert.equal(delta1.treeIndex, 0);
+  assert.equal(delta1.xpGained, 20);
+  assert.equal(delta1.coinsGained, 5);
+  assert.equal(delta1.totalAwakened, 1);
+  assert.equal(delta1.allTreesCompleted, false);
+  assert.equal(adventure.isParkTreeAwakened(0), true);
+
+  // Repeated attempt to wake tree 0
+  const deltaRepeat = adventure.wakeParkTree(0, 1);
+  assert.equal(deltaRepeat.alreadyAwakened, true);
+  assert.equal(deltaRepeat.xpGained, 0);
+  assert.equal(deltaRepeat.coinsGained, 0);
+
+  // Wake trees 1 through 18
+  for (let i = 1; i < 19; i++) {
+    adventure.wakeParkTree(i, i + 1);
+  }
+  assert.equal(adventure.getState().parkTrees.filter(Boolean).length, 19);
+
+  // Wake the final tree 19 (all 20 trees awakened -> grand completion bonus)
+  const deltaFinal = adventure.wakeParkTree(19, 20);
+  assert.equal(deltaFinal.alreadyAwakened, false);
+  assert.equal(deltaFinal.allTreesCompleted, true);
+  // 20 regular + 150 bonus = 170 XP, 5 regular + 50 bonus = 55 coins
+  assert.equal(deltaFinal.xpGained, 170);
+  assert.equal(deltaFinal.coinsGained, 55);
+  assert.equal(deltaFinal.totalAwakened, 20);
+
+  // Reset progress resets all park trees
+  adventure.resetProgress();
+  const resetState = adventure.getState();
+  assert.equal(resetState.parkTrees.filter(Boolean).length, 0);
+  assert.equal(adventure.isParkTreeAwakened(0), false);
+});
