@@ -681,11 +681,14 @@ export class ChallengeDialog {
   // -------------------------------------------------------------
   // Thử thách Cây Tri Thức (Công Viên Xanh - PARK_SANCTUARY)
   // -------------------------------------------------------------
-  openParkTree(index: number, remoteParkProblems?: RemoteProblem[]): void {
+  openParkTree(index: number, remoteParkProblems?: RemoteProblem[], zoneConfig?: RemoteZoneConfig): void {
     const targetId = index + 1;
     const remoteQ =
       remoteParkProblems &&
       (remoteParkProblems.find((p) => Number(p.id) === targetId) || remoteParkProblems[index]);
+
+    const zoneName = zoneConfig?.name || 'Công Viên Xanh';
+    const zoneId = zoneConfig?.id || 7;
 
     let step: RemoteStep = {
       stepId: `tree_${targetId}`,
@@ -786,7 +789,7 @@ export class ChallengeDialog {
           this.host.updateHUD();
 
           this.host.logRemoteProgress({
-            zoneId: 7,
+            zoneId,
             problemId: remoteQ?.id || index + 1,
             stepId: `tree_${remoteQ?.id || index + 1}`,
             isCorrect: true,
@@ -796,17 +799,17 @@ export class ChallengeDialog {
           if (delta.allTreesCompleted) {
             setTimeout(() => {
               this.host.openDialog(
-                '🌳 ĐẠI THÀNH CÔNG: CÔNG VIÊN THỨC TỈNH! 🌳',
+                `🌳 ĐẠI THÀNH CÔNG: ${zoneName.toUpperCase()} THỨC TỈNH! 🌳`,
                 `
                 <div class="completion-medal">${icon('crown')}</div>
                 <p class="dialog-copy centered">
-                  Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong Công Viên Xanh!<br>
-                  Không gian công viên giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
+                  Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong ${zoneName}!<br>
+                  Không gian nơi đây giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
                 </p>
                 <div class="completion-rewards">
                   <span>★ +150 XP</span><span>◉ +50 xu</span>
                 </div>
-                <button id="close-park-completion" class="primary wide">Tự do dạo chơi công viên ${icon('arrow')}</button>
+                <button id="close-park-completion" class="primary wide">Tự do dạo chơi ${zoneName} ${icon('arrow')}</button>
                 `,
                 'complete'
               );
@@ -893,7 +896,7 @@ export class ChallengeDialog {
     this.host.openDialog(
       `Cây Tri Thức #${targetId}: ${badge}`,
       `
-      <div class="dialog-eyebrow">CÔNG VIÊN XANH · BÀI ${targetId} / 20</div>
+      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / 20</div>
       <div class="flower-status-banner ${isAwakened ? 'bloomed' : 'bud'}">
         ${isAwakened ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.' : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!'}
       </div>

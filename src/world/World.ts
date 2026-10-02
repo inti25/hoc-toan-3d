@@ -80,6 +80,8 @@ export class World {
   onTeleport?: (x: number, z: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
   readonly parkTrees: ParkTreeEntity[] = [];
+  readonly parkModels: Map<number, THREE.Group> = new Map();
+  private villageParkPortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
 
   get monoliths(): MonolithItem[] {
@@ -118,8 +120,6 @@ export class World {
     this.player.add(this.avatar.group);
     this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
     this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
-    this.createParkBridge();
-    this.loadParkMap();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -623,9 +623,77 @@ export class World {
   ) {
     const customPortals: PortalLink[] = [];
 
-    // 1. Dựng các hòn đảo động và cảnh quan
-    zones.forEach((z) => {
-      if (z.id > 5 && z.id !== 6 && !this.dynamicIslandIds.has(z.id)) {
+    // 1. Dựng các vùng đất Công Viên (PARK_SANCTUARY) kết nối từ bờ tây Làng Khởi Đầu
+    const parkZones = zones.filter((z) => z.template === 'PARK_SANCTUARY');
+    if (parkZones.length > 0) {
+      if (!this.villageParkPortalArch) {
+        this.villageParkPortalArch = this.createPortalArch(
+          -19.5,
+          0,
+          parkZones.length === 1 ? (parkZones[0].color || 0x10b981) : 0x10b981,
+          0
+        );
+      }
+
+      if (parkZones.length === 1) {
+        const pz = parkZones[0];
+        customPortals.push({
+          id: 'village_to_park',
+          name: 'Cổng dịch chuyển',
+          source: { x: -19.5, z: 0 },
+          target: { x: pz.center.x + 11.5, z: pz.center.z },
+          triggerRadius: 1.5
+        });
+      } else {
+        customPortals.push({
+          id: 'village_to_multi_park',
+          name: 'Cổng dịch chuyển',
+          source: { x: -19.5, z: 0 },
+          target: { x: -19.5, z: 0 },
+          triggerRadius: 1.5,
+          requiresSelection: true
+        });
+      }
+
+      this.spatial.setParkZones(
+        parkZones.map((pz) => ({
+          id: pz.id,
+          name: pz.name,
+          cx: pz.center.x,
+          cz: pz.center.z,
+          radius: 18.2
+        }))
+      );
+
+      parkZones.forEach((z) => {
+        if (!this.dynamicIslandIds.has(z.id)) {
+          this.dynamicIslandIds.add(z.id);
+          this.loadParkMap(z);
+
+          // Cổng quay về từ Công Viên về Làng Khởi Đầu (đặt ở lối vào phía Đông của công viên)
+          const retX = z.center.x + 14;
+          const retZ = z.center.z;
+          this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+        }
+
+        const retX = z.center.x + 14;
+        const retZ = z.center.z;
+        customPortals.push({
+          id: `z${z.id}_to_village`,
+          name: 'Cổng dịch chuyển',
+          source: { x: retX, z: retZ },
+          target: { x: -17.5, z: 0 },
+          triggerRadius: 1.5
+        });
+      });
+    }
+
+    // 2. Dựng các hòn đảo động tùy biến khác (nối với Đền Cổng Archimedes)
+    const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY');
+    otherZones.forEach((z) => {
+      if (!this.dynamicIslandIds.has(z.id)) {
+        this.dynamicIslandIds.add(z.id);
+
         this.createSingleIsland({
           cx: z.center.x,
           cz: z.center.z,
@@ -634,7 +702,6 @@ export class World {
           grassColor: z.color,
           soilColor: 0x93a388
         });
-        this.dynamicIslandIds.add(z.id);
 
         // Sinh cảnh quan theo chủ đề
         const islandObs = this.createIslandScenery(z);
@@ -775,51 +842,7 @@ export class World {
     for (const x of [3.6, 10.4]) for (const z of [-1.85, 1.85]) { this.cylinder(this.scene, x, .65, z, .23, .3, 1.3, 0xcac09e); this.sphere(this.scene, x, 1.4, z, .28, 0xf4d37c); }
   }
 
-  private createParkBridge() {
-    const bridgeGroup = new THREE.Group();
-    // Path inside village connecting to western bridgehead
-    this.box(this.scene, -19.5, .055, 0, 5, .08, 3.2, 0xead5a3);
-
-    // Bridge deck beams underneath
-    this.box(bridgeGroup, -24, -.1, -1.2, 6.4, .25, .35, 0x8c6947);
-    this.box(bridgeGroup, -24, -.1, 1.2, 6.4, .25, .35, 0x8c6947);
-    this.box(bridgeGroup, -24, -.1, 0, 6.4, .25, .35, 0x8c6947);
-
-    // Planks
-    const plankCount = 10;
-    for (let i = 0; i <= plankCount; i++) {
-      const px = -21 - (i / plankCount) * 6;
-      const plank = this.box(bridgeGroup, px, .08, 0, .54, .1, 3.2, (i % 2 === 0) ? 0xc3b895 : 0xb5a782);
-      plank.receiveShadow = true;
-    }
-
-    // Handrails on North and South
-    for (const z of [-1.55, 1.55]) {
-      this.box(bridgeGroup, -24, .9, z, 6.4, .12, .15, 0xa98458);
-      this.box(bridgeGroup, -24, .45, z, 6.4, .08, .1, 0x8c6947);
-      for (let p = 0; p <= 4; p++) {
-        const px = -21 - p * 1.5;
-        this.box(bridgeGroup, px, .5, z, .15, 1.0, .15, 0x8c6947);
-      }
-    }
-
-    // Lantern stone pillars at both bridge ends
-    for (const x of [-20.8, -27.2]) {
-      for (const z of [-1.8, 1.8]) {
-        const pillar = this.cylinder(bridgeGroup, x, .6, z, .22, .28, 1.2, 0xcac09e);
-        pillar.castShadow = true;
-        const lamp = this.sphere(bridgeGroup, x, 1.3, z, .24, 0xfef08a);
-        lamp.castShadow = false;
-        const light = new THREE.PointLight(0xfef08a, 0.8, 6);
-        light.position.set(x, 1.3, z);
-        bridgeGroup.add(light);
-      }
-    }
-
-    this.scene.add(bridgeGroup);
-  }
-
-  private loadParkMap() {
+  private loadParkMap(zone: RemoteZoneConfig) {
     if (typeof window === 'undefined') return;
     const loader = new GLTFLoader();
     const baseUrl = import.meta.env?.BASE_URL ?? '/';
@@ -842,8 +865,8 @@ export class World {
 
         model.scale.setScalar(scaleFactor);
 
-        const parkCx = -45;
-        const parkCz = 0;
+        const parkCx = zone.center.x;
+        const parkCz = zone.center.z;
         model.position.set(parkCx, 0, parkCz);
         model.updateMatrixWorld(true);
 
@@ -858,7 +881,8 @@ export class World {
         });
 
         this.scene.add(model);
-        this.spatial.setParkZone(parkCx, parkCz, scaledRadius);
+        this.parkModels.set(zone.id, model);
+        this.spatial.setParkZone(parkCx, parkCz, scaledRadius, zone.name, zone.id);
 
         // Detect all Tree and Pine meshes for challenges
         const treeMeshes: { mesh: THREE.Mesh; center: THREE.Vector3; box: THREE.Box3; angle: number }[] = [];
@@ -891,7 +915,7 @@ export class World {
               });
 
               if (isTreeOrPine) {
-                const angle = Math.atan2(center.z, center.x - parkCx);
+                const angle = Math.atan2(center.z - parkCz, center.x - parkCx);
                 treeMeshes.push({ mesh, center, box, angle });
               }
             }

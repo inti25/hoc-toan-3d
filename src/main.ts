@@ -125,10 +125,6 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     );
   });
 
-  world.spatial.setDynamicData(
-    data.zones,
-    monolithProblems.filter((p) => p.position).map((p) => p.position!)
-  );
 
   if (deferredSpawnPosition && world) {
     if (world.spatial.isWithinLand(deferredSpawnPosition.x, deferredSpawnPosition.z)) {
@@ -214,7 +210,7 @@ app.innerHTML = `
       <div class="area-label">${icon('compass')}<span><span id="area-label-text">Làng Khởi Đầu</span><small id="area-label-sub">KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH</small></span></div>
       <button id="milo-label" class="world-label" aria-label="Nói chuyện với Milo"><span class="milo-dot">!</span><strong>Milo</strong><small>Người dẫn đường</small></button>
       <div id="bridge-label" class="world-label landmark"><strong>Cây cầu tình bạn</strong><small id="bridge-count">0 / 6 đoạn cầu</small></div>
-      <button id="portal-label" class="world-label" aria-label="Cổng Archimedes" hidden><span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small></button>
+      <button id="portal-label" class="world-label" aria-label="Cổng dịch chuyển" hidden><span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small></button>
       <div class="bottom-bar">
         <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
         <div class="toolbar">
@@ -484,12 +480,80 @@ function interactAction() {
   } else if (nearMonolith !== -1) {
     openArchimedesMonolithDialog(nearMonolith, 0);
   } else if (nearPortal) {
-    openArchimedesMapDialog();
+    const nearP = world.spatial.getNearPortal();
+    if (nearP?.requiresSelection) {
+      openParkSelectionDialog();
+    } else {
+      openArchimedesMapDialog();
+    }
   } else if (nearFlower !== -1) {
     openFlowerDialog(nearFlower);
   } else if (near) {
     talk();
   }
+}
+
+function openParkSelectionDialog() {
+  const parkZones = activeRemoteZones.filter((z) => z.template === 'PARK_SANCTUARY');
+  if (parkZones.length === 0) return;
+
+  const parkCardsHtml = parkZones.map((pz) => {
+    const questions = activeRemoteQuestions[pz.sheetName] || [];
+    const state = adventure.getState();
+    const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
+    const totalCount = questions.length || 20;
+
+    return `
+      <div class="zone-overview-card" style="margin-bottom:12px;background:#f0fdf4;border:1px solid #bbf7d0">
+        <div>
+          <div class="zone-card-title">🌳 ${pz.name}</div>
+          <div class="zone-card-meta">${pz.badge || 'CÔNG VIÊN TRI THỨC'} · Tọa độ: (${Math.round(pz.center.x)}, ${Math.round(pz.center.z)})</div>
+          <p style="font-size:12px;color:#166534;margin:8px 0">
+            Khu bảo tồn thiên nhiên với 20 Cây Tri Thức cần đánh thức.
+          </p>
+          <div style="font-size:12px;font-weight:600;color:#047857">
+            Tiến độ: ${awakenedCount} / ${totalCount} cây đã thức tỉnh
+          </div>
+        </div>
+        <button class="primary park-select-portal-btn" data-x="${pz.center.x + 11.5}" data-z="${pz.center.z}" data-name="${pz.name}" style="white-space:nowrap;padding:10px 16px;margin-top:6px">
+          🚀 Bước vào ${pz.name}
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  openDialog(
+    'Cổng dịch chuyển',
+    `
+    <div class="dialog-eyebrow">CHỌN CÔNG VIÊN TRI THỨC MUỐN ĐẾN</div>
+    <p class="dialog-copy">
+      Cánh cổng bờ tây kết nối tới <b>${parkZones.length}</b> công viên tri thức. Hãy chọn vùng đất bạn muốn khám phá:
+    </p>
+    <div class="park-selection-list" style="margin-top:14px">
+      ${parkCardsHtml}
+    </div>
+    <button id="close-park-select-btn" class="secondary wide" style="margin-top:10px">
+      Ở lại Làng Khởi Đầu
+    </button>
+    `,
+    'parkSelection'
+  );
+
+  $('close-park-select-btn').onclick = closeDialog;
+
+  document.querySelectorAll<HTMLButtonElement>('.park-select-portal-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const x = Number(btn.dataset.x);
+      const z = Number(btn.dataset.z);
+      const name = btn.dataset.name || 'Công Viên';
+      closeDialog();
+      world.teleport(x, z);
+      audio.playCue('jump');
+      world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
+      queueSavePosition(x, z, true);
+      toast(`✨ Chào mừng bạn đến ${name}!`);
+    };
+  });
 }
 
 $('interact').onclick = interactAction;
@@ -500,21 +564,23 @@ function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
 }
 
 function openParkTreeDialog(index: number) {
-  let parkQuestions = activeRemoteQuestions['CongVienXanh'];
+  const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+  const sheetName = parkZone?.sheetName || 'CongVienXanh';
+  let parkQuestions = activeRemoteQuestions[sheetName];
   if (!parkQuestions || parkQuestions.length === 0) {
     try {
       const raw = localStorage.getItem(REMOTE_CACHE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         const questions = parsed?.data?.questionsBySheet || parsed?.questionsBySheet;
-        if (questions?.['CongVienXanh']?.length) {
-          parkQuestions = questions['CongVienXanh'];
-          activeRemoteQuestions['CongVienXanh'] = parkQuestions;
+        if (questions?.[sheetName]?.length) {
+          parkQuestions = questions[sheetName];
+          activeRemoteQuestions[sheetName] = parkQuestions;
         }
       }
     } catch (_) { }
   }
-  challengeDialog.openParkTree(index, parkQuestions);
+  challengeDialog.openParkTree(index, parkQuestions, parkZone);
 }
 
 function openFlowerDialog(index: number) {
@@ -630,9 +696,6 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           <button class="zone-teleport-btn zone-banner-teleport" data-x="-6" data-z="5" data-name="Làng Khởi Đầu">
             🚀 Dịch chuyển về Làng Khởi Đầu
           </button>
-          <button class="zone-teleport-btn zone-banner-teleport" data-x="-45" data-z="0" data-name="Công Viên Xanh" style="background:#059669">
-            🌳 Đến Công Viên Xanh
-          </button>
         </div>
       </div>
       <div class="zone-overview-card" style="margin-top:12px">
@@ -688,9 +751,9 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
         ${flowerCardsHtml}
       </div>
     `;
-  } else if (selectedZoneId === 7 || currentZone?.template === 'PARK_SANCTUARY' || currentZone?.sheetName === 'CongVienXanh') {
-    // 4. Công Viên Xanh
-    const remoteParkTrees = activeRemoteQuestions['CongVienXanh'] || [];
+  } else if (currentZone?.template === 'PARK_SANCTUARY') {
+    // 4. Vùng đất Công Viên Tri Thức (PARK_SANCTUARY)
+    const remoteParkTrees = activeRemoteQuestions[currentZone.sheetName] || [];
     const treeList = remoteParkTrees.length > 0
       ? remoteParkTrees
       : Array.from({ length: 20 }, (_, i) => ({ id: i + 1, title: `Cây Tri Thức #${i + 1}`, subtitle: `Thử thách nhân chia #${i + 1}` }));
@@ -698,7 +761,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     const treeCardsHtml = treeList.map((t: any, i: number) => {
       const treeId = t.id ?? (i + 1);
       const awakened = adventure.isParkTreeAwakened(i) || adventure.isProblemSolved(treeId);
-      const treePos = world?.parkTrees[i]?.position ?? { x: -45, z: 0 };
+      const treePos = world?.parkTrees[i]?.position ?? { x: currentZone.center.x, z: currentZone.center.z };
       return `
         <div class="archimedes-monolith-card ${awakened ? 'completed' : ''}">
           <div class="archimedes-card-header">
@@ -722,11 +785,11 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     contentHtml = `
       <div class="zone-banner" style="background:linear-gradient(135deg,#064e3b,#047857)">
         <div class="zone-banner-info">
-          <h4>🌳 Công Viên Xanh</h4>
-          <p>${treeList.length} Cây Tri Thức cần được đánh thức · Vị trí: (X: -45, Z: 0)</p>
+          <h4>🌳 ${currentZone.name}</h4>
+          <p>${treeList.length} Cây Tri Thức cần được đánh thức · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
         </div>
-        <button class="zone-teleport-btn zone-banner-teleport" data-x="-45" data-z="0" data-name="Công Viên Xanh">
-          🚀 Dịch chuyển đến Công Viên
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${currentZone.center.x + 14}" data-z="${currentZone.center.z}" data-name="${currentZone.name}">
+          🚀 Dịch chuyển đến ${currentZone.name}
         </button>
       </div>
       <div class="archimedes-monolith-grid">
@@ -920,7 +983,8 @@ $('learn-welcome').onclick = () => learn();
 $('travel').onclick = () => {
   if (!world.active || world.paused) return;
   const locName = world.spatial.getCurrentLocationName();
-  if (locName === 'Công Viên Xanh') {
+  const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY' && locName === z.name);
+  if (parkZone) {
     world.teleport(-6, 5);
     toast('Đã trở về Làng Khởi Đầu!');
   } else if (locName === 'Làng Khởi Đầu') {
@@ -1408,9 +1472,17 @@ try {
   world.onFlowerClick = idx => openFlowerDialog(idx);
   world.onMonolithClick = idx => openArchimedesMonolithDialog(idx, 0);
   world.onParkTreeClick = idx => openParkTreeDialog(idx);
-  world.onPortalClick = () => openArchimedesMapDialog();
+  const handlePortalAction = () => {
+    const nearP = world.spatial.getNearPortal();
+    if (nearP?.requiresSelection) {
+      openParkSelectionDialog();
+    } else {
+      openArchimedesMapDialog();
+    }
+  };
+  world.onPortalClick = handlePortalAction;
   $('archimedes-btn').onclick = () => openArchimedesMapDialog();
-  $('portal-label').onclick = () => openArchimedesMapDialog();
+  $('portal-label').onclick = handlePortalAction;
 
   world.onFrame = (isNear, crossed, _fps, nearFlowerIdx, isNearPortal, nearMonolithIdx, nearParkTreeIdx) => {
     near = isNear;
@@ -1419,14 +1491,18 @@ try {
     nearMonolith = nearMonolithIdx;
     nearParkTree = nearParkTreeIdx;
 
-    if (world.active && !world.paused) {
+    if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
       queueSavePosition(world.player.position.x, world.player.position.z);
       const transit = world.spatial.checkPortalTransit(0.016);
       if (transit) {
-        audio.playCue('jump');
-        world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
-        queueSavePosition(world.player.position.x, world.player.position.z, true);
-        toast(`✨ ${transit.name}!`);
+        if (transit.requiresSelection) {
+          openParkSelectionDialog();
+        } else {
+          audio.playCue('jump');
+          world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
+          queueSavePosition(world.player.position.x, world.player.position.z, true);
+          toast(`✨ ${transit.name}!`);
+        }
       }
     }
 
@@ -1441,9 +1517,9 @@ try {
     let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
     const dynZone = activeRemoteZones.find((z) => z.name === locName);
     if (dynZone) {
-      subLabel = `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
-    } else if (locName === 'Công Viên Xanh') {
-      subLabel = 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ';
+      subLabel = dynZone.template === 'PARK_SANCTUARY'
+        ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
+        : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
     } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
     else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
     else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
@@ -1454,7 +1530,9 @@ try {
     const nearPortalObj = world.spatial.getNearPortal();
 
     if (nearParkTree !== -1) {
-      const parkQuestions = activeRemoteQuestions['CongVienXanh'] || [];
+      const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+      const sheetName = parkZone?.sheetName || 'CongVienXanh';
+      const parkQuestions = activeRemoteQuestions[sheetName] || [];
       const prob = parkQuestions[nearParkTree];
       const treeTitle = prob?.title || `Cây Tri Thức #${nearParkTree + 1}`;
       const awakened = adventure.isParkTreeAwakened(nearParkTree) || (prob?.id ? adventure.isProblemSolved(prob.id) : false);
@@ -1468,7 +1546,13 @@ try {
       $('interact').innerHTML = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearPortal) {
-      $('interact').innerHTML = `🏛️ <b>${nearPortalObj?.name || 'Cổng Không Gian'}</b> (Bấm E để mở Bản Đồ) ${icon('arrow')}`;
+      const isParkPortal = nearPortalObj?.id.includes('park') || nearPortalObj?.id.includes('village');
+      const iconStr = isParkPortal ? '🌀' : '🏛️';
+      const prompt = nearPortalObj?.requiresSelection
+        ? 'Bấm E để chọn Công Viên'
+        : (isParkPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
+      const portalTitle = isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian');
+      $('interact').innerHTML = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
       $('interact').hidden = world.paused;
     } else if (nearFlower !== -1) {
       const bloomed = adventure.getState().flowers[nearFlower];
@@ -1492,6 +1576,19 @@ try {
     $('portal-label').classList.toggle('near', isNearPortal);
     $('bridge-label').hidden = world.paused || inGarden || inArchimedes;
     $('portal-label').hidden = world.paused || (!inGarden && !isNearPortal);
+
+    if (nearPortalObj) {
+      const isParkPortal = nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village');
+      if (isParkPortal) {
+        $('portal-label').innerHTML = `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>${nearPortalObj.id.endsWith('_to_village') ? 'Về Làng Khởi Đầu' : 'Đến Công Viên Tri Thức'}</small>`;
+      } else {
+        $('portal-label').innerHTML = `<span class="milo-dot">🏛️</span><strong>${nearPortalObj.name || 'Cổng Archimedes'}</strong><small>Đền Cổng Archimedes</small>`;
+      }
+    } else {
+      $('portal-label').innerHTML = inGarden
+        ? `<span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small>`
+        : `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small>`;
+    }
 
 
     if (world.active && !world.paused && crossed) {

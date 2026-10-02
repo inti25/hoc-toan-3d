@@ -1,4 +1,5 @@
 import { ARCHIMEDES_ZONES } from '../data/archimedesTrialMap';
+import seedData from '../data/seedData.json';
 import {
   computeProceduralEntityPositions,
   computeArchipelagoOrbitalPosition,
@@ -154,22 +155,6 @@ export function getBundledFallbackData(): {
       color: 0xec4899,
       colorHex: '#ec4899',
       badge: '🌸 Tinh Thể Vườn Hoa'
-    },
-    {
-      id: 7,
-      name: 'Công Viên Xanh',
-      title: 'Công Viên Thư Giãn',
-      description: 'Đánh thức 20 Cây Tri Thức trong công viên bằng các bài toán nhân chia nâng cao',
-      template: 'PARK_SANCTUARY',
-      theme: 'GARDEN',
-      decorDensity: 'HIGH',
-      sheetName: 'CongVienXanh',
-      center: { x: -45, z: 0 },
-      width: 36,
-      depth: 36,
-      color: 0x10b981,
-      colorHex: '#10b981',
-      badge: '🌳 Mầm Xanh Tri Thức'
     }
   ];
 
@@ -499,11 +484,10 @@ export async function seedRemoteDatabase(customUrl?: string): Promise<{ success:
     throw new Error('Chưa cấu hình URL Google Apps Script');
   }
 
-  const bundle = getBundledFallbackData();
   const payload = {
     action: 'seedDatabase',
-    zones: bundle.zones,
-    questionsBySheet: bundle.questionsBySheet
+    zones: seedData.zones,
+    questionsBySheet: seedData.questionsBySheet
   };
 
   const response = await fetch(url, {
@@ -518,9 +502,9 @@ export async function seedRemoteDatabase(customUrl?: string): Promise<{ success:
 
   const result = await response.json();
   if (result.status === 'success') {
-    // Cập nhật lại cache cục bộ
+    // Cập nhật lại cache cục bộ với dữ liệu vừa seed
     try {
-      safeStorage.setItem(REMOTE_CACHE_KEY, JSON.stringify(bundle));
+      saveRemoteDataToCache(seedData as any);
     } catch (_) {}
     return { success: true, message: result.message || 'Khởi tạo thành công!' };
   } else {

@@ -28,6 +28,7 @@ export interface PortalLink {
   source: { x: number; z: number };
   target: { x: number; z: number };
   triggerRadius: number;
+  requiresSelection?: boolean;
 }
 
 export const PORTAL_LINKS: PortalLink[] = [
@@ -123,10 +124,14 @@ export class SpatialWorld {
     this.obstacles.push(...obstacles);
   }
 
-  public parkZone: { cx: number; cz: number; radius: number } = { cx: -45, cz: 0, radius: 18.2 };
+  public parkZones: { id: number; name: string; cx: number; cz: number; radius: number }[] = [];
 
-  setParkZone(cx: number, cz: number, radius: number) {
-    this.parkZone = { cx, cz, radius };
+  setParkZones(zones: { id: number; name: string; cx: number; cz: number; radius: number }[]) {
+    this.parkZones = zones;
+  }
+
+  setParkZone(cx: number, cz: number, radius: number, name = 'Công Viên Xanh', id = 7) {
+    this.parkZones = [{ id, name, cx, cz, radius }];
   }
 
   public parkTreePositions: { x: number; z: number }[] = [];
@@ -153,8 +158,8 @@ export class SpatialWorld {
   setDynamicData(
     zones: { center: { x: number; z: number }; width: number; depth: number; name?: string; id?: number }[],
     monolithPositions: { x: number; z: number }[] = [],
-    customPortals: PortalLink[] = [],
-    obstacles: Obstacle[] = []
+    customPortals?: PortalLink[],
+    obstacles?: Obstacle[]
   ) {
     this.dynamicIslands = zones.map((z) => ({
       cx: z.center.x,
@@ -164,15 +169,18 @@ export class SpatialWorld {
       name: z.name
     }));
     this.dynamicMonoliths = monolithPositions;
-    this.dynamicPortals = customPortals;
-    this.dynamicObstacles = obstacles;
+    if (customPortals !== undefined) {
+      this.dynamicPortals = customPortals;
+    }
+    if (obstacles !== undefined) {
+      this.dynamicObstacles = obstacles;
+    }
   }
 
   isWithinLand(x: number, z: number): boolean {
-    // 0. Park Island (Công Viên Xanh) & Western Connection Bridge
-    if (this.parkZone) {
-      if (Math.hypot(x - this.parkZone.cx, z - this.parkZone.cz) <= this.parkZone.radius) return true;
-      if (x >= this.parkZone.cx + this.parkZone.radius - 1.5 && x <= -20.5 && Math.abs(z - this.parkZone.cz) <= 2.0) return true;
+    // 0. Park Island(s) (PARK_SANCTUARY loaded dynamically)
+    for (const pz of this.parkZones) {
+      if (Math.hypot(x - pz.cx, z - pz.cz) <= pz.radius) return true;
     }
 
     // 1. Starter Village
@@ -214,12 +222,10 @@ export class SpatialWorld {
   }
 
   getCurrentLocationName(): string {
-    if (
-      this.parkZone &&
-      (Math.hypot(this.x - this.parkZone.cx, this.z - this.parkZone.cz) <= this.parkZone.radius + 1.2 ||
-        (this.x <= -20.5 && Math.abs(this.z - this.parkZone.cz) <= 2.2))
-    ) {
-      return 'Công Viên Xanh';
+    for (const pz of this.parkZones) {
+      if (Math.hypot(this.x - pz.cx, this.z - pz.cz) <= pz.radius + 1.2) {
+        return pz.name || 'Công Viên Xanh';
+      }
     }
     if (this.x <= 4) return 'Làng Khởi Đầu';
     if (this.x <= 34) return 'Vườn Hoa Tri Thức';
@@ -317,13 +323,15 @@ export class SpatialWorld {
       if (this.portalCooldown > 0) return null;
     }
 
-    const allPortals = this.dynamicPortals.length > 0 ? this.dynamicPortals : PORTAL_LINKS;
+    const allPortals = [...PORTAL_LINKS, ...this.dynamicPortals];
 
     for (const portal of allPortals) {
       const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
       if (dist <= portal.triggerRadius) {
-        this.teleport(portal.target.x, portal.target.z);
-        this.portalCooldown = 1.2;
+        if (!portal.requiresSelection) {
+          this.teleport(portal.target.x, portal.target.z);
+        }
+        this.portalCooldown = portal.requiresSelection ? 2.5 : 1.2;
         return portal;
       }
     }
@@ -331,7 +339,7 @@ export class SpatialWorld {
   }
 
   getNearPortal(): PortalLink | null {
-    const allPortals = this.dynamicPortals.length > 0 ? this.dynamicPortals : PORTAL_LINKS;
+    const allPortals = [...PORTAL_LINKS, ...this.dynamicPortals];
     return allPortals.find(p => Math.hypot(this.x - p.source.x, this.z - p.source.z) < 3.2) || null;
   }
 

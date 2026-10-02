@@ -106,14 +106,19 @@ test('SpatialWorld supports dynamic islands and dynamic portal transits', () => 
   assert.equal(world.getPose().z, 295);
 });
 
-test('SpatialWorld supports Công Viên Xanh (park map) boundary, bridge, and location naming', () => {
+test('SpatialWorld supports dynamic PARK_SANCTUARY boundary without static bridge', () => {
   const world = new SpatialWorld(-6, 5);
   assert.equal(world.getCurrentLocationName(), 'Làng Khởi Đầu');
 
-  // Western bridge connecting village to park (x = -24, z = 0)
-  assert.equal(world.isWithinLand(-24, 0), true);
+  // Before being configured from Google Sheets, park territory does not exist
+  assert.equal(world.isWithinLand(-45, 0), false);
+  assert.equal(world.isWithinLand(-24, 0), false); // No static physical bridge
+  assert.equal(world.canMove(-45, 0), false);
 
-  // Inside Công Viên Xanh
+  // When configured dynamically by Google Sheets
+  world.setParkZone(-45, 0, 18.2, 'Công Viên Xanh', 7);
+
+  // Inside dynamic park
   world.teleport(-45, 0);
   assert.equal(world.isWithinLand(-45, 0), true);
   assert.equal(world.getCurrentLocationName(), 'Công Viên Xanh');

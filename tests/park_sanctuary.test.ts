@@ -34,13 +34,10 @@ test('PARK_SANCTUARY template generates 20 tree coordinates in computeProcedural
   assert.equal(positions[0].x, -45 + PARK_TREE_OFFSETS[0].x);
   assert.equal(positions[0].z, 0 + PARK_TREE_OFFSETS[0].z);
 
-  // Fallback data has Zone 7 with PARK_SANCTUARY template
+  // Bundled fallback data must NOT contain Zone 7 or PARK_SANCTUARY (pure Google Sheets dynamic loading)
   const fallback = getBundledFallbackData();
   const zone7 = fallback.zones.find((z) => z.id === 7 || z.sheetName === 'CongVienXanh');
-  assert.ok(zone7);
-  assert.equal(zone7.template, 'PARK_SANCTUARY');
-  assert.equal(zone7.center.x, -45);
-  assert.equal(zone7.center.z, 0);
+  assert.equal(zone7, undefined);
 
   // seedData.json contains 20 pre-seeded CongVienXanh problems
   const seed = JSON.parse(readFileSync(new URL('../src/data/seedData.json', import.meta.url), 'utf-8'));
@@ -146,3 +143,91 @@ test('Adventure.wakeParkTree rewards XP and coins, and handles full park complet
   assert.equal(resetState.parkTrees.filter(Boolean).length, 0);
   assert.equal(adventure.isParkTreeAwakened(0), false);
 });
+
+test('SpatialWorld supports Starter Village portal transit to PARK_SANCTUARY and multi-park selection', () => {
+  const world = new SpatialWorld(-19.5, 0);
+
+  // 1. Single PARK_SANCTUARY zone portal transit
+  const singleParkPortals = [
+    {
+      id: 'village_to_park',
+      name: 'Cổng dịch chuyển',
+      source: { x: -19.5, z: 0 },
+      target: { x: -33.5, z: 0 },
+      triggerRadius: 1.5
+    },
+    {
+      id: 'z7_to_village',
+      name: 'Cổng dịch chuyển',
+      source: { x: -31, z: 0 },
+      target: { x: -17.5, z: 0 },
+      triggerRadius: 1.5
+    }
+  ];
+
+  world.setDynamicData([], [], singleParkPortals, []);
+
+  // Player at Starter Village west portal (-19.5, 0)
+  const transitOut = world.checkPortalTransit(0.5);
+  assert.ok(transitOut !== null);
+  assert.equal(transitOut?.id, 'village_to_park');
+  assert.equal(world.getPose().x, -33.5);
+  assert.equal(world.getPose().z, 0);
+
+  // Player walks into return portal at park entrance (-31, 0)
+  world.teleport(-31, 0);
+  const transitBack = world.checkPortalTransit(1.5);
+  assert.ok(transitBack !== null);
+  assert.equal(transitBack?.id, 'z7_to_village');
+  assert.equal(world.getPose().x, -17.5);
+  assert.equal(world.getPose().z, 0);
+
+  // 2. Defensive check: calling setDynamicData without customPortals does not wipe out existing portals
+  world.setDynamicData([], []);
+  world.teleport(-19.5, 0);
+  const transitRetained = world.checkPortalTransit(1.5);
+  assert.ok(transitRetained !== null, 'Portals must not be erased when setDynamicData is called without customPortals');
+  assert.equal(transitRetained?.id, 'village_to_park');
+
+  // Verify walkability of all transit points
+  assert.equal(world.canMove(-18, 0), true, 'Area approaching portal is walkable');
+  assert.equal(world.canMove(-19.5, 0), true, 'Portal source at (-19.5, 0) is walkable');
+
+  // Set park zone to simulate synchronous registration in renderDynamicZones
+  world.setParkZone(-45, 0, 18.2, 'Công Viên Xanh', 7);
+  assert.equal(world.canMove(-33.5, 0), true, 'Park arrival point at (-33.5, 0) is walkable');
+  assert.equal(world.canMove(-17.5, 0), true, 'Village arrival point at (-17.5, 0) is walkable');
+
+  // Verify both PORTAL_LINKS (e.g. garden_to_hub at 32, 0) and dynamicPortals coexist
+  world.teleport(32, 0);
+  const hubTransit = world.checkPortalTransit(1.5);
+  assert.ok(hubTransit !== null, 'Hub portal must still work alongside dynamic portals');
+  assert.equal(hubTransit?.id, 'garden_to_hub');
+
+  // 3. Multi-park portal transit with requiresSelection: true
+  const multiParkPortals = [
+    {
+      id: 'village_to_multi_park',
+      name: 'Cổng dịch chuyển',
+      source: { x: -19.5, z: 0 },
+      target: { x: -19.5, z: 0 },
+      triggerRadius: 1.5,
+      requiresSelection: true
+    }
+  ];
+
+  world.setDynamicData([], [], multiParkPortals, []);
+  world.teleport(-19.5, 0);
+  const multiTransit = world.checkPortalTransit(1.5);
+  assert.ok(multiTransit !== null);
+  assert.equal(multiTransit?.id, 'village_to_multi_park');
+  assert.equal(multiTransit?.requiresSelection, true);
+  // Player should NOT be moved automatically when requiresSelection is true
+  assert.equal(world.getPose().x, -19.5);
+  assert.equal(world.getPose().z, 0);
+
+  // 4. Archimedes Gatehouse (60, 0) has NO portal to park
+  world.teleport(60, 0);
+  assert.equal(world.checkPortalTransit(1.5), null);
+});
+

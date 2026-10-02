@@ -13,12 +13,16 @@ Vùng đất bên kia bờ sông chứa 10 cây hoa thử thách, đài phun nư
 _Avoid_: Map 2, Vườn bí mật, Khu giải đố
 
 **Công Viên Xanh (Green Park Sanctuary)**:
-Vùng đất công viên mở rộng phía Tây Làng Khởi Đầu, nổi bật với đài kỷ niệm trung tâm, các ghế đá thư giãn và cụm 20 Cây Tri Thức (gồm cây thông Pine và cây bóng mát Tree) chuyển từ trạng thái ngủ say hóa xám sang hồi sinh xanh tươi khi giải đúng thử thách.
+Vùng đất công viên động được kết nối qua Cổng Dịch Chuyển từ bờ tây Làng Khởi Đầu khi được kích hoạt trên bảng tính Google Sheets, nổi bật với đài kỷ niệm trung tâm, các ghế đá thư giãn và cụm 20 Cây Tri Thức chuyển từ trạng thái ngủ say hóa xám sang hồi sinh xanh tươi khi giải đúng thử thách.
 _Avoid_: Khu vui chơi, Vườn 2, Map công viên
 
 **Bản Mẫu Công Viên (Park Sanctuary Template / PARK_SANCTUARY)**:
-Bản Mẫu Vùng Đất chuyên biệt định hình cảnh quan công viên hình học 3D, trong đó các vị trí câu hỏi toán học được gắn liền trực tiếp với các thực thể cây cối (Tree và Pine) thay vì cột bia đá hay luống hoa thông thường.
+Bản Mẫu Vùng Đất chuyên biệt định hình cảnh quan công viên 3D nạp động theo danh mục cấu hình Google Sheets, kết nối hai chiều với bờ tây Làng Khởi Đầu, trong đó các vị trí câu hỏi toán học được gắn liền trực tiếp với các thực thể cây cối (Tree và Pine) thay vì cột bia đá hay luống hoa thông thường.
 _Avoid_: Park template, Preset công viên
+
+**Cổng Công Viên Làng Khởi Đầu (Starter Village Park Portal)**:
+Cổng không gian đặt tại bờ tây Làng Khởi Đầu (X = -19.5, Z = 0) kết nối người chơi tới các vùng đất mang bản mẫu PARK_SANCTUARY. Khi có nhiều công viên được cấu hình, cổng mở bảng chọn công viên đích đến; khi ở trong công viên, cổng quay về sẽ đưa người chơi trở lại ngay trước cánh cổng này (X = -17.5, Z = 0).
+_Avoid_: Cổng Archimedes, Cổng Đền, Cầu gỗ công viên
 
 **Cây Tri Thức (Knowledge Tree)**:
 Một trong 20 thực thể cây (Tree hoặc Pine) trong Công Viên Xanh mang một bài toán thử thách. Ở trạng thái ban đầu cây mang màu xám (Cây Ngủ Say), và sẽ thức tỉnh trở lại màu sắc tươi sáng tự nhiên khi học sinh giải đúng.
