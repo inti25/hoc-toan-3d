@@ -5,7 +5,7 @@ export const CHARACTERS = [
   { id: 'hellokitty', emoji: '🎀', label: 'Hello Kitty', title: 'Hello Kitty' },
   { id: 'mymelody', emoji: '🌸', label: 'My Melody', title: 'My Melody' },
   { id: 'cinnamoroll', emoji: '☁️', label: 'Cinnamoroll', title: 'Cinnamoroll' },
-  { id: 'elsa', emoji: '❄️', label: 'Nữ hoàng băng giá', title: 'Nữ hoàng băng giá' },
+  // { id: 'elsa', emoji: '❄️', label: 'Nữ hoàng băng giá', title: 'Nữ hoàng băng giá' },
 ] as const;
 
 export type AvatarId = typeof CHARACTERS[number]['id'];
