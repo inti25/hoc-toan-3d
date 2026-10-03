@@ -1116,7 +1116,7 @@ function isWheelControlEnabled(): boolean {
   if (pref !== null) {
     return pref === 'true';
   }
-  return checkDeviceTouch();
+  return true; // Enabled by default across all devices for Direct Locomotion
 }
 
 function updateWheelControlVisibility() {

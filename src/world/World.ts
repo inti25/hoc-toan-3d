@@ -58,7 +58,6 @@ export class World {
   private water: THREE.Mesh;
   private clock = new THREE.Clock();
   private target = new THREE.Vector3(-5, 0, 0);
-  private destination?: THREE.Vector3;
   private jumpVelocity = 0;
   private yaw = .57;
   private pitch = .8;
@@ -127,7 +126,7 @@ export class World {
     let pointer = { x: 0, y: 0, moved: false, id: -1 };
     canvas.addEventListener('pointerdown', e => { if (!this.active || this.paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', e => { if (pointer.id !== e.pointerId || !this.active || this.paused) return; const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y; if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true; this.yaw -= dx * .006; this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, .45, 1.15); pointer.x = e.clientX; pointer.y = e.clientY; });
-    canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this.paused) this.moveToScreen(e.clientX, e.clientY); pointer.id = -1; });
+    canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this.paused) this.interactAtScreen(e.clientX, e.clientY); pointer.id = -1; });
     canvas.addEventListener('pointercancel', () => { pointer.id = -1; });
     canvas.addEventListener('wheel', e => { if (!this.active || this.paused) return; e.preventDefault(); this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * .025, 23, 60); }, { passive: false });
     this.animate();
@@ -802,7 +801,6 @@ export class World {
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
-    this.destination = undefined;
     this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1, 0)));
     this.onTeleport?.(x, z);
   }
@@ -811,7 +809,6 @@ export class World {
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
-    this.destination = undefined;
     this.resetCamera();
   }
 
@@ -1023,15 +1020,20 @@ export class World {
   private resize() { const { clientWidth: w, clientHeight: h } = this.canvas; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
   private floorHeight() { return this.spatial.floorHeight(); }
   jump() { if (this.active && !this.paused && this.spatial.jump()) { this.onJump?.(); } }
-  clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; this.destination = undefined; }
+  clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; }
   resetCamera() { this.yaw = .57; this.pitch = .8; this.distance = 48; }
 
-  private moveToScreen(x: number, y: number) {
-    const rect = this.canvas.getBoundingClientRect(); const pointer = new THREE.Vector2((x - rect.left) / rect.width * 2 - 1, -(y - rect.top) / rect.height * 2 + 1);
-    const ray = new THREE.Raycaster(); ray.setFromCamera(pointer, this.camera);
+  private interactAtScreen(x: number, y: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const pointer = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, this.camera);
     const hit = new THREE.Vector3();
     if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) {
-      if (hit.distanceTo(this.milo.position) < 2.8 && this.nearMilo()) { this.onSceneClick?.(true); return; }
+      if (hit.distanceTo(this.milo.position) < 2.8 && this.nearMilo()) {
+        this.onSceneClick?.(true);
+        return;
+      }
       if (hit.distanceTo(this.portalPos) < 3.2 && this.spatial.isNearPortal()) {
         this.onPortalClick?.();
         return;
@@ -1053,14 +1055,9 @@ export class World {
         return;
       }
       for (let i = 0; i < this.monoliths.length; i++) {
-        if (hit.distanceTo(this.monoliths[i].position) < 2.8) {
-          if (this.nearMonolith() === i) {
-            this.onMonolithClick?.(i);
-            return;
-          } else {
-            this.destination = this.monoliths[i].position.clone();
-            return;
-          }
+        if (hit.distanceTo(this.monoliths[i].position) < 2.8 && this.nearMonolith() === i) {
+          this.onMonolithClick?.(i);
+          return;
         }
       }
       const nearParkTreeIdx = this.spatial.nearParkTreeIndex();
@@ -1069,31 +1066,22 @@ export class World {
         return;
       }
       for (let i = 0; i < this.parkTrees.length; i++) {
-        if (hit.distanceTo(this.parkTrees[i].position) < 3.2) {
-          if (this.spatial.nearParkTreeIndex() === i) {
-            this.onParkTreeClick?.(i);
-            return;
-          } else {
-            this.destination = this.parkTrees[i].position.clone();
-            return;
-          }
+        if (hit.distanceTo(this.parkTrees[i].position) < 3.2 && this.spatial.nearParkTreeIndex() === i) {
+          this.onParkTreeClick?.(i);
+          return;
         }
       }
-      this.destination = hit;
+      // Direct Locomotion: Clicking empty ground or far away objects does NOT auto-walk.
     }
   }
 
   nearMilo() { return this.spatial.isNearMilo(); }
 
   private movement(dt: number) {
-    const dest = this.destination ? { x: this.destination.x, z: this.destination.z } : undefined;
-    const pose = this.spatial.tick(dt, { keys: this.keys, joystick: this.joystick, destination: dest }, this.yaw);
+    const pose = this.spatial.tick(dt, { keys: this.keys, joystick: this.joystick }, this.yaw);
     this.player.position.set(pose.x, pose.y, pose.z);
     this.player.rotation.y = pose.rotation;
     this.avatar.updateWalkAnimation(this.time, pose.moving);
-    if (!pose.moving && this.destination) {
-      this.destination = undefined;
-    }
   }
 
   burst(position: THREE.Vector3) {

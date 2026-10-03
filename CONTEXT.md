@@ -189,6 +189,14 @@ _Avoid_: Vị trí spawn, Tọa độ save, Điểm hồi sinh, Last pos
 Cơ chế an toàn tạm thời xuất hiện người chơi tại Làng Khởi Đầu nếu vị trí lưu thuộc về các Ốc Đảo Chuyên Đề chưa nạp xong dữ liệu qua mạng, và tự động dịch chuyển mượt mà về đúng Tọa Độ Thám Hiểm Lưu Lại ngay khi hòn đảo 3D dựng xong.
 _Avoid_: Chờ load map, Fallback vị trí, Spawn trễ
 
+**Bánh Xe Điều Khiển (Wheel Control)**:
+Cụm điều hướng ảo hình tròn hiển thị trên màn hình với núm kéo đa hướng và 4 mũi tên chỉ hướng, cho phép người chơi điều khiển vận tốc và góc quay trực tiếp của nhân vật trên cả màn hình cảm ứng lẫn chuột máy tính.
+_Avoid_: Phím ảo, Nút bấm di chuyển, D-pad
+
+**Điều Khiển Trực Tiếp (Direct Locomotion)**:
+Quy tắc điều hướng chuyển động bắt buộc thông qua Bánh Xe Điều Khiển hoặc cụm phím điều hướng (WASD/phím mũi tên), triệt tiêu hoàn toàn tính năng nhấp chuột/chạm đất tự động tìm đường (Point-and-Click Pathfinding) để tăng tính chủ động khám phá và tránh chạm nhầm khi xoay camera.
+_Avoid_: Click to move, Tự tìm đường, Bấm màn hình đi
+
 
 
 
