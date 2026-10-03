@@ -53,3 +53,21 @@ test('My Melody GLTF orientation calibration aligns +X authored heading to +Z wo
   assert.ok(Math.abs(calibrated.y) < 1e-6);
   assert.ok(Math.abs(calibrated.z - 1.0) < 1e-6);
 });
+
+test('PlayerAvatar builds avatar mesh when Elsa is selected', () => {
+  const avatar = new PlayerAvatar();
+  avatar.setAvatar('elsa');
+  assert.equal(avatar.activeAvatar, 'elsa');
+  assert.ok(avatar.group.children.length > 0, 'Elsa avatar mesh must be created upon selection');
+
+  // Verify forward features face +Z
+  const zPositions: number[] = [];
+  avatar.group.traverse(child => {
+    if ((child as THREE.Mesh).isMesh) {
+      zPositions.push(child.position.z);
+    }
+  });
+
+  const forwardCount = zPositions.filter(z => z > 0.2).length;
+  assert.ok(forwardCount >= 3, 'Elsa procedural face features must be oriented towards +Z');
+});

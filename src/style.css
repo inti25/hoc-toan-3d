@@ -1175,18 +1175,21 @@ dialog.image-lightbox::backdrop {
 #avatar-hellokitty span { background: #ffe0ef; }
 #avatar-mymelody span   { background: #fce7f3; }
 #avatar-cinnamoroll span{ background: #e0f2fe; }
+#avatar-elsa span        { background: #e0f2fe; }
 
 /* Avatar button character-specific pressed accent colors */
 #avatar-kuromi[aria-pressed=true]      { border-color: #7c3aed; background: #f5f0ff; box-shadow: 0 3px 0 #7c3aed33; }
 #avatar-hellokitty[aria-pressed=true]  { border-color: #e11d48; background: #fff0f5; box-shadow: 0 3px 0 #e11d4833; }
 #avatar-mymelody[aria-pressed=true]    { border-color: #db2777; background: #fdf2f8; box-shadow: 0 3px 0 #db277733; }
 #avatar-cinnamoroll[aria-pressed=true] { border-color: #0284c7; background: #f0f9ff; box-shadow: 0 3px 0 #0284c733; }
+#avatar-elsa[aria-pressed=true]        { border-color: #0284c7; background: #f0f9ff; box-shadow: 0 3px 0 #0284c733; }
 
 /* Avatar button hover: character-themed shimmer */
 #avatar-kuromi:hover span     { background: #3d2a5a; }
 #avatar-hellokitty:hover span { background: #ffc0d8; }
 #avatar-mymelody:hover span   { background: #f9a8d4; }
 #avatar-cinnamoroll:hover span{ background: #bae6fd; }
+#avatar-elsa:hover span       { background: #bae6fd; }
 
 /* PWA & Kingdom Brand Mark Styling */
 .brand-mark {

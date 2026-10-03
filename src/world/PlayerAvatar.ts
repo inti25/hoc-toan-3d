@@ -4,7 +4,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AvatarId } from '../data/characters';
 import { GeometryBuilder } from './geom';
 
-export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll';
+export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa';
 
 export interface PlayerAvatarOptions {
   onModelLoaded?: (avatarId: Avatar3DId) => void;
@@ -49,12 +49,13 @@ export class PlayerAvatar {
     this.clearMesh();
 
     switch (avatarId) {
-      case 'boy':         this.buildBoyMesh();          break;
-      case 'girl':        this.buildGirlMesh();         break;
-      case 'kuromi':      this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh()); break;
-      case 'hellokitty':  this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh()); break;
-      case 'mymelody':    this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh()); break;
+      case 'boy': this.buildBoyMesh(); break;
+      case 'girl': this.buildGirlMesh(); break;
+      case 'kuromi': this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh()); break;
+      case 'hellokitty': this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh()); break;
+      case 'mymelody': this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh()); break;
       case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh()); break;
+      case 'elsa': this.applyOrLoadGLTF('elsa', () => this.buildElsaMesh()); break;
     }
   }
 
@@ -96,6 +97,7 @@ export class PlayerAvatar {
     this.loadGLTF('hellokitty');
     this.loadGLTF('mymelody');
     this.loadGLTF('cinnamoroll');
+    this.loadGLTF('elsa');
   }
 
   private applyOrLoadGLTF(avatarId: Avatar3DId, fallback: () => void): void {
@@ -440,4 +442,71 @@ export class PlayerAvatar {
     this.sphere(leftEarGroup, 0, 0.56, -0.06, 0.09, 0xbae6fd);
     this.sphere(rightEarGroup, 0, 0.56, -0.06, 0.09, 0xbae6fd);
   }
+
+  private buildElsaMesh(): void {
+    const root = this.group;
+
+    // Torso (ice-blue royal bodice)
+    this.box(root, 0, 0.95, 0, 0.64, 0.78, 0.42, 0x38bdf8);
+
+    // Gown skirt (flowing flared ice crystal gown)
+    this.cylinder(root, 0, 0.46, 0, 0.32, 0.54, 0.62, 0x7dd3fc, 10);
+
+    // Shimmering translucent ice cape on back
+    this.box(root, 0, 0.96, -0.25, 0.62, 0.95, 0.06, 0xbae6fd);
+
+    // Arms: fair skin with icy cuffs
+    this.box(root, -0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
+    this.box(root, 0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
+    this.box(root, -0.44, 1.15, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
+    this.box(root, 0.44, 1.15, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
+
+    // Legs with crystal shoes for walk animation
+    for (const x of [-0.15, 0.15]) {
+      const leg = this.box(root, x, 0.24, 0, 0.20, 0.48, 0.22, 0x38bdf8);
+      this.box(leg, 0, -0.17, 0.05, 0.24, 0.14, 0.32, 0xe0f2fe);
+      this.legs.push(leg);
+    }
+
+    // Head & face
+    this.sphere(root, 0, 1.70, 0, 0.42, 0xffd5ae);
+
+    // Expressive royal blue eyes (+Z forward)
+    const leftEye = this.sphere(root, -0.13, 1.74, 0.38, 0.065, 0x0284c7);
+    leftEye.scale.set(0.8, 1.0, 0.5);
+    const rightEye = this.sphere(root, 0.13, 1.74, 0.38, 0.065, 0x0284c7);
+    rightEye.scale.set(0.8, 1.0, 0.5);
+
+    // Eye shines
+    this.sphere(root, -0.11, 1.76, 0.41, 0.024, 0xffffff);
+    this.sphere(root, 0.15, 1.76, 0.41, 0.024, 0xffffff);
+
+    // Soft rosy cheeks & gentle smile
+    this.sphere(root, -0.22, 1.66, 0.36, 0.08, 0xfecdd3);
+    this.sphere(root, 0.22, 1.66, 0.36, 0.08, 0xfecdd3);
+    this.sphere(root, 0, 1.65, 0.40, 0.032, 0xfda4af);
+
+    // Platinum blonde hair volume
+    const hair = this.sphere(root, 0, 1.94, -0.05, 0.44, 0xfef08a);
+    hair.scale.set(1.05, 0.9, 1.0);
+    this.sphere(root, 0, 1.98, 0.18, 0.25, 0xfef08a);
+
+    // Signature Elsa side braid draped over left shoulder
+    const braidSegments = [
+      { x: -0.28, y: 1.68, z: 0.14, r: 0.13 },
+      { x: -0.32, y: 1.48, z: 0.18, r: 0.11 },
+      { x: -0.30, y: 1.30, z: 0.22, r: 0.09 },
+      { x: -0.26, y: 1.14, z: 0.24, r: 0.075 },
+    ];
+    for (const b of braidSegments) {
+      this.sphere(root, b.x, b.y, b.z, b.r, 0xfef08a);
+    }
+
+    // Ice Tiara / Snowflake Crown
+    this.cylinder(root, 0, 2.16, 0.12, 0.015, 0.07, 0.24, 0x0284c7, 6);
+    this.cylinder(root, -0.12, 2.13, 0.10, 0.012, 0.05, 0.18, 0x38bdf8, 6);
+    this.cylinder(root, 0.12, 2.13, 0.10, 0.012, 0.05, 0.18, 0x38bdf8, 6);
+    this.box(root, 0, 2.05, 0.16, 0.34, 0.04, 0.04, 0x7dd3fc);
+  }
 }
+
