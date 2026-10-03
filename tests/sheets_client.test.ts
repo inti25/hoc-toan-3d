@@ -20,10 +20,10 @@ test('computeProceduralEntityPositions generates accurate coordinates for all 3 
   // 1. CIRCLE_SANCTUARY
   const circlePos = computeProceduralEntityPositions('CIRCLE_SANCTUARY', 4, center, 20, 20);
   assert.equal(circlePos.length, 4);
-  // Tất cả các điểm phải nằm cách tâm một khoảng xấp xỉ bán kính
+  // Tất cả các điểm phải nằm trên vành hồ quanh bán kính LAKE_MONOLITH_RADIUS (14.4m)
   circlePos.forEach((p) => {
     const dist = Math.hypot(p.x - center.x, p.z - center.z);
-    assert.ok(dist >= 5 && dist <= 8, `Distance ${dist} should be near radius 6.5`);
+    assert.ok(dist >= 14 && dist <= 15, `Distance ${dist} should be near lake monolith radius 14.4`);
   });
 
   // 2. FLOWER_BEDS
@@ -42,6 +42,10 @@ test('computeProceduralEntityPositions generates accurate coordinates for all 3 
   const row2 = gridPos.filter((p) => p.z > center.z);
   assert.equal(row1.length, 4);
   assert.equal(row2.length, 4);
+  gridPos.forEach((p) => {
+    const dist = Math.hypot(p.x - center.x, p.z - center.z);
+    assert.ok(dist >= 14 && dist <= 15, `Distance ${dist} should be near lake monolith radius 14.4`);
+  });
 });
 
 test('sanitizeRemoteProblems cleanses whitespace, auto-repairs missing answers in options, and parses hints', () => {
@@ -117,7 +121,7 @@ test('resolveZoneProblemsWithPositions preserves explicit coordinates and comput
       id: 1,
       title: 'Bài 1',
       subtitle: '',
-      position: { x: 999, z: 888 }, // Tọa độ thủ công cố định
+      position: { x: 50, z: 65.5 }, // Tọa độ thủ công hợp lệ trên vành hồ (d = 15.5m)
       steps: []
     },
     {
@@ -126,17 +130,27 @@ test('resolveZoneProblemsWithPositions preserves explicit coordinates and comput
       subtitle: '',
       position: null, // Chưa có tọa độ -> cần tự tính
       steps: []
+    },
+    {
+      id: 3,
+      title: 'Bài 3',
+      subtitle: '',
+      position: { x: 999, z: 888 }, // Tọa độ sai lệch (nằm ngoài vành hồ) -> tự sửa lại
+      steps: []
     }
   ];
 
   const resolved = resolveZoneProblemsWithPositions(zone, problems);
-  assert.equal(resolved.length, 2);
-  // Bài 1 giữ nguyên tọa độ thủ công
-  assert.deepEqual(resolved[0].position, { x: 999, z: 888 });
+  assert.equal(resolved.length, 3);
+  // Bài 1 giữ nguyên tọa độ thủ công hợp lệ
+  assert.deepEqual(resolved[0].position, { x: 50, z: 65.5 });
   // Bài 2 được cấp tọa độ sinh theo template
   assert.ok(resolved[1].position !== null);
-  assert.ok(resolved[1].position!.x !== 999);
   assert.equal(resolved[1].zoneId, 1);
+  // Bài 3 có tọa độ sai lệch được tự sửa lại trên vành hồ hợp lệ
+  assert.ok(resolved[2].position !== null);
+  const dist3 = Math.hypot(resolved[2].position!.x - 50, resolved[2].position!.z - 50);
+  assert.ok(dist3 >= 14 && dist3 <= 17.5, `Auto-repaired position must be on shore ring, got ${dist3}`);
 });
 
 test('ExplorerProfile persistence and immutable AppsScriptUrl', () => {

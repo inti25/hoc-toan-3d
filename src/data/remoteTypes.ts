@@ -98,6 +98,8 @@ export const PARK_TREE_OFFSETS: { x: number; z: number; type: 'PINE' | 'TREE'; n
   { x: 6.4, z: -3.6, type: 'PINE', name: 'Pine007' }
 ];
 
+import { computeLakeEntityPositions } from './lakeLand';
+
 export function computeProceduralEntityPositions(
   template: ZoneTemplateType,
   count: number,
@@ -120,21 +122,13 @@ export function computeProceduralEntityPositions(
       break;
     }
 
-    case 'CIRCLE_SANCTUARY': {
-      const rx = (width / 2) * 0.65;
-      const rz = (depth / 2) * 0.65;
-      for (let i = 0; i < count; i++) {
-        // Phân bố đều theo vòng tròn quanh đài trung tâm
-        const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-        positions.push({
-          x: Math.round((center.x + Math.cos(angle) * rx) * 10) / 10,
-          z: Math.round((center.z + Math.sin(angle) * rz) * 10) / 10
-        });
-      }
-      break;
+    case 'CIRCLE_SANCTUARY':
+    case 'GRID_SANCTUARY': {
+      return computeLakeEntityPositions(template, count, center);
     }
 
-    case 'FLOWER_BEDS': {
+    case 'FLOWER_BEDS':
+    default: {
       // 2 luống chạy dọc 2 bên lối đi trung tâm
       const half = Math.ceil(count / 2);
       const rowOffsetZ = (depth / 2) * 0.55;
@@ -146,27 +140,6 @@ export function computeProceduralEntityPositions(
         const colIdx = isTop ? i : i - half;
         const posX = center.x - xSpan + colIdx * stepX;
         const posZ = isTop ? center.z - rowOffsetZ : center.z + rowOffsetZ;
-        positions.push({
-          x: Math.round(posX * 10) / 10,
-          z: Math.round(posZ * 10) / 10
-        });
-      }
-      break;
-    }
-
-    case 'GRID_SANCTUARY':
-    default: {
-      // Bố trí dạng lưới 2 hàng ngay ngắn (tương tự 5 phân khu Archimedes)
-      const half = Math.ceil(count / 2);
-      const xSpan = Math.min((width / 2) * 0.75, (half - 1) * 3.5);
-      const stepX = half > 1 ? (xSpan * 2) / (half - 1) : 0;
-      const rowSpacing = Math.min((depth / 2) * 0.6, 6.0);
-
-      for (let i = 0; i < count; i++) {
-        const row = Math.floor(i / half);
-        const col = i % half;
-        const posX = center.x - xSpan + col * stepX;
-        const posZ = center.z + (row === 0 ? -rowSpacing : rowSpacing);
         positions.push({
           x: Math.round(posX * 10) / 10,
           z: Math.round(posZ * 10) / 10

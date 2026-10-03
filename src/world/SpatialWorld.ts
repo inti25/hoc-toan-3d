@@ -1,5 +1,11 @@
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
+import {
+  LAKE_WALK_INNER,
+  LAKE_WALK_OUTER,
+  computeLakeAnchors,
+  usesLakeTerrain
+} from '../data/lakeLand';
 
 export interface Obstacle {
   x: number;
@@ -31,30 +37,36 @@ export interface PortalLink {
   requiresSelection?: boolean;
 }
 
+const z1Anchors = computeLakeAnchors({ x: 110, z: -60 });
+const z2Anchors = computeLakeAnchors({ x: 150, z: -60 });
+const z3Anchors = computeLakeAnchors({ x: 110, z: 60 });
+const z4Anchors = computeLakeAnchors({ x: 150, z: 60 });
+const z5Anchors = computeLakeAnchors({ x: 190, z: 0 });
+
 export const PORTAL_LINKS: PortalLink[] = [
   // Garden <-> Hub
   { id: 'garden_to_hub', name: 'Đến Đền Cổng Archimedes', source: { x: 32, z: 0 }, target: { x: 55, z: 0 }, triggerRadius: 1.5 },
   { id: 'hub_to_garden', name: 'Về Vườn Hoa Tri Thức', source: { x: 52, z: 0 }, target: { x: 30, z: 0 }, triggerRadius: 1.5 },
 
   // Hub <-> Zone 1 (Thung Lũng Tính Toán)
-  { id: 'hub_to_z1', name: 'Đến Thung Lũng Tính Toán', source: { x: 68, z: -8 }, target: { x: 102, z: -60 }, triggerRadius: 1.5 },
-  { id: 'z1_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 100, z: -60 }, target: { x: 65, z: -8 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z1', name: 'Đến Thung Lũng Tính Toán', source: { x: 68, z: -8 }, target: z1Anchors.arrival, triggerRadius: 1.5 },
+  { id: 'z1_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z1Anchors.returnPortal.x, z: z1Anchors.returnPortal.z }, target: { x: 65, z: -8 }, triggerRadius: 1.5 },
 
   // Hub <-> Zone 2 (Suối Nguồn Dãy Số)
-  { id: 'hub_to_z2', name: 'Đến Suối Nguồn Dãy Số', source: { x: 70, z: -4 }, target: { x: 142, z: -60 }, triggerRadius: 1.5 },
-  { id: 'z2_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 140, z: -60 }, target: { x: 67, z: -4 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z2', name: 'Đến Suối Nguồn Dãy Số', source: { x: 70, z: -4 }, target: z2Anchors.arrival, triggerRadius: 1.5 },
+  { id: 'z2_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z2Anchors.returnPortal.x, z: z2Anchors.returnPortal.z }, target: { x: 67, z: -4 }, triggerRadius: 1.5 },
 
   // Hub <-> Zone 3 (Đồi Thời Gian)
-  { id: 'hub_to_z3', name: 'Đến Đồi Thời Gian', source: { x: 70, z: 0 }, target: { x: 102, z: 60 }, triggerRadius: 1.5 },
-  { id: 'z3_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 100, z: 60 }, target: { x: 67, z: 0 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z3', name: 'Đến Đồi Thời Gian', source: { x: 70, z: 0 }, target: z3Anchors.arrival, triggerRadius: 1.5 },
+  { id: 'z3_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z3Anchors.returnPortal.x, z: z3Anchors.returnPortal.z }, target: { x: 67, z: 0 }, triggerRadius: 1.5 },
 
   // Hub <-> Zone 4 (Rừng Hình Học)
-  { id: 'hub_to_z4', name: 'Đến Rừng Hình Học', source: { x: 70, z: 4 }, target: { x: 140, z: 60 }, triggerRadius: 1.5 },
-  { id: 'z4_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 138, z: 60 }, target: { x: 67, z: 4 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z4', name: 'Đến Rừng Hình Học', source: { x: 70, z: 4 }, target: z4Anchors.arrival, triggerRadius: 1.5 },
+  { id: 'z4_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z4Anchors.returnPortal.x, z: z4Anchors.returnPortal.z }, target: { x: 67, z: 4 }, triggerRadius: 1.5 },
 
   // Hub <-> Zone 5 (Đỉnh Núi Tư Duy Sao)
-  { id: 'hub_to_z5', name: 'Đến Đỉnh Núi Tư Duy Sao', source: { x: 68, z: 8 }, target: { x: 183, z: 0 }, triggerRadius: 1.5 },
-  { id: 'z5_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: 181, z: 0 }, target: { x: 65, z: 8 }, triggerRadius: 1.5 }
+  { id: 'hub_to_z5', name: 'Đến Đỉnh Núi Tư Duy Sao', source: { x: 68, z: 8 }, target: z5Anchors.arrival, triggerRadius: 1.5 },
+  { id: 'z5_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z5Anchors.returnPortal.x, z: z5Anchors.returnPortal.z }, target: { x: 65, z: 8 }, triggerRadius: 1.5 }
 ];
 
 export const FLOWER_COORDS: [number, number][] = [
@@ -110,6 +122,14 @@ export class SpatialWorld {
     FLOWER_COORDS.forEach(([fx, fz]) => {
       this.obstacles.push({ x: fx, z: fz, radius: 1.15 });
     });
+
+    // 5 Archimedes Sanctuaries Physical Center Monuments & Fountains
+    this.obstacles.push({ x: 110, z: -60, radius: 1.35 }); // Zone 1 monument
+    this.obstacles.push({ x: 154, z: -55, radius: 1.0 });  // Zone 2 stepped pillar
+    this.obstacles.push({ x: 150, z: -60, radius: 1.2 });  // Zone 2 fountain center
+    this.obstacles.push({ x: 110, z: 60, radius: 2.3 });   // Zone 3 sundial
+    this.obstacles.push({ x: 150, z: 56, radius: 1.6 });   // Zone 4 polyhedron
+    this.obstacles.push({ x: 190, z: 0, radius: 1.5 });    // Zone 5 star summit monument
   }
 
   setBridgeBuilt(count: number) {
@@ -150,13 +170,13 @@ export class SpatialWorld {
     return -1;
   }
 
-  private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string }[] = [];
+  private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string; template?: string }[] = [];
   private dynamicPortals: PortalLink[] = [];
   private dynamicMonoliths: { x: number; z: number }[] = [];
   private dynamicObstacles: Obstacle[] = [];
 
   setDynamicData(
-    zones: { center: { x: number; z: number }; width: number; depth: number; name?: string; id?: number }[],
+    zones: { center: { x: number; z: number }; width: number; depth: number; name?: string; id?: number; template?: string }[],
     monolithPositions: { x: number; z: number }[] = [],
     customPortals?: PortalLink[],
     obstacles?: Obstacle[]
@@ -166,7 +186,8 @@ export class SpatialWorld {
       cz: z.center.z,
       w: z.width,
       d: z.depth,
-      name: z.name
+      name: z.name,
+      template: z.template
     }));
     this.dynamicMonoliths = monolithPositions;
     if (customPortals !== undefined) {
@@ -191,23 +212,31 @@ export class SpatialWorld {
     if (x >= 10 && x <= 34 && Math.abs(z) <= 18.8) return true;
     // 4. Gatehouse Hub (Đền Cổng Archimedes)
     if (x >= 49 && x <= 71 && Math.abs(z) <= 11) return true;
-    // 5. Sanctuary 1 (Thung Lũng Tính Toán)
-    if (x >= 98 && x <= 122 && z >= -76 && z <= -44) return true;
-    // 6. Sanctuary 2 (Suối Nguồn Dãy Số)
-    if (x >= 138 && x <= 162 && z >= -76 && z <= -44) return true;
-    // 7. Sanctuary 3 (Đồi Thời Gian)
-    if (x >= 98 && x <= 122 && z >= 44 && z <= 76) return true;
-    // 8. Sanctuary 4 (Rừng Hình Học)
-    if (x >= 136 && x <= 164 && z >= 43 && z <= 77) return true;
-    // 9. Sanctuary 5 (Đỉnh Núi Tư Duy Sao)
-    if (x >= 179 && x <= 201 && z >= -12 && z <= 12) return true;
 
-    // 10. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
+    // 5. 5 Ốc Đảo Chuyên Đề Archimedes (Địa Hình Hồ Yên Bình - Cozy Lake Terrain)
+    const STATIC_LAKE_SANCTUARIES = [
+      { cx: 110, cz: -60 },
+      { cx: 150, cz: -60 },
+      { cx: 110, cz: 60 },
+      { cx: 150, cz: 60 },
+      { cx: 190, cz: 0 }
+    ];
+    for (const s of STATIC_LAKE_SANCTUARIES) {
+      const d = Math.hypot(x - s.cx, z - s.cz);
+      if (d <= LAKE_WALK_OUTER) return true;
+    }
+
+    // 6. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
     for (const isl of this.dynamicIslands) {
-      const halfW = isl.w / 2 + 1;
-      const halfD = isl.d / 2 + 1;
-      if (x >= isl.cx - halfW && x <= isl.cx + halfW && z >= isl.cz - halfD && z <= isl.cz + halfD) {
-        return true;
+      if (usesLakeTerrain(isl.template)) {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= LAKE_WALK_OUTER) return true;
+      } else {
+        const halfW = isl.w / 2 + 1;
+        const halfD = isl.d / 2 + 1;
+        if (x >= isl.cx - halfW && x <= isl.cx + halfW && z >= isl.cz - halfD && z <= isl.cz + halfD) {
+          return true;
+        }
       }
     }
 
@@ -221,6 +250,37 @@ export class SpatialWorld {
     return !this.dynamicObstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
   }
 
+  resolveSafeSpawn(x: number, z: number): { x: number; z: number } | null {
+    if (this.isWithinLand(x, z)) {
+      return { x, z };
+    }
+
+    const STATIC_LAKE_SANCTUARIES = [
+      { cx: 110, cz: -60 },
+      { cx: 150, cz: -60 },
+      { cx: 110, cz: 60 },
+      { cx: 150, cz: 60 },
+      { cx: 190, cz: 0 }
+    ];
+    for (const s of STATIC_LAKE_SANCTUARIES) {
+      const d = Math.hypot(x - s.cx, z - s.cz);
+      if (d <= LAKE_WALK_OUTER + 2.0) {
+        return computeLakeAnchors({ x: s.cx, z: s.cz }).arrival;
+      }
+    }
+
+    for (const isl of this.dynamicIslands) {
+      if (usesLakeTerrain(isl.template)) {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= LAKE_WALK_OUTER + 2.0) {
+          return computeLakeAnchors({ x: isl.cx, z: isl.cz }).arrival;
+        }
+      }
+    }
+
+    return null;
+  }
+
   getCurrentLocationName(): string {
     for (const pz of this.parkZones) {
       if (Math.hypot(this.x - pz.cx, this.z - pz.cz) <= pz.radius + 1.2) {
@@ -231,19 +291,34 @@ export class SpatialWorld {
     if (this.x <= 34) return 'Vườn Hoa Tri Thức';
     if (this.x >= 49 && this.x <= 71 && Math.abs(this.z) <= 11) return 'Đền Cổng Archimedes';
 
-    for (const isl of this.dynamicIslands) {
-      const halfW = isl.w / 2 + 1;
-      const halfD = isl.d / 2 + 1;
-      if (this.x >= isl.cx - halfW && this.x <= isl.cx + halfW && this.z >= isl.cz - halfD && this.z <= isl.cz + halfD) {
-        return isl.name || 'Vùng Đất Mới';
+    // 5 Ốc Đảo Archimedes
+    const STATIC_SANCTUARIES = [
+      { cx: 110, cz: -60, name: 'Thung Lũng Tính Toán' },
+      { cx: 150, cz: -60, name: 'Suối Nguồn Dãy Số' },
+      { cx: 110, cz: 60, name: 'Đồi Thời Gian' },
+      { cx: 150, cz: 60, name: 'Rừng Hình Học' },
+      { cx: 190, cz: 0, name: 'Đỉnh Núi Tư Duy Sao' }
+    ];
+    for (const s of STATIC_SANCTUARIES) {
+      if (Math.hypot(this.x - s.cx, this.z - s.cz) <= LAKE_WALK_OUTER + 1.5) {
+        return s.name;
       }
     }
 
-    if (this.x >= 98 && this.x <= 122 && this.z >= -76 && this.z <= -44) return 'Thung Lũng Tính Toán';
-    if (this.x >= 138 && this.x <= 162 && this.z >= -76 && this.z <= -44) return 'Suối Nguồn Dãy Số';
-    if (this.x >= 98 && this.x <= 122 && this.z >= 44 && this.z <= 76) return 'Đồi Thời Gian';
-    if (this.x >= 136 && this.x <= 164 && this.z >= 43 && this.z <= 77) return 'Rừng Hình Học';
-    if (this.x >= 179 && this.x <= 201 && Math.abs(this.z) <= 12) return 'Đỉnh Núi Tư Duy Sao';
+    for (const isl of this.dynamicIslands) {
+      if (usesLakeTerrain(isl.template)) {
+        if (Math.hypot(this.x - isl.cx, this.z - isl.cz) <= LAKE_WALK_OUTER + 1.5) {
+          return isl.name || 'Vùng Đất Mới';
+        }
+      } else {
+        const halfW = isl.w / 2 + 1;
+        const halfD = isl.d / 2 + 1;
+        if (this.x >= isl.cx - halfW && this.x <= isl.cx + halfW && this.z >= isl.cz - halfD && this.z <= isl.cz + halfD) {
+          return isl.name || 'Vùng Đất Mới';
+        }
+      }
+    }
+
     return 'Vùng Đất Archimedes';
   }
 

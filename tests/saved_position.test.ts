@@ -59,9 +59,16 @@ test('SpatialWorld validates positions and handles deferred spawn logic', () => 
   const spatial = new SpatialWorld();
 
   // Initially only starter village is valid (without bridge completed)
-  assert.equal(spatial.isWithinLand(-6, 6), true, 'Starter village coordinates are valid');
-  // Coordinates on Sanctuary 1 (110, -60) are currently valid in static sanctuary definitions
-  assert.equal(spatial.isWithinLand(110, -60), true);
+  // Coordinates on Sanctuary 1 (both shore ring and lake water) are within land footprint
+  assert.equal(spatial.isWithinLand(94.5, -60), true, 'Lake shore ring coordinate is valid');
+  assert.equal(spatial.isWithinLand(110, -60), true, 'Lake center is within land boundary');
+  // Coordinates outside the lake island footprint clamp to lake arrival anchor
+  const outsideLake = { x: 110 + 19.0, z: -60 }; // 129, -60 is outside 18m boundary
+  assert.equal(spatial.isWithinLand(outsideLake.x, outsideLake.z), false, 'Outside lake island boundary');
+  const safeSpawn = spatial.resolveSafeSpawn(outsideLake.x, outsideLake.z);
+  assert.ok(safeSpawn !== null);
+  assert.equal(safeSpawn?.x, 94.5);
+  assert.equal(safeSpawn?.z, -62.6);
 
   // Dynamic custom island (e.g. Zone 7 at 120, 120) is NOT valid yet
   assert.equal(spatial.isWithinLand(120, 120), false, 'Custom island not valid before loading dynamic data');

@@ -8,6 +8,15 @@ import { PlayerAvatar } from './PlayerAvatar';
 import { GeometryBuilder } from './geom';
 import { ArchimedesZoneBuilder, type MonolithItem, type Obstacle } from './ArchimedesZoneBuilder';
 import type { RemoteZoneConfig } from '../data/remoteTypes';
+import {
+  LAKE_SCALE,
+  LAKE_MODEL_CENTER,
+  LAKE_FALLBACK_RADIUS,
+  computeLakeAnchors,
+  computeLakeEntityPositions,
+  lakeRotationForZone,
+  usesLakeTerrain
+} from '../data/lakeLand';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -80,6 +89,10 @@ export class World {
   isParkTreeAwakened?: (index: number) => boolean;
   readonly parkTrees: ParkTreeEntity[] = [];
   readonly parkModels: Map<number, THREE.Group> = new Map();
+  readonly lakeModels: Map<number, THREE.Group> = new Map();
+  private lakeFallbackDiscs: Map<number, THREE.Object3D> = new Map();
+  private cachedLakeModel?: THREE.Group;
+  private lakeLoadingPromise?: Promise<THREE.Group | null>;
   private villageParkPortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
 
@@ -119,6 +132,7 @@ export class World {
     this.player.add(this.avatar.group);
     this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
     this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
+    this.loadLakeSanctuaries();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
@@ -154,21 +168,23 @@ export class World {
       // 2. Flower Garden (Vườn Hoa Tri Thức)
       { cx: 22, cz: 0, w: 24, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d },
       // 3. Archimedes Gatehouse Hub (Đền Cổng Archimedes)
-      { cx: 60, cz: 0, w: 22, d: 22, grassColor: 0x85c158, soilColor: 0x93a388 },
-      // 4. Sanctuary 1 (Thung Lũng Tính Toán)
-      { cx: 110, cz: -60, w: 24, d: 32, grassColor: 0x94c973, soilColor: 0xc49a6c },
-      // 5. Sanctuary 2 (Suối Nguồn Dãy Số)
-      { cx: 150, cz: -60, w: 24, d: 32, grassColor: 0x82c47c, soilColor: 0x769fb6 },
-      // 6. Sanctuary 3 (Đồi Thời Gian)
-      { cx: 110, cz: 60, w: 24, d: 32, grassColor: 0x8ec963, soilColor: 0x94a3b8 },
-      // 7. Sanctuary 4 (Rừng Hình Học)
-      { cx: 150, cz: 60, w: 28, d: 34, grassColor: 0x78ba65, soilColor: 0x5a8f6e },
-      // 8. Sanctuary 5 (Đỉnh Núi Tư Duy Sao)
-      { cx: 190, cz: 0, w: 22, d: 24, grassColor: 0x6aa85b, soilColor: 0x64748b }
+      { cx: 60, cz: 0, w: 22, d: 22, grassColor: 0x85c158, soilColor: 0x93a388 }
     ];
 
     for (const isl of islands) {
       this.createSingleIsland(isl);
+    }
+
+    // 5 Sanctuaries (Cozy Lake fallback discs until glTF loads)
+    const sanctuaryFallbacks = [
+      { id: 1, cx: 110, cz: -60, color: 0x94c973 },
+      { id: 2, cx: 150, cz: -60, color: 0x82c47c },
+      { id: 3, cx: 110, cz: 60, color: 0x8ec963 },
+      { id: 4, cx: 150, cz: 60, color: 0x78ba65 },
+      { id: 5, cx: 190, cz: 0, color: 0x6aa85b }
+    ];
+    for (const s of sanctuaryFallbacks) {
+      this.createLakeFallback(s.id, s.cx, s.cz, s.color);
     }
 
     // Paths in starter village
@@ -218,15 +234,12 @@ export class World {
     // Landmarks and Paving for 5 Sanctuaries:
     // 1. Zone 1: Thung Lũng Tính Toán (x: 110, z: -60)
     this.cylinder(this.scene, 110, .07, -60, 4.5, 4.5, .1, 0xecd9b5, 16);
-    this.box(this.scene, 105, .055, -60, 10, .08, 2.5, 0xecd9b5);
     this.cylinder(this.scene, 110, 1.6, -60, 0.7, 0.9, 3.2, 0xc49a6c, 6);
     this.box(this.scene, 113, 0.6, -58, 1.4, 1.2, 1.4, 0x9a7b56);
     this.obstacles.push({ x: 110, z: -60, radius: 1.3 });
 
     // 2. Zone 2: Suối Nguồn Dãy Số (x: 150, z: -60)
     this.cylinder(this.scene, 150, .07, -60, 4.5, 4.5, .1, 0xd8eaf4, 16);
-    this.box(this.scene, 145, .055, -60, 10, .08, 2.5, 0xd8eaf4);
-    this.box(this.scene, 150, 0.03, -60, 14, 0.08, 2.8, 0x38bdf8);
     for (let s = 0; s < 4; s++) {
       this.cylinder(this.scene, 144 + s * 4, 0.1 + s * 0.04, -60, 0.75, 0.75, 0.12, 0xf8fafc, 8);
     }
@@ -235,7 +248,6 @@ export class World {
 
     // 3. Zone 3: Đồi Thời Gian (x: 110, z: 60)
     this.cylinder(this.scene, 110, .07, 60, 5.0, 5.0, .1, 0xe2e8f0, 24);
-    this.box(this.scene, 105, .055, 60, 10, .08, 2.5, 0xe2e8f0);
     this.cylinder(this.scene, 110, 0.4, 60, 2.2, 2.4, 0.8, 0x94a3b8, 16);
     const gnomon = this.box(this.scene, 110, 1.2, 60, 0.14, 1.2, 1.2, 0xd97706);
     gnomon.rotation.x = 0.5;
@@ -247,7 +259,6 @@ export class World {
 
     // 4. Zone 4: Rừng Hình Học (x: 150, z: 60)
     this.cylinder(this.scene, 150, .07, 60, 5.0, 5.0, .1, 0xdcfce7, 16);
-    this.box(this.scene, 144, .055, 60, 12, .08, 2.5, 0xdcfce7);
     this.cylinder(this.scene, 150, 1.8, 56, 0, 1.6, 3.5, 0x10b981, 4);
     this.box(this.scene, 146, 1.0, 64, 1.8, 1.8, 1.8, 0x059669);
     this.sphere(this.scene, 154, 1.5, 64, 1.1, 0x34d399);
@@ -256,7 +267,6 @@ export class World {
     // 5. Zone 5: Đỉnh Núi Tư Duy Sao (x: 190, z: 0)
     this.cylinder(this.scene, 190, 0.25, 0, 5.5, 5.8, 0.5, 0x334155, 16);
     this.cylinder(this.scene, 190, 0.55, 0, 3.8, 4.0, 0.3, 0x475569, 8);
-    this.box(this.scene, 185.5, .055, 0, 9, .08, 2.5, 0xcbd5e1);
     this.cylinder(this.scene, 190, 1.8, 0, 0.55, 0.65, 2.5, 0xf59e0b, 8);
     this.sphere(this.scene, 190, 3.5, 0, 0.6, 0xfef08a);
     for (let s = 0; s < 4; s++) {
@@ -267,10 +277,18 @@ export class World {
 
     // Celestial Sea of Clouds under void between islands
     const cloudSea = new THREE.Group();
+    const sanctuaryFootprints = [
+      { cx: 110, cz: -60 },
+      { cx: 150, cz: -60 },
+      { cx: 110, cz: 60 },
+      { cx: 150, cz: 60 },
+      { cx: 190, cz: 0 }
+    ];
     for (let c = 0; c < 36; c++) {
       const cx = 35 + ((c * 19) % 170);
       const cz = -75 + ((c * 23) % 150);
-      if (!this.spatial.isWithinLand(cx, cz)) {
+      const insideSanctuary = sanctuaryFootprints.some((s) => Math.hypot(cx - s.cx, cz - s.cz) < 24);
+      if (!this.spatial.isWithinLand(cx, cz) && !insideSanctuary) {
         const cloud = this.sphere(cloudSea, cx, -1.8 + Math.sin(c) * 0.7, cz, 4.5 + (c % 4), 0xffffff);
         cloud.scale.set(1.4, 0.6, 1.4);
       }
@@ -693,46 +711,78 @@ export class World {
       if (!this.dynamicIslandIds.has(z.id)) {
         this.dynamicIslandIds.add(z.id);
 
-        this.createSingleIsland({
-          cx: z.center.x,
-          cz: z.center.z,
-          w: z.width,
-          d: z.depth,
-          grassColor: z.color,
-          soilColor: 0x93a388
-        });
+        if (usesLakeTerrain(z.template)) {
+          this.createLakeFallback(z.id, z.center.x, z.center.z, z.color);
+          this.loadLakeMap(z);
 
-        // Sinh cảnh quan theo chủ đề
-        const islandObs = this.createIslandScenery(z);
-        this.dynamicObstacles.push(...islandObs);
+          // Cổng kết nối từ Hub tới đảo mới
+          const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
+          const hubX = 60 + Math.cos(angle) * 8.5;
+          const hubZ = Math.sin(angle) * 8.5;
+          this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
 
-        // Cổng kết nối từ Hub tới đảo mới
-        const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
-        const hubX = 60 + Math.cos(angle) * 8.5;
-        const hubZ = Math.sin(angle) * 8.5;
-        this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
+          // Cổng quay về từ đảo hồ về Hub (đặt trên vành bờ hồ phía Tây)
+          const anchors = computeLakeAnchors(z.center);
+          this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
 
-        // Cổng quay về từ đảo mới về Hub
-        const retX = z.center.x - z.width / 2 + 3;
-        const retZ = z.center.z;
-        this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+          customPortals.push(
+            {
+              id: `hub_to_z${z.id}`,
+              name: `Đến ${z.name}`,
+              source: { x: hubX, z: hubZ },
+              target: { x: anchors.arrival.x, z: anchors.arrival.z },
+              triggerRadius: 1.5
+            },
+            {
+              id: `z${z.id}_to_hub`,
+              name: 'Về Đền Cổng Archimedes',
+              source: { x: anchors.returnPortal.x, z: anchors.returnPortal.z },
+              target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
+              triggerRadius: 1.5
+            }
+          );
+        } else {
+          this.createSingleIsland({
+            cx: z.center.x,
+            cz: z.center.z,
+            w: z.width,
+            d: z.depth,
+            grassColor: z.color,
+            soilColor: 0x93a388
+          });
 
-        customPortals.push(
-          {
-            id: `hub_to_z${z.id}`,
-            name: `Đến ${z.name}`,
-            source: { x: hubX, z: hubZ },
-            target: { x: retX + 2.5, z: retZ },
-            triggerRadius: 1.5
-          },
-          {
-            id: `z${z.id}_to_hub`,
-            name: 'Về Đền Cổng Archimedes',
-            source: { x: retX, z: retZ },
-            target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
-            triggerRadius: 1.5
-          }
-        );
+          // Sinh cảnh quan theo chủ đề
+          const islandObs = this.createIslandScenery(z);
+          this.dynamicObstacles.push(...islandObs);
+
+          // Cổng kết nối từ Hub tới đảo mới
+          const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
+          const hubX = 60 + Math.cos(angle) * 8.5;
+          const hubZ = Math.sin(angle) * 8.5;
+          this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
+
+          // Cổng quay về từ đảo mới về Hub
+          const retX = z.center.x - z.width / 2 + 3;
+          const retZ = z.center.z;
+          this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+
+          customPortals.push(
+            {
+              id: `hub_to_z${z.id}`,
+              name: `Đến ${z.name}`,
+              source: { x: hubX, z: hubZ },
+              target: { x: retX + 2.5, z: retZ },
+              triggerRadius: 1.5
+            },
+            {
+              id: `z${z.id}_to_hub`,
+              name: 'Về Đền Cổng Archimedes',
+              source: { x: retX, z: retZ },
+              target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
+              triggerRadius: 1.5
+            }
+          );
+        }
       }
     });
 
@@ -837,6 +887,170 @@ export class World {
       part.visible = false; this.bridge.add(part);
     }
     for (const x of [3.6, 10.4]) for (const z of [-1.85, 1.85]) { this.cylinder(this.scene, x, .65, z, .23, .3, 1.3, 0xcac09e); this.sphere(this.scene, x, 1.4, z, .28, 0xf4d37c); }
+  }
+
+  private createLakeFallback(id: number, cx: number, cz: number, color = 0x8ec963): THREE.Object3D {
+    const disc = this.cylinder(this.scene, cx, -1.25, cz, LAKE_FALLBACK_RADIUS, LAKE_FALLBACK_RADIUS, 2.5, color, 32);
+    disc.receiveShadow = true;
+    this.lakeFallbackDiscs.set(id, disc);
+    return disc;
+  }
+
+  private loadLakeSanctuaries() {
+    const sanctuaries = [
+      { id: 1, center: { x: 110, z: -60 }, template: 'GRID_SANCTUARY' },
+      { id: 2, center: { x: 150, z: -60 }, template: 'GRID_SANCTUARY' },
+      { id: 3, center: { x: 110, z: 60 }, template: 'CIRCLE_SANCTUARY' },
+      { id: 4, center: { x: 150, z: 60 }, template: 'GRID_SANCTUARY' },
+      { id: 5, center: { x: 190, z: 0 }, template: 'CIRCLE_SANCTUARY' }
+    ];
+    for (const s of sanctuaries) {
+      this.loadLakeMap(s);
+    }
+  }
+
+  private getOrLoadLakeBaseModel(): Promise<THREE.Group | null> {
+    if (this.cachedLakeModel) return Promise.resolve(this.cachedLakeModel);
+    if (this.lakeLoadingPromise) return this.lakeLoadingPromise;
+    if (typeof window === 'undefined') return Promise.resolve(null);
+
+    this.lakeLoadingPromise = new Promise<THREE.Group | null>((resolve) => {
+      const loader = new GLTFLoader();
+      const baseUrl = import.meta.env?.BASE_URL ?? '/';
+      const url = `${baseUrl}3dmodel/maps/cozy_lake.glb`;
+
+      loader.load(
+        url,
+        (gltf) => {
+          const base = gltf.scene;
+
+          // 1. Remove unwanted/junk objects
+          const junkPrefixes = ['cloud', 'psolid', 'pcube', 'psphere', 'pcylinder', 'polysurface', 'box003'];
+          const toRemove: THREE.Object3D[] = [];
+          base.traverse((child) => {
+            const name = (child.name || '').toLowerCase();
+            if (junkPrefixes.some((p) => name.startsWith(p))) {
+              toRemove.push(child);
+            }
+          });
+          toRemove.forEach((child) => child.parent?.remove(child));
+
+          // 2. Level the island so water plane normal points exactly up (0, 1, 0)
+          const waterNormal = new THREE.Vector3(0.0083827, 0.9999342, 0.0078334).normalize();
+          const levelQuat = new THREE.Quaternion().setFromUnitVectors(waterNormal, new THREE.Vector3(0, 1, 0));
+          base.applyQuaternion(levelQuat);
+
+          // 3. Enable shadows across all meshes
+          base.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+            }
+          });
+
+          this.cachedLakeModel = base;
+          resolve(base);
+        },
+        undefined,
+        (err) => {
+          console.error('Failed to load cozy_lake.glb:', err);
+          resolve(null);
+        }
+      );
+    });
+
+    return this.lakeLoadingPromise;
+  }
+
+  private async loadLakeMap(zone: { id: number; center: { x: number; z: number }; template?: string }) {
+    if (this.lakeModels.has(zone.id)) return;
+    const baseModel = await this.getOrLoadLakeBaseModel();
+    if (!baseModel) return;
+
+    if (this.lakeModels.has(zone.id)) return;
+
+    const clone = baseModel.clone(true);
+    const lakeGroup = new THREE.Group();
+    lakeGroup.position.set(zone.center.x, 0, zone.center.z);
+    lakeGroup.rotation.y = lakeRotationForZone(zone.id);
+    lakeGroup.scale.setScalar(LAKE_SCALE);
+
+    clone.position.set(-LAKE_MODEL_CENTER.x, -17.5, -LAKE_MODEL_CENTER.z);
+    lakeGroup.add(clone);
+    lakeGroup.updateMatrixWorld(true);
+
+    const anchors = computeLakeAnchors(zone.center);
+    const zoneMonoliths = this.monoliths.filter(
+      (m) => Math.hypot(m.position.x - zone.center.x, m.position.z - zone.center.z) < 20
+    );
+    const expectedMonolithPos =
+      zoneMonoliths.length > 0
+        ? zoneMonoliths.map((m) => m.position)
+        : computeLakeEntityPositions((zone.template as any) ?? 'GRID_SANCTUARY', 8, zone.center);
+
+    const lakeObstacles: Obstacle[] = [];
+    const processedTrunks = new Set<string>();
+
+    lakeGroup.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const name = (mesh.name || mesh.parent?.name || '').toLowerCase();
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+
+        const distToCenter = Math.hypot(worldPos.x - zone.center.x, worldPos.z - zone.center.z);
+        const distToPortal = Math.hypot(worldPos.x - anchors.returnPortal.x, worldPos.z - anchors.returnPortal.z);
+        const distToMonolith =
+          expectedMonolithPos.length > 0
+            ? Math.min(...expectedMonolithPos.map((p) => Math.hypot(worldPos.x - p.x, worldPos.z - p.z)))
+            : 999;
+
+        const isProp =
+          name.includes('stone') ||
+          name.includes('mushroom') ||
+          name.includes('rock') ||
+          name.includes('pipe') ||
+          name.includes('boat') ||
+          name.includes('cylinder001');
+
+        if (isProp) {
+          if (distToCenter < 3.5 || distToPortal < 3.0 || distToMonolith < 2.5) {
+            mesh.visible = false;
+          }
+        }
+
+        if (name.includes('tree') || name.includes('pine')) {
+          if (distToPortal < 3.0 || distToMonolith < 2.5) {
+            mesh.visible = false;
+          } else if (name.includes('wood') || name.includes('trunk')) {
+            const key = `${worldPos.x.toFixed(1)}_${worldPos.z.toFixed(1)}`;
+            if (!processedTrunks.has(key)) {
+              processedTrunks.add(key);
+              lakeObstacles.push({
+                x: Number(worldPos.x.toFixed(2)),
+                z: Number(worldPos.z.toFixed(2)),
+                radius: 0.5
+              });
+            }
+          }
+        }
+      }
+    });
+
+    if (lakeObstacles.length > 0) {
+      this.obstacles.push(...lakeObstacles);
+      this.spatial.addObstacles(lakeObstacles);
+    }
+
+    const fallback = this.lakeFallbackDiscs.get(zone.id);
+    if (fallback) {
+      this.scene.remove(fallback);
+      this.lakeFallbackDiscs.delete(zone.id);
+    }
+
+    this.scene.add(lakeGroup);
+    this.lakeModels.set(zone.id, lakeGroup);
   }
 
   private loadParkMap(zone: RemoteZoneConfig) {

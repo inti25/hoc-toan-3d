@@ -7,6 +7,7 @@ import {
   type RemoteProblem,
   type ExplorerProfile
 } from '../data/remoteTypes';
+import { usesLakeTerrain, isValidLakePosition } from '../data/lakeLand';
 import { resolveImageUrl, extractMarkdownImage } from './imageResolver';
 import {
   EXPLORER_PROFILE_KEY,
@@ -461,9 +462,16 @@ export function resolveZoneProblemsWithPositions(
     zone.depth
   );
 
+  const isLake = usesLakeTerrain(zone.template);
+
   return problems.map((prob, idx) => {
-    // Nếu có tọa độ tùy chỉnh PosX/PosZ thì ưu tiên, nếu không dùng tọa độ sinh tự động
-    const finalPos = prob.position || proceduralCoords[idx] || { x: zone.center.x, z: zone.center.z };
+    // Nếu có tọa độ tùy chỉnh PosX/PosZ thì ưu tiên, nhưng nếu là đảo hồ mà tọa độ cũ rơi vào mặt nước thì nắn về vành bờ
+    let finalPos = prob.position;
+    if (finalPos && isLake && !isValidLakePosition(zone.center, finalPos)) {
+      finalPos = null;
+    }
+    finalPos = finalPos || proceduralCoords[idx] || { x: zone.center.x, z: zone.center.z };
+
     return {
       ...prob,
       zoneId: zone.id,

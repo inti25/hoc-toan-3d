@@ -127,9 +127,10 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
 
 
   if (deferredSpawnPosition && world) {
-    if (world.spatial.isWithinLand(deferredSpawnPosition.x, deferredSpawnPosition.z)) {
-      world.teleport(deferredSpawnPosition.x, deferredSpawnPosition.z);
-      queueSavePosition(deferredSpawnPosition.x, deferredSpawnPosition.z, true);
+    const safe = world.spatial.resolveSafeSpawn(deferredSpawnPosition.x, deferredSpawnPosition.z);
+    if (safe) {
+      world.teleport(safe.x, safe.z);
+      queueSavePosition(safe.x, safe.z, true);
       deferredSpawnPosition = null;
     }
   }
@@ -1460,8 +1461,13 @@ try {
   // Khôi phục Tọa Độ Thám Hiểm Lưu Lại (Saved Adventure Coordinates) hoặc lưu tạm Deferred Spawn nếu đảo chưa nạp
   if (init.started && init.position) {
     lastSavedPos = { x: init.position.x, z: init.position.z };
-    if (world.spatial.isWithinLand(init.position.x, init.position.z)) {
-      world.setInitialPosition(init.position.x, init.position.z);
+    const safe = world.spatial.resolveSafeSpawn(init.position.x, init.position.z);
+    if (safe) {
+      world.setInitialPosition(safe.x, safe.z);
+      if (safe.x !== init.position.x || safe.z !== init.position.z) {
+        lastSavedPos = safe;
+        queueSavePosition(safe.x, safe.z, true);
+      }
     } else {
       deferredSpawnPosition = init.position;
     }

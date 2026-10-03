@@ -73,15 +73,19 @@ Hệ thống cấu trúc dữ liệu ánh xạ toàn bộ bài toán, thông s�
 _Avoid_: Bảng câu hỏi, Danh sách bài tập
 
 **Ốc Đảo Chuyên Đề (Thematic Zone Sanctuary)**:
-Một trong 5 hòn đảo luyện tập compact biệt lập (diện tích tương đương Vườn Hoa Tri Thức), bao bọc cụm Bia Đá Tri Thức cùng chủ đề quanh một đài biểu tượng và nối với nhau qua Cổng Dịch Chuyển.
+Một trong 5 hòn đảo luyện tập compact biệt lập (diện tích tương đương Vườn Hoa Tri Thức) mang Địa Hình Hồ Yên Bình, bao bọc cụm Bia Đá Tri Thức cùng chủ đề quanh một đài biểu tượng và nối với nhau qua Cổng Dịch Chuyển.
 _Avoid_: Phân vùng, Cụm level, Bãi quái
+
+**Địa Hình Hồ Yên Bình (Cozy Lake Terrain)**:
+Cảnh quan đảo tròn có hồ nước, bờ cát, cây cối, đá và nấm, dùng chung cho mọi vùng đất mang Bản Mẫu GRID_SANCTUARY hoặc CIRCLE_SANCTUARY. Màu nhận diện của từng vùng thể hiện qua cổng, hào quang bia đá và đài biểu tượng, không nhuộm lên địa hình.
+_Avoid_: Map hồ, Đảo hộp cũ, Nền cỏ
 
 **Đền Cổng Archimedes (Archimedes Gatehouse)**:
 Quảng trường trung chuyển kiến trúc đá cổ kính chứa các Cổng Dịch Chuyển ánh sáng nối trực tiếp tới 5 Ốc Đảo Chuyên Đề và Vườn Hoa Tri Thức.
 _Avoid_: Sảnh chờ, Điểm dịch chuyển chung
 
 **Bản Mẫu Vùng Đất (Zone Template)**:
-Khuôn mẫu định nghĩa hình thái không gian 3D (loại địa hình, kích thước đảo, bố cục thực thể tương tác) và chuẩn dữ liệu câu hỏi đi kèm.
+Khuôn mẫu định nghĩa hình thái không gian 3D (loại địa hình, kích thước đảo, bố cục thực thể tương tác) và chuẩn dữ liệu câu hỏi đi kèm. GRID_SANCTUARY và CIRCLE_SANCTUARY cùng dùng Địa Hình Hồ Yên Bình và chỉ khác nhau ở bố cục bia đá (hai hàng so với vòng tròn).
 _Avoid_: Scene preset, Layout mẫu, Map template
 
 **Sổ Đăng Ký Vùng Đất (Zone Registry)**:

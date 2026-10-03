@@ -138,12 +138,14 @@ test('Seam 2: SpatialWorld permits movement on compact islands and blocks void b
   assert.equal(world.canMove(60, 0), true, 'Can move on Gatehouse Hub');
   assert.equal(world.canMove(52, 0), true, 'Can move near Gatehouse return portal');
 
-  // 3. 5 Compact Sanctuary Islands
-  assert.equal(world.canMove(110, -60), true, 'Can move in Sanctuary 1 (Thung Lũng Tính Toán)');
-  assert.equal(world.canMove(150, -60), true, 'Can move in Sanctuary 2 (Suối Nguồn Dãy Số)');
-  assert.equal(world.canMove(110, 60), true, 'Can move in Sanctuary 3 (Đồi Thời Gian)');
-  assert.equal(world.canMove(150, 60), true, 'Can move in Sanctuary 4 (Rừng Hình Học)');
-  assert.equal(world.canMove(190, 0), true, 'Can move in Sanctuary 5 (Đỉnh Núi Tư Duy Sao)');
+  // 3. 5 Compact Sanctuary Islands (Cozy Lake shore ring: d between 13.5 and 18.0)
+  assert.equal(world.canMove(94.5, -60), true, 'Can move on shore ring in Sanctuary 1 (Thung Lũng Tính Toán)');
+  assert.equal(world.canMove(134.5, -60), true, 'Can move on shore ring in Sanctuary 2 (Suối Nguồn Dãy Số)');
+  assert.equal(world.canMove(94.5, 60), true, 'Can move on shore ring in Sanctuary 3 (Đồi Thời Gian)');
+  assert.equal(world.canMove(134.5, 60), true, 'Can move on shore ring in Sanctuary 4 (Rừng Hình Học)');
+  assert.equal(world.canMove(174.5, 0), true, 'Can move on shore ring in Sanctuary 5 (Đỉnh Núi Tư Duy Sao)');
+  assert.equal(world.canMove(110, -55), true, 'Can move in lake water in Sanctuary 1 (Thung Lũng Tính Toán)');
+  assert.equal(world.canMove(110, -60), false, 'Central monument obstacle in Sanctuary 1 is non-walkable');
 
   // 4. Void / Cloud Sea between islands must be blocked
   assert.equal(world.canMove(82, 0), false, 'Void between Hub and Sanctuary 5 must be blocked');
@@ -191,12 +193,12 @@ test('Seam 3: Walk-through portal transit transports player between islands with
   const t2 = world.checkPortalTransit(1.5); // 1.5s passes, cooldown expired
   assert.ok(t2, 'Transit triggered from Hub to Sanctuary 1');
   assert.equal(t2?.id, 'hub_to_z1');
-  assert.equal(world.getPose().x, 102);
-  assert.equal(world.getPose().z, -60);
+  assert.equal(world.getPose().x, 94.5);
+  assert.equal(world.getPose().z, -62.6);
   assert.equal(world.getCurrentLocationName(), 'Thung Lũng Tính Toán');
 
-  // 5. Walk into Sanctuary 1 return portal at (100, -60)
-  world.teleport(100, -60);
+  // 5. Walk into Sanctuary 1 return portal at (94.3, -60)
+  world.teleport(94.3, -60);
   const t3 = world.checkPortalTransit(1.5);
   assert.ok(t3, 'Transit triggered from Sanctuary 1 back to Hub');
   assert.equal(t3?.id, 'z1_to_hub');

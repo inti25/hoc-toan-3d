@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import type { GeometryBuilder } from './geom';
+import { computeLakeAnchors } from '../data/lakeLand';
 
 export interface Obstacle {
   x: number;
@@ -95,12 +96,18 @@ export class ArchimedesZoneBuilder {
     // 7. Hub -> Zone 5 (Đỉnh Núi Tư Duy Sao)
     this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
 
-    // 8-12. Sanctuary Return Portals back to Hub
-    this.createPortalArch(100, -60, 0x38bdf8, 0);
-    this.createPortalArch(140, -60, 0x38bdf8, 0);
-    this.createPortalArch(100, 60, 0x38bdf8, 0);
-    this.createPortalArch(138, 60, 0x38bdf8, 0);
-    this.createPortalArch(181, 0, 0x38bdf8, 0);
+    // 8-12. Sanctuary Return Portals back to Hub (tọa độ trên vành bờ Địa Hình Hồ Yên Bình)
+    const STATIC_SANCTUARIES = [
+      { x: 110, z: -60 },
+      { x: 150, z: -60 },
+      { x: 110, z: 60 },
+      { x: 150, z: 60 },
+      { x: 190, z: 0 }
+    ];
+    STATIC_SANCTUARIES.forEach((c) => {
+      const anchors = computeLakeAnchors(c);
+      this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
+    });
   }
 
   createMonolithEntity(id: number | string, x: number, z: number, color: number, title?: string): MonolithItem {
