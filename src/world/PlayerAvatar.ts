@@ -6,6 +6,17 @@ import { GeometryBuilder } from './geom';
 
 export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa';
 
+interface ElsaArmRig {
+  leftUpperArm: THREE.Bone;
+  rightUpperArm: THREE.Bone;
+  leftForearm?: THREE.Bone;
+  rightForearm?: THREE.Bone;
+  leftUpperBaseZ: number;
+  rightUpperBaseZ: number;
+  leftForeBaseZ: number;
+  rightForeBaseZ: number;
+}
+
 export interface PlayerAvatarOptions {
   onModelLoaded?: (avatarId: Avatar3DId) => void;
 }
@@ -15,9 +26,9 @@ export interface PlayerAvatarOptions {
  *
  * Encapsulates:
  * - 3D GLTF model loading, caching, scaling, and bounding box normalization
- * - Instant procedural fallback mesh generation for all 6 characters
+ * - Instant procedural fallback mesh generation for all 7 characters
  * - Progressive loading upgrade with celebration callback
- * - Locomotion animations (leg swing for primitive meshes, hop/wobble for 3D GLTF models)
+ * - Locomotion animations (leg swing for primitive meshes, arm-swing/hop/wobble for 3D GLTF models)
  */
 export class PlayerAvatar {
   /** Root group added to the game world's player hierarchy */
@@ -25,6 +36,8 @@ export class PlayerAvatar {
 
   private geom = new GeometryBuilder();
   private legs: THREE.Mesh[] = [];
+  private proceduralArms: THREE.Mesh[] = [];
+  private elsaArmRig?: ElsaArmRig;
   private gltfLoader = new GLTFLoader();
   private gltfCache = new Map<Avatar3DId, THREE.Group>();
   private gltfActiveModel?: THREE.Group;
@@ -69,17 +82,50 @@ export class PlayerAvatar {
       this.legs.forEach((leg, i) => {
         leg.rotation.x = Math.sin(time * 12 + i * Math.PI) * 0.55;
       });
+      this.proceduralArms.forEach((arm, i) => {
+        arm.rotation.x = Math.sin(time * 10 + (i === 0 ? 0 : Math.PI)) * 0.45;
+      });
       if (this.legs.length === 0 && this.gltfActiveModel) {
-        this.gltfActiveModel.position.y = Math.abs(Math.sin(time * 12)) * 0.12;
-        this.gltfActiveModel.rotation.z = Math.sin(time * 6) * 0.05;
+        this.gltfActiveModel.position.y = Math.abs(Math.sin(time * 10)) * 0.10;
+        this.gltfActiveModel.rotation.z = Math.sin(time * 5) * 0.03;
+      }
+      if (this.elsaArmRig) {
+        // Natural out-of-phase arm swing
+        const swing = Math.sin(time * 10) * 0.35;
+        this.elsaArmRig.leftUpperArm.rotation.z = this.elsaArmRig.leftUpperBaseZ - swing;
+        this.elsaArmRig.rightUpperArm.rotation.z = this.elsaArmRig.rightUpperBaseZ + swing;
+
+        // Graceful subtle elbow flexion on forward swing
+        if (this.elsaArmRig.leftForearm) {
+          const elbowFlex = Math.max(0, swing) * 0.25;
+          this.elsaArmRig.leftForearm.rotation.z = this.elsaArmRig.leftForeBaseZ - elbowFlex;
+        }
+        if (this.elsaArmRig.rightForearm) {
+          const elbowFlex = Math.max(0, -swing) * 0.25;
+          this.elsaArmRig.rightForearm.rotation.z = this.elsaArmRig.rightForeBaseZ - elbowFlex;
+        }
       }
     } else {
       this.legs.forEach(leg => {
         leg.rotation.x *= 0.8;
       });
+      this.proceduralArms.forEach(arm => {
+        arm.rotation.x *= 0.8;
+      });
       if (this.gltfActiveModel) {
         this.gltfActiveModel.position.y = 0;
         this.gltfActiveModel.rotation.z *= 0.8;
+      }
+      if (this.elsaArmRig) {
+        // Smooth lerp damping back to rest pose
+        this.elsaArmRig.leftUpperArm.rotation.z += (this.elsaArmRig.leftUpperBaseZ - this.elsaArmRig.leftUpperArm.rotation.z) * 0.2;
+        this.elsaArmRig.rightUpperArm.rotation.z += (this.elsaArmRig.rightUpperBaseZ - this.elsaArmRig.rightUpperArm.rotation.z) * 0.2;
+        if (this.elsaArmRig.leftForearm) {
+          this.elsaArmRig.leftForearm.rotation.z += (this.elsaArmRig.leftForeBaseZ - this.elsaArmRig.leftForearm.rotation.z) * 0.2;
+        }
+        if (this.elsaArmRig.rightForearm) {
+          this.elsaArmRig.rightForearm.rotation.z += (this.elsaArmRig.rightForeBaseZ - this.elsaArmRig.rightForearm.rotation.z) * 0.2;
+        }
       }
     }
   }
@@ -106,6 +152,7 @@ export class PlayerAvatar {
       const clone = SkeletonUtils.clone(cached) as THREE.Group;
       this.group.add(clone);
       this.gltfActiveModel = clone;
+      this.attachArmRig(clone, avatarId);
       return;
     }
 
@@ -142,10 +189,23 @@ export class PlayerAvatar {
           raw.updateMatrixWorld(true);
         }
 
-        // Compute bounds and scale to target height ~2.2
+        // For Elsa: calibrate rest pose by lowering arms from A-pose to graceful sides
+        if (avatarId === 'elsa') {
+          raw.traverse(c => {
+            if (c.name === 'Bip001_L_UpperArm_060' && (c as THREE.Bone).isBone) {
+              c.rotation.y += 0.60;
+            }
+            if (c.name === 'Bip001_R_UpperArm_070' && (c as THREE.Bone).isBone) {
+              c.rotation.y -= 0.60;
+            }
+          });
+          raw.updateMatrixWorld(true);
+        }
+
+        // Compute bounds and scale to target height ~2.2 for chibi, 4.4 for Elsa (scale x2)
         const box = new THREE.Box3().setFromObject(raw);
         const size = box.getSize(new THREE.Vector3());
-        const targetHeight = 2.2;
+        const targetHeight = avatarId === 'elsa' ? 3.6 : 2.2;
         const scale = targetHeight / (size.y > 0 ? size.y : 1);
         raw.scale.setScalar(scale);
         raw.updateMatrixWorld(true);
@@ -172,6 +232,7 @@ export class PlayerAvatar {
           const clone = SkeletonUtils.clone(wrapper) as THREE.Group;
           this.group.add(clone);
           this.gltfActiveModel = clone;
+          this.attachArmRig(clone, avatarId);
           this.options?.onModelLoaded?.(avatarId);
         }
       },
@@ -245,7 +306,38 @@ export class PlayerAvatar {
       });
     }
     this.legs = [];
+    this.proceduralArms = [];
     this.gltfActiveModel = undefined;
+    this.elsaArmRig = undefined;
+  }
+
+  private attachArmRig(clone: THREE.Group, avatarId: Avatar3DId): void {
+    if (avatarId === 'elsa') {
+      let leftUpper: THREE.Bone | undefined;
+      let rightUpper: THREE.Bone | undefined;
+      let leftFore: THREE.Bone | undefined;
+      let rightFore: THREE.Bone | undefined;
+
+      clone.traverse(c => {
+        if (c.name === 'Bip001_L_UpperArm_060' && (c as THREE.Bone).isBone) leftUpper = c as THREE.Bone;
+        if (c.name === 'Bip001_R_UpperArm_070' && (c as THREE.Bone).isBone) rightUpper = c as THREE.Bone;
+        if (c.name === 'Bip001_L_Forearm_061' && (c as THREE.Bone).isBone) leftFore = c as THREE.Bone;
+        if (c.name === 'Bip001_R_Forearm_071' && (c as THREE.Bone).isBone) rightFore = c as THREE.Bone;
+      });
+
+      if (leftUpper && rightUpper) {
+        this.elsaArmRig = {
+          leftUpperArm: leftUpper,
+          rightUpperArm: rightUpper,
+          leftForearm: leftFore,
+          rightForearm: rightFore,
+          leftUpperBaseZ: leftUpper.rotation.z,
+          rightUpperBaseZ: rightUpper.rotation.z,
+          leftForeBaseZ: leftFore ? leftFore.rotation.z : 0,
+          rightForeBaseZ: rightFore ? rightFore.rotation.z : 0,
+        };
+      }
+    }
   }
 
   // ─── Private: Procedural Character Builders ───────────────────────────────
@@ -444,7 +536,10 @@ export class PlayerAvatar {
   }
 
   private buildElsaMesh(): void {
-    const root = this.group;
+    const elsaGroup = new THREE.Group();
+    elsaGroup.scale.setScalar(1.2);
+    this.group.add(elsaGroup);
+    const root = elsaGroup;
 
     // Torso (ice-blue royal bodice)
     this.box(root, 0, 0.95, 0, 0.64, 0.78, 0.42, 0x38bdf8);
@@ -455,11 +550,12 @@ export class PlayerAvatar {
     // Shimmering translucent ice cape on back
     this.box(root, 0, 0.96, -0.25, 0.62, 0.95, 0.06, 0xbae6fd);
 
-    // Arms: fair skin with icy cuffs
-    this.box(root, -0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
-    this.box(root, 0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
-    this.box(root, -0.44, 1.15, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
-    this.box(root, 0.44, 1.15, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
+    // Arms: fair skin with icy cuffs (stored for procedural swing)
+    const leftArm = this.box(root, -0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
+    const rightArm = this.box(root, 0.44, 0.96, 0, 0.18, 0.62, 0.20, 0xffd5ae);
+    this.box(leftArm, 0, 0.19, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
+    this.box(rightArm, 0, 0.19, 0, 0.20, 0.24, 0.22, 0x7dd3fc);
+    this.proceduralArms.push(leftArm, rightArm);
 
     // Legs with crystal shoes for walk animation
     for (const x of [-0.15, 0.15]) {

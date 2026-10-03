@@ -1105,7 +1105,8 @@ export class World {
   private animate = () => {
     this.frame = requestAnimationFrame(this.animate); const dt = Math.min(this.clock.getDelta(), .05); this.time += dt;
     if (this.active && !this.paused) this.movement(dt);
-    const wanted = this.active ? new THREE.Vector3(this.player.position.x, 0, this.player.position.z) : new THREE.Vector3(-7, 0, 0);
+    const wantedY = this.avatar.activeAvatar === 'elsa' ? 0.7 : 0;
+    const wanted = this.active ? new THREE.Vector3(this.player.position.x, wantedY, this.player.position.z) : new THREE.Vector3(-7, 0, 0);
     this.target.lerp(wanted, 1 - Math.exp(-dt * 3));
     const distance = this.active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
     this.camera.position.set(this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, this.target.y + Math.sin(this.pitch) * distance, this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance);
