@@ -147,37 +147,39 @@ export class ChallengeDialog {
   }
 
   initLightboxListeners(): void {
-    const lightbox = document.getElementById('image-lightbox') as HTMLDialogElement | null;
-    const closeBtn = document.getElementById('lightbox-close');
-
-    if (closeBtn) {
-      closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        closeLightbox();
-      };
-    }
-
-    if (lightbox) {
-      lightbox.addEventListener('click', (e) => {
-        if (e.target === lightbox || (e.target as HTMLElement).classList.contains('lightbox-backdrop')) {
-          closeLightbox();
-        }
-      });
-
-      lightbox.addEventListener('cancel', (e) => {
-        e.preventDefault();
-        closeLightbox();
-      });
-    }
-
     document.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const container = target.closest<HTMLElement>('.question-image-container');
-      if (container && !container.classList.contains('img-error')) {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // 1. Close when clicking #lightbox-close (or any element inside it, e.g. SVG path)
+      const closeBtn = target.closest?.('#lightbox-close');
+      if (closeBtn) {
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        closeLightbox();
+        return;
+      }
+
+      // 2. Close when clicking the backdrop overlay or the dialog outside the wrapper
+      if (target.classList?.contains('lightbox-backdrop') || target.id === 'image-lightbox') {
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        closeLightbox();
+        return;
+      }
+
+      // 3. Open when clicking on a question image container
+      const container = target.closest?.<HTMLElement>('.question-image-container');
+      if (container && !container.classList?.contains('img-error')) {
         const img = container.querySelector<HTMLImageElement>('.question-inline-img');
         if (img && img.src) {
           openLightbox(img.src, img.alt);
         }
+      }
+    });
+
+    document.addEventListener('cancel', (e) => {
+      if ((e.target as HTMLElement)?.id === 'image-lightbox') {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        closeLightbox();
       }
     });
   }

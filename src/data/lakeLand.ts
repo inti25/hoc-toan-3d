@@ -73,8 +73,8 @@ export function computeLakeAnchors(center: { x: number; z: number }): LakeAnchor
     returnPortal: {
       x: round1(center.x + Math.cos(portalAngle) * LAKE_PORTAL_RADIUS),
       z: round1(center.z + Math.sin(portalAngle) * LAKE_PORTAL_RADIUS),
-      // Trụ cổng nằm dọc phương bán kính, lối đi xuyên cổng chạy dọc vành.
-      rotationY: Math.PI / 2 - portalAngle
+      // Cổng úp mặt vào hồ: khung cổng chạy dọc tiếp tuyến bờ hồ, mặt cổng mở hướng thẳng vào tâm hồ (+X).
+      rotationY: 0
     },
     arrival: {
       x: round1(center.x + Math.cos(arrivalAngle) * LAKE_PORTAL_RADIUS),

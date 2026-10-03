@@ -77,7 +77,7 @@ Một trong 5 hòn đảo luyện tập compact biệt lập (diện tích tươ
 _Avoid_: Phân vùng, Cụm level, Bãi quái
 
 **Địa Hình Hồ Yên Bình (Cozy Lake Terrain)**:
-Cảnh quan đảo tròn có hồ nước, bờ cát, cây cối, đá và nấm, dùng chung cho mọi vùng đất mang Bản Mẫu GRID_SANCTUARY hoặc CIRCLE_SANCTUARY. Màu nhận diện của từng vùng thể hiện qua cổng, hào quang bia đá và đài biểu tượng, không nhuộm lên địa hình.
+Cảnh quan đảo tròn có hồ nước, bờ cát, cây cối, đá và nấm, dùng chung cho mọi vùng đất mang Bản Mẫu GRID_SANCTUARY hoặc CIRCLE_SANCTUARY. Cổng Dịch Chuyển quay về được đặt trên bờ cát phía tây, mặt cổng úp trực diện vào lòng hồ nước và đài kỷ niệm trung tâm. Màu nhận diện của từng vùng thể hiện qua cổng, hào quang bia đá và đài biểu tượng, không nhuộm lên địa hình.
 _Avoid_: Map hồ, Đảo hộp cũ, Nền cỏ
 
 **Đền Cổng Archimedes (Archimedes Gatehouse)**:

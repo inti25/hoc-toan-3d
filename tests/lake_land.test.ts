@@ -54,7 +54,7 @@ test('computeLakeAnchors positions return portal and arrival on the shore ring',
   // Return portal sits on west side
   assert.equal(anchors.returnPortal.x, 94.3);
   assert.equal(anchors.returnPortal.z, -60);
-  assert.equal(anchors.returnPortal.rotationY, -Math.PI / 2);
+  assert.equal(anchors.returnPortal.rotationY, 0);
 
   // Arrival sits on shore ring
   const arrDist = Math.hypot(anchors.arrival.x - center.x, anchors.arrival.z - center.z);

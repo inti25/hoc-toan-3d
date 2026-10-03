@@ -74,7 +74,6 @@ const challengeDialog = new ChallengeDialog({
   logRemoteProgress,
   onOpenMap: (zoneId) => openArchimedesMapDialog(zoneId)
 });
-challengeDialog.initLightboxListeners();
 
 function getThemeBadgeIcon(theme?: string): string {
   switch (theme) {
@@ -246,7 +245,7 @@ app.innerHTML = `
     <dialog id="image-lightbox" class="image-lightbox" aria-label="Phóng to hình ảnh">
       <div class="lightbox-backdrop"></div>
       <div class="lightbox-wrapper">
-        <button id="lightbox-close" class="lightbox-close-btn" aria-label="Đóng phóng to">${icon('close')}</button>
+        <button id="lightbox-close" type="button" class="lightbox-close-btn" aria-label="Đóng phóng to">${icon('close')}</button>
         <img id="lightbox-img" class="lightbox-img" src="" alt="Hình ảnh chi tiết" />
       </div>
     </dialog>
@@ -367,6 +366,7 @@ $('dialog').addEventListener('close', () => {
 });
 
 $('close-dialog').onclick = closeDialog;
+challengeDialog.initLightboxListeners();
 
 function initWelcomeProfile() {
   const profile = getExplorerProfile();
