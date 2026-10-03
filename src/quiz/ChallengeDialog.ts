@@ -1,4 +1,3 @@
-import { Vector3 } from 'three';
 import type { Adventure } from '../core/adventure';
 import type { World } from '../world/World';
 import { BRIDGE_PARTS } from '../data/config';
@@ -15,6 +14,21 @@ import {
   type ArchimedesChallenge
 } from './session';
 import type { RemoteZoneConfig, RemoteProblem, RemoteStep } from '../data/remoteTypes';
+import type {
+  ChallengeSpec,
+  ChallengeOutcome,
+  ChallengePorts,
+  ChallengeSessionPort,
+  ChallengeRewardSummary
+} from './types';
+
+export type {
+  ChallengeSpec,
+  ChallengeOutcome,
+  ChallengePorts,
+  ChallengeSessionPort,
+  ChallengeRewardSummary
+};
 
 export const icons: Record<string, string> = {
   crown: '<path d="m3 6 5 4 4-7 4 7 5-4-2 13H5Z"/><path d="M8 15h8"/>',
@@ -118,21 +132,108 @@ export interface ChallengeDialogHost {
  * - Image zoom lightbox integration
  * - Multiplication, Flower, and Archimedes Trial modals
  */
-export class ChallengeDialog {
+export class ChallengeDialog implements ChallengeSessionPort {
   private currentSession?: ChallengeSession;
   private isMultiSlot = false;
   private currentSlotValues: string[] = [];
   private activeSlotIndex = 0;
   private currentInputValue = '';
   private currentMode: 'bridge' | 'practice' = 'bridge';
+  private host: ChallengeDialogHost;
+  private activeChallenge?: {
+    spec: ChallengeSpec;
+    startTime: number;
+    resolve: (outcome: ChallengeOutcome) => void;
+  };
 
-  constructor(private host: ChallengeDialogHost) {}
+  constructor(hostOrPorts: ChallengeDialogHost | ChallengePorts) {
+    if ('ui' in hostOrPorts) {
+      this.host = {
+        openDialog: hostOrPorts.ui.openDialog,
+        closeDialog: hostOrPorts.ui.closeDialog,
+        toast: hostOrPorts.ui.toast,
+        updateHUD: hostOrPorts.ui.updateHUD,
+        onOpenMap: hostOrPorts.ui.onOpenMap,
+        playCue: hostOrPorts.audio.playCue,
+        burstPlayer: hostOrPorts.world.burstPlayer,
+        getWorld: hostOrPorts.world.getWorld,
+        adventure: hostOrPorts.adventure,
+        logRemoteProgress: hostOrPorts.telemetry?.logRemoteProgress ?? (async () => {})
+      };
+    } else {
+      this.host = hostOrPorts;
+    }
+  }
+
+  /**
+   * Deep module seam: Runs any challenge specification,
+   * managing modal lifecycle, keypad interactions, tiered hints,
+   * sound cues, and progress persistence.
+   * Resolves when the challenge is solved or dismissed.
+   */
+  startChallenge(spec: ChallengeSpec): Promise<ChallengeOutcome> {
+    if (this.activeChallenge) {
+      this.resolveActiveChallenge({
+        spec: this.activeChallenge.spec,
+        status: 'dismissed',
+        isCorrect: false,
+        attempts: this.currentSession?.getAttempts() ?? 0,
+        durationMs: this.currentSession?.getDurationMs() ?? (Date.now() - this.activeChallenge.startTime)
+      });
+    }
+
+    return new Promise<ChallengeOutcome>((resolve) => {
+      this.activeChallenge = {
+        spec,
+        startTime: Date.now(),
+        resolve
+      };
+
+      switch (spec.type) {
+        case 'multiplication':
+          this.openMultiplication(spec.mode, spec.lastId);
+          break;
+        case 'flower':
+          this.openFlower(spec.index, spec.remoteFlowers);
+          break;
+        case 'park_tree':
+          this.openParkTree(spec.index, spec.questions, spec.zone);
+          break;
+        case 'archimedes':
+          this.openArchimedes(
+            spec.monolithRef,
+            spec.stepIndex ?? 0,
+            spec.questionsBySheet,
+            spec.zones,
+            spec.monolithProblems
+          );
+          break;
+      }
+    });
+  }
+
+  private resolveActiveChallenge(outcome: ChallengeOutcome): void {
+    if (this.activeChallenge) {
+      const resolver = this.activeChallenge.resolve;
+      this.activeChallenge = undefined;
+      resolver(outcome);
+    }
+  }
 
   getSession(): ChallengeSession | undefined {
     return this.currentSession;
   }
 
   resetSession(): void {
+    if (this.activeChallenge) {
+      this.resolveActiveChallenge({
+        spec: this.activeChallenge.spec,
+        status: 'dismissed',
+        isCorrect: false,
+        attempts: this.currentSession?.getAttempts() ?? 0,
+        durationMs: this.currentSession?.getDurationMs() ?? (Date.now() - this.activeChallenge.startTime)
+      });
+    }
     this.currentSession = undefined;
     this.currentInputValue = '';
     this.currentSlotValues = [];
@@ -399,6 +500,22 @@ export class ChallengeDialog {
 
       this.host.burstPlayer();
 
+      this.resolveActiveChallenge({
+        spec: this.activeChallenge?.spec ?? { type: 'multiplication', mode: this.currentMode, lastId: challenge.id },
+        status: 'solved',
+        isCorrect: true,
+        attempts: res.attempts,
+        durationMs: this.currentSession.getDurationMs(),
+        rewards: {
+          xp: 10,
+          coins: 5,
+          combo: delta.combo,
+          leveledUp: delta.leveledUp,
+          newLevel: delta.newLevel,
+          bridgeParts: delta.bridge
+        }
+      });
+
       if (delta.leveledUp) {
         this.host.playCue('celebrate');
         this.host.toast(`Bạn đã đạt cấp ${delta.newLevel}. Thật tuyệt vời!`);
@@ -558,6 +675,19 @@ export class ChallengeDialog {
           this.host.playCue('correct');
           if (feedback) feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
         }
+
+        this.resolveActiveChallenge({
+          spec: this.activeChallenge?.spec ?? { type: 'flower', index },
+          status: 'solved',
+          isCorrect: true,
+          attempts: res.attempts,
+          durationMs: this.currentSession.getDurationMs(),
+          rewards: {
+            xp: delta.alreadyBloomed ? 0 : 15,
+            coins: delta.alreadyBloomed ? 0 : 5,
+            bloomedIndex: index
+          }
+        });
 
         const hintBtn = document.getElementById('flower-hint');
         if (hintBtn) hintBtn.hidden = true;
@@ -824,6 +954,18 @@ export class ChallengeDialog {
           this.host.playCue('correct');
           if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`;
         }
+
+        this.resolveActiveChallenge({
+          spec: this.activeChallenge?.spec ?? { type: 'park_tree', index },
+          status: 'solved',
+          isCorrect: true,
+          attempts: res.attempts,
+          durationMs: this.currentSession.getDurationMs(),
+          rewards: {
+            xp: delta.alreadyAwakened ? 0 : 20,
+            coins: delta.alreadyAwakened ? 0 : 5
+          }
+        });
 
         const hintBtn = document.getElementById('park-tree-hint');
         if (hintBtn) hintBtn.hidden = true;
@@ -1122,6 +1264,20 @@ export class ChallengeDialog {
           }
 
           this.host.updateHUD();
+
+          this.resolveActiveChallenge({
+            spec: this.activeChallenge?.spec ?? { type: 'archimedes', monolithRef: monolithIndex, stepIndex },
+            status: 'solved',
+            isCorrect: true,
+            attempts: res.attempts,
+            durationMs: this.currentSession.getDurationMs(),
+            rewards: {
+              xp: delta.alreadyActivated ? 0 : delta.xpGained,
+              coins: delta.alreadyActivated ? 0 : delta.coinsGained,
+              monolithId: m.id
+            }
+          });
+
           const hintBtn = document.getElementById('arch-hint');
           if (hintBtn) hintBtn.hidden = true;
           const finishBtn = document.getElementById('arch-finish-btn') as HTMLButtonElement | null;

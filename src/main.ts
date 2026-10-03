@@ -1,6 +1,7 @@
 import './style.css';
-import { Vector3 } from 'three';
-import { World } from './world/World';
+import type { World } from './world/World';
+import { WorldLoader } from './boot/WorldLoader';
+import { HudPresenter } from './world/loop/HudPresenter';
 import { Adventure } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
 import { CHARACTERS, getCharacter } from './data/characters';
@@ -26,7 +27,9 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const adventure = new Adventure();
 const audio = new AudioManager();
-let world: World;
+const worldLoader = new WorldLoader();
+const hudPresenter = new HudPresenter();
+let world: World | null = null;
 let mode: 'bridge' | 'practice' = 'bridge';
 let currentDialog = '';
 let toastTimer = 0;
@@ -63,16 +66,24 @@ function queueSavePosition(x: number, z: number, immediate = false) {
 }
 
 const challengeDialog = new ChallengeDialog({
-  openDialog: (title, body, kind) => openDialog(title, body, kind),
-  closeDialog: () => closeDialog(),
-  playCue: (cue) => audio.playCue(cue),
-  updateHUD: () => updateHUD(),
-  burstPlayer: () => world.burst(world.player.position.clone().add(new Vector3(0, 1, 0))),
-  toast: (msg) => toast(msg),
+  ui: {
+    openDialog: (title, body, kind) => openDialog(title, body, kind),
+    closeDialog: () => closeDialog(),
+    toast: (msg) => toast(msg),
+    updateHUD: () => updateHUD(),
+    onOpenMap: (zoneId) => openArchimedesMapDialog(zoneId)
+  },
+  audio: {
+    playCue: (cue) => audio.playCue(cue)
+  },
+  world: {
+    burstPlayer: () => world?.burstPlayer(1.0),
+    getWorld: () => world!
+  },
   adventure,
-  getWorld: () => world,
-  logRemoteProgress,
-  onOpenMap: (zoneId) => openArchimedesMapDialog(zoneId)
+  telemetry: {
+    logRemoteProgress
+  }
 });
 
 function getThemeBadgeIcon(theme?: string): string {
@@ -346,8 +357,10 @@ function updateHUD() {
 }
 
 function openDialog(title: string, body: string, kind: string) {
-  world.paused = true;
-  world.clearInput();
+  if (world) {
+    world.paused = true;
+    world.clearInput();
+  }
   currentDialog = kind;
   $('dialog-content').innerHTML = `<h2 id="dialog-title">${title}</h2>${body}`;
   const dialog = $<HTMLDialogElement>('dialog');
@@ -359,8 +372,10 @@ function closeDialog() {
 }
 
 $('dialog').addEventListener('close', () => {
-  world.paused = false;
-  world.clearInput();
+  if (world) {
+    world.paused = false;
+    world.clearInput();
+  }
   currentDialog = '';
   challengeDialog.resetSession();
 });
@@ -380,13 +395,42 @@ function initWelcomeProfile() {
   }
 }
 
-function start() {
+async function start() {
   const nameInput = $<HTMLInputElement>('welcome-name');
   const classInput = $<HTMLInputElement>('welcome-class');
   const profile = saveExplorerProfile({
     nickname: nameInput?.value,
     className: classInput?.value
   } as any);
+
+  const playBtn = $('play');
+  const originalPlayHTML = playBtn.innerHTML;
+  playBtn.style.pointerEvents = 'none';
+  playBtn.innerHTML = `<span>⏳ Đang mở thế giới 3D...</span>`;
+  $('loading').hidden = false;
+  $('loading').innerHTML = '<div class="spinner"></div><p>Đang chuẩn bị thế giới 3D...</p>';
+
+  try {
+    if (!world) {
+      world = await ensureWorld();
+    }
+  } catch (error) {
+    playBtn.style.pointerEvents = '';
+    playBtn.innerHTML = originalPlayHTML;
+    $('loading').innerHTML =
+      '<strong>Chưa mở được thế giới 3D</strong><p>Hãy bật tăng tốc đồ họa trong trình duyệt, hoặc thử Chrome / Edge mới hơn.</p><button class="primary" id="retry-launch-btn">Thử lại</button>';
+    $('loading').hidden = false;
+    $('retry-launch-btn')?.addEventListener('click', () => {
+      $('loading').hidden = true;
+      void start();
+    });
+    console.error('Lỗi nạp thế giới 3D:', error);
+    return;
+  }
+
+  playBtn.style.pointerEvents = '';
+  playBtn.innerHTML = originalPlayHTML;
+  $('loading').hidden = true;
 
   adventure.setStarted(true);
   queueSavePosition(world.player.position.x, world.player.position.z, true);
@@ -414,8 +458,10 @@ function start() {
 
 function menu() {
   closeDialog();
-  world.active = false;
-  world.clearInput();
+  if (world) {
+    world.active = false;
+    world.clearInput();
+  }
   $('welcome').hidden = false;
   $('hud').hidden = true;
   $('world-caption').hidden = false;
@@ -445,13 +491,13 @@ for (const ch of CHARACTERS) {
   const btn = document.getElementById(`avatar-${ch.id}`);
   if (btn) btn.onclick = () => {
     adventure.setAvatar(ch.id);
-    world.setAvatar(ch.id);
+    world?.setAvatar(ch.id);
     updateHUD();
   };
 }
 
 function talk() {
-  if (!world.active || world.paused) return;
+  if (!world?.active || world.paused) return;
   if (!near) {
     toast('Hãy đến gần Milo — người bạn có chiếc mũ xanh bên bờ sông.');
     return;
@@ -475,7 +521,7 @@ function talk() {
 $('milo-label').onclick = talk;
 
 function interactAction() {
-  if (!world.active || world.paused) return;
+  if (!world || !world.active || world.paused) return;
   if (nearParkTree !== -1) {
     openParkTreeDialog(nearParkTree);
   } else if (nearMonolith !== -1) {
@@ -548,9 +594,9 @@ function openParkSelectionDialog() {
       const z = Number(btn.dataset.z);
       const name = btn.dataset.name || 'Công Viên';
       closeDialog();
-      world.teleport(x, z);
+      world?.teleport(x, z);
       audio.playCue('jump');
-      world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
+      world?.burstPlayer(1.2);
       queueSavePosition(x, z, true);
       toast(`✨ Chào mừng bạn đến ${name}!`);
     };
@@ -561,7 +607,11 @@ $('interact').onclick = interactAction;
 
 function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
   mode = nextMode;
-  challengeDialog.openMultiplication(nextMode, last);
+  return challengeDialog.startChallenge({
+    type: 'multiplication',
+    mode: nextMode,
+    lastId: last
+  });
 }
 
 function openParkTreeDialog(index: number) {
@@ -581,7 +631,12 @@ function openParkTreeDialog(index: number) {
       }
     } catch (_) { }
   }
-  challengeDialog.openParkTree(index, parkQuestions, parkZone);
+  return challengeDialog.startChallenge({
+    type: 'park_tree',
+    index,
+    questions: parkQuestions,
+    zone: parkZone
+  });
 }
 
 function openFlowerDialog(index: number) {
@@ -599,7 +654,11 @@ function openFlowerDialog(index: number) {
       }
     } catch (_) { }
   }
-  challengeDialog.openFlower(index, remoteFlowers);
+  return challengeDialog.startChallenge({
+    type: 'flower',
+    index,
+    remoteFlowers
+  });
 }
 
 function openArchimedesMapDialog(selectedZoneId = 0) {
@@ -914,9 +973,9 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const z = Number(btn.dataset.z);
       const name = btn.dataset.name || 'đích đến';
       closeDialog();
-      world.teleport(x, z);
+      world?.teleport(x, z);
       audio.playCue('jump');
-      world.burst(world.player.position.clone().add(new Vector3(0, 1.2, 0)));
+      world?.burstPlayer(1.2);
       toast(`✨ Đã dịch chuyển đến ${name}!`);
     };
   });
@@ -947,13 +1006,14 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
 }
 
 function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 0) {
-  challengeDialog.openArchimedes(
+  return challengeDialog.startChallenge({
+    type: 'archimedes',
     monolithRef,
     stepIndex,
-    activeRemoteQuestions,
-    activeRemoteZones,
-    activeMonolithProblems
-  );
+    questionsBySheet: activeRemoteQuestions,
+    zones: activeRemoteZones,
+    monolithProblems: activeMonolithProblems
+  });
 }
 
 function learn(selected: Table = adventure.getState().table || 1) {
@@ -982,7 +1042,7 @@ $('learn').onclick = () => learn();
 $('learn-welcome').onclick = () => learn();
 
 $('travel').onclick = () => {
-  if (!world.active || world.paused) return;
+  if (!world?.active || world.paused) return;
   const locName = world.spatial.getCurrentLocationName();
   const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY' && locName === z.name);
   if (parkZone) {
@@ -1285,16 +1345,18 @@ function settings() {
       if (savePositionTimer) clearTimeout(savePositionTimer);
       adventure.resetProgress();
       const fresh = adventure.getState();
-      world.setBridge(0);
-      world.setFlowersBloomed(fresh.flowers);
-      world.setMonolithsActivated(fresh.monoliths);
-      world.syncAwakenedParkTrees(fresh.parkTrees || []);
-      world.setInitialPosition(-6, 6);
+      if (world) {
+        world.setBridge(0);
+        world.setFlowersBloomed(fresh.flowers);
+        world.setMonolithsActivated(fresh.monoliths);
+        world.syncAwakenedParkTrees(fresh.parkTrees || []);
+        world.setInitialPosition(-6, 6);
+        world.setAvatar(fresh.avatar);
+        world.resetCamera();
+      }
       lastSavedPos = { x: -6, z: 6 };
       deferredSpawnPosition = null;
 
-      world.setAvatar(fresh.avatar);
-      world.resetCamera();
       menu();
       toast('Một hành trình mới đang chờ bạn!');
     };
@@ -1307,7 +1369,7 @@ $('sound').onclick = () => {
   adventure.setAudio(!state.sound, state.music);
   updateHUD();
 };
-$('jump').onclick = () => world.jump();
+$('jump').onclick = () => world?.jump();
 $('quest-btn').onclick = () => openQuestDialog();
 $('help').onclick = () => help();
 
@@ -1376,7 +1438,7 @@ function joystickMove(e: PointerEvent) {
   const maxRadius = Math.max(26, r.width / 2 - 24);
 
   if (dist <= 0.001) {
-    world.joystick = { x: 0, y: 0 };
+    if (world) world.joystick = { x: 0, y: 0 };
     knob.style.transform = '';
     updateDirectionHighlights(0, 0);
     return;
@@ -1386,7 +1448,7 @@ function joystickMove(e: PointerEvent) {
   const normX = (dx / dist) * intensity;
   const normY = (dy / dist) * intensity;
 
-  world.joystick = { x: normX, y: normY };
+  if (world) world.joystick = { x: normX, y: normY };
 
   const knobDist = Math.min(dist, maxRadius);
   const knobX = (dx / dist) * knobDist;
@@ -1409,7 +1471,7 @@ for (const event of ['pointerup', 'pointercancel'] as const) {
   joystick.addEventListener(event, (e: PointerEvent) => {
     if (e.pointerId === joystickId || joystickId !== -1) {
       joystickId = -1;
-      world.joystick = { x: 0, y: 0 };
+      if (world) world.joystick = { x: 0, y: 0 };
       knob.style.transition = 'transform 0.15s ease-out';
       knob.style.transform = '';
       updateDirectionHighlights(0, 0);
@@ -1440,30 +1502,196 @@ window.addEventListener(
   { once: true }
 );
 
-try {
-  world = new World($<HTMLCanvasElement>('world'));
-  world.onTeleport = (x, z) => queueSavePosition(x, z, true);
-  const init = adventure.getState();
-  world.setBridge(init.bridge);
-  world.setFlowersBloomed(init.flowers);
-  world.setMonolithsActivated((id, index) => {
-    return (
-      adventure.isProblemSolved(id) ||
-      (typeof id === 'number' && id >= 306 && init.monoliths[id - 306] === true) ||
-      init.monoliths[index] === true
-    );
-  });
-  world.setAvatar(init.avatar);
-  world.isParkTreeAwakened = idx => adventure.isParkTreeAwakened(idx);
-  world.onParkTreeClick = idx => openParkTreeDialog(idx);
-  world.syncAwakenedParkTrees(init.parkTrees || []);
+const handlePortalAction = () => {
+  const nearP = world?.spatial.getNearPortal();
+  if (nearP?.requiresSelection) {
+    openParkSelectionDialog();
+  } else {
+    openArchimedesMapDialog();
+  }
+};
+$('archimedes-btn').onclick = () => openArchimedesMapDialog();
+$('portal-label').onclick = handlePortalAction;
 
-  // Khôi phục Tọa Độ Thám Hiểm Lưu Lại (Saved Adventure Coordinates) hoặc lưu tạm Deferred Spawn nếu đảo chưa nạp
+function onWorldFrame(
+  isNear: boolean,
+  crossed: boolean,
+  _fps: number,
+  nearFlowerIdx: number,
+  isNearPortal: boolean,
+  nearMonolithIdx: number,
+  nearParkTreeIdx: number
+) {
+  if (!world) return;
+  near = isNear;
+  nearFlower = nearFlowerIdx;
+  nearPortal = isNearPortal;
+  nearMonolith = nearMonolithIdx;
+  nearParkTree = nearParkTreeIdx;
+
+  if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
+    queueSavePosition(world.player.position.x, world.player.position.z);
+    const transit = world.spatial.checkPortalTransit(0.016);
+    if (transit) {
+      if (transit.requiresSelection) {
+        openParkSelectionDialog();
+      } else {
+        audio.playCue('jump');
+        world.burstPlayer(1.0);
+        queueSavePosition(world.player.position.x, world.player.position.z, true);
+        toast(`✨ ${transit.name}!`);
+      }
+    }
+  }
+
+  if (++frameTick % 3 !== 0) return;
+
+  const locName = world.spatial.getCurrentLocationName();
+  const inArchimedes = world.spatial.isInArchimedesRealm();
+  const inGarden = world.spatial.isInGarden();
+
+  let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
+  const dynZone = activeRemoteZones.find((z) => z.name === locName);
+  if (dynZone) {
+    subLabel = dynZone.template === 'PARK_SANCTUARY'
+      ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
+      : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
+  } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
+  else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
+  else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
+
+  const travelText = locName === 'Làng Khởi Đầu' ? 'Đến Vườn Hoa' : locName === 'Vườn Hoa Tri Thức' ? 'Đến Đền Cổng' : 'Về Làng Khởi Đầu';
+
+  const nearPortalObj = world.spatial.getNearPortal();
+  if (nearPortalObj) {
+    world.assets.prefetchForPortal(nearPortalObj.id);
+  }
+
+  let interactHtml = '';
+  let interactHidden = true;
+
+  if (nearParkTree !== -1) {
+    const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+    const sheetName = parkZone?.sheetName || 'CongVienXanh';
+    const parkQuestions = activeRemoteQuestions[sheetName] || [];
+    const prob = parkQuestions[nearParkTree];
+    const treeTitle = prob?.title || `Cây Tri Thức #${nearParkTree + 1}`;
+    const awakened = adventure.isParkTreeAwakened(nearParkTree) || (prob?.id ? adventure.isProblemSolved(prob.id) : false);
+    interactHtml = `🌳 <b>${treeTitle}</b> ${awakened ? '(Đã thức tỉnh - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else if (nearMonolith !== -1) {
+    const dynamicProb = activeMonolithProblems[nearMonolith];
+    const mId = dynamicProb?.id ? Number(dynamicProb.id) : (306 + nearMonolith);
+    const mTitle = dynamicProb?.title || `Bia Đá ${mId}`;
+    const done = adventure.isProblemSolved(mId) || adventure.getState().monoliths[nearMonolith];
+    interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else if (nearPortal) {
+    const isParkPortal = nearPortalObj?.id.includes('park') || nearPortalObj?.id.includes('village');
+    const iconStr = isParkPortal ? '🌀' : '🏛️';
+    const prompt = nearPortalObj?.requiresSelection
+      ? 'Bấm E để chọn Công Viên'
+      : (isParkPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
+    const portalTitle = isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian');
+    interactHtml = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else if (nearFlower !== -1) {
+    const bloomed = adventure.getState().flowers[nearFlower];
+    interactHtml = `${icon('flower')} <b>Cây Hoa ${nearFlower + 1}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else if (isNear) {
+    interactHtml = `<kbd>E</kbd> Nói chuyện với Milo ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else {
+    interactHidden = true;
+  }
+
+  const m = world.project({ x: -3, y: 3.5, z: 1.5 });
+  const b = world.project({ x: 7, y: 0.8, z: 0 });
+  const portalTargetPos = nearPortalObj
+    ? { x: nearPortalObj.source.x, y: 3.8, z: nearPortalObj.source.z }
+    : { x: world.portalPos.x, y: world.portalPos.y + 4.4, z: world.portalPos.z };
+  const p = world.project(portalTargetPos);
+
+  let portalLabelHtml = '';
+  if (nearPortalObj) {
+    const isParkPortal = nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village');
+    if (isParkPortal) {
+      portalLabelHtml = `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>${nearPortalObj.id.endsWith('_to_village') ? 'Về Làng Khởi Đầu' : 'Đến Công Viên Tri Thức'}</small>`;
+    } else {
+      portalLabelHtml = `<span class="milo-dot">🏛️</span><strong>${nearPortalObj.name || 'Cổng Archimedes'}</strong><small>Đền Cổng Archimedes</small>`;
+    }
+  } else {
+    portalLabelHtml = inGarden
+      ? `<span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small>`
+      : `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small>`;
+  }
+
+  hudPresenter.render({
+    locName,
+    subLabel,
+    travelText,
+    interactHtml,
+    interactHidden,
+    isNearMilo: isNear,
+    isNearPortal,
+    miloPose: { x: m.x, y: m.y, visible: !world.paused },
+    bridgePose: { x: b.x, y: b.y, visible: !(world.paused || inGarden || inArchimedes) },
+    portalPose: { x: p.x, y: p.y, visible: !(world.paused || (!inGarden && !isNearPortal)) },
+    portalLabelHtml,
+    bridgeLabelHidden: world.paused || inGarden || inArchimedes,
+    portalLabelHidden: world.paused || (!inGarden && !isNearPortal)
+  });
+
+  if (world.active && !world.paused && crossed) {
+    const delta = adventure.completeRiverCrossing();
+    if (delta.completed) {
+      updateHUD();
+      audio.playCue('celebrate');
+      world.burstPlayer(1.0);
+      openDialog(
+        'Bạn đã làm được rồi!',
+        `<div class="completion-medal">${icon('crown')}</div><p class="dialog-copy centered">Nhờ bạn, hai bờ đã được nối liền.<br><b>Cây cầu tình bạn</b> đã hoàn thành!<br>Hãy khám phá <b>Vườn Hoa Tri Thức</b> ở bờ bên này nhé!</p><div class="completion-rewards"><span>★ +50 XP</span><span>◉ +10 xu</span></div><button id="keep-playing" class="primary wide">Tiếp tục khám phá ${icon('arrow')}</button>`,
+        'complete'
+      );
+      $('keep-playing').onclick = closeDialog;
+    }
+  }
+}
+
+async function ensureWorld(): Promise<World> {
+  const init = adventure.getState();
+  const worldInstance = await worldLoader.launch({
+    canvas: $<HTMLCanvasElement>('world'),
+    avatar: init.avatar,
+    bridge: init.bridge,
+    flowers: init.flowers,
+    monolithChecker: (id, index) => {
+      return (
+        adventure.isProblemSolved(id) ||
+        (typeof id === 'number' && id >= 306 && init.monoliths[id - 306] === true) ||
+        init.monoliths[index] === true
+      );
+    },
+    parkTrees: init.parkTrees || [],
+    initialPosition: (init.started && init.position) ? init.position : null,
+    onTeleport: (x, z) => queueSavePosition(x, z, true),
+    onJump: () => audio.playCue('jump'),
+    onSceneClick: () => interactAction(),
+    onFlowerClick: (idx) => openFlowerDialog(idx),
+    onMonolithClick: (idx) => openArchimedesMonolithDialog(idx, 0),
+    onParkTreeClick: (idx) => openParkTreeDialog(idx),
+    onPortalClick: handlePortalAction,
+    onFrame: onWorldFrame
+  });
+
+  worldInstance.isParkTreeAwakened = (idx) => adventure.isParkTreeAwakened(idx);
+
   if (init.started && init.position) {
     lastSavedPos = { x: init.position.x, z: init.position.z };
-    const safe = world.spatial.resolveSafeSpawn(init.position.x, init.position.z);
+    const safe = worldInstance.spatial.resolveSafeSpawn(init.position.x, init.position.z);
     if (safe) {
-      world.setInitialPosition(safe.x, safe.z);
+      worldInstance.setInitialPosition(safe.x, safe.z);
       if (safe.x !== init.position.x || safe.z !== init.position.z) {
         lastSavedPos = safe;
         queueSavePosition(safe.x, safe.z, true);
@@ -1473,163 +1701,38 @@ try {
     }
   }
 
-  world.onJump = () => audio.playCue('jump');
-  world.onSceneClick = () => interactAction();
-  world.onFlowerClick = idx => openFlowerDialog(idx);
-  world.onMonolithClick = idx => openArchimedesMonolithDialog(idx, 0);
-  world.onParkTreeClick = idx => openParkTreeDialog(idx);
-  const handlePortalAction = () => {
-    const nearP = world.spatial.getNearPortal();
-    if (nearP?.requiresSelection) {
-      openParkSelectionDialog();
-    } else {
-      openArchimedesMapDialog();
-    }
-  };
-  world.onPortalClick = handlePortalAction;
-  $('archimedes-btn').onclick = () => openArchimedesMapDialog();
-  $('portal-label').onclick = handlePortalAction;
+  if (activeRemoteZones.length > 0) {
+    syncDynamicContent({ zones: activeRemoteZones, questionsBySheet: activeRemoteQuestions });
+  }
 
-  world.onFrame = (isNear, crossed, _fps, nearFlowerIdx, isNearPortal, nearMonolithIdx, nearParkTreeIdx) => {
-    near = isNear;
-    nearFlower = nearFlowerIdx;
-    nearPortal = isNearPortal;
-    nearMonolith = nearMonolithIdx;
-    nearParkTree = nearParkTreeIdx;
-
-    if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
-      queueSavePosition(world.player.position.x, world.player.position.z);
-      const transit = world.spatial.checkPortalTransit(0.016);
-      if (transit) {
-        if (transit.requiresSelection) {
-          openParkSelectionDialog();
-        } else {
-          audio.playCue('jump');
-          world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
-          queueSavePosition(world.player.position.x, world.player.position.z, true);
-          toast(`✨ ${transit.name}!`);
-        }
-      }
-    }
-
-    if (++frameTick % 3 !== 0) return;
-
-    const locName = world.spatial.getCurrentLocationName();
-    const inArchimedes = world.spatial.isInArchimedesRealm();
-    const inGarden = world.spatial.isInGarden();
-    $('village-status-text').textContent = locName;
-    $('area-label-text').textContent = locName;
-
-    let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
-    const dynZone = activeRemoteZones.find((z) => z.name === locName);
-    if (dynZone) {
-      subLabel = dynZone.template === 'PARK_SANCTUARY'
-        ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
-        : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
-    } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
-    else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
-    else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
-
-    $('area-label-sub').textContent = subLabel;
-    $('travel-text').textContent = locName === 'Làng Khởi Đầu' ? 'Đến Vườn Hoa' : locName === 'Vườn Hoa Tri Thức' ? 'Đến Đền Cổng' : 'Về Làng Khởi Đầu';
-
-    const nearPortalObj = world.spatial.getNearPortal();
-
-    if (nearParkTree !== -1) {
-      const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
-      const sheetName = parkZone?.sheetName || 'CongVienXanh';
-      const parkQuestions = activeRemoteQuestions[sheetName] || [];
-      const prob = parkQuestions[nearParkTree];
-      const treeTitle = prob?.title || `Cây Tri Thức #${nearParkTree + 1}`;
-      const awakened = adventure.isParkTreeAwakened(nearParkTree) || (prob?.id ? adventure.isProblemSolved(prob.id) : false);
-      $('interact').innerHTML = `🌳 <b>${treeTitle}</b> ${awakened ? '(Đã thức tỉnh - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
-      $('interact').hidden = world.paused;
-    } else if (nearMonolith !== -1) {
-      const dynamicProb = activeMonolithProblems[nearMonolith];
-      const mId = dynamicProb?.id ? Number(dynamicProb.id) : (306 + nearMonolith);
-      const mTitle = dynamicProb?.title || `Bia Đá ${mId}`;
-      const done = adventure.isProblemSolved(mId) || adventure.getState().monoliths[nearMonolith];
-      $('interact').innerHTML = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
-      $('interact').hidden = world.paused;
-    } else if (nearPortal) {
-      const isParkPortal = nearPortalObj?.id.includes('park') || nearPortalObj?.id.includes('village');
-      const iconStr = isParkPortal ? '🌀' : '🏛️';
-      const prompt = nearPortalObj?.requiresSelection
-        ? 'Bấm E để chọn Công Viên'
-        : (isParkPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
-      const portalTitle = isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian');
-      $('interact').innerHTML = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
-      $('interact').hidden = world.paused;
-    } else if (nearFlower !== -1) {
-      const bloomed = adventure.getState().flowers[nearFlower];
-      $('interact').innerHTML = `${icon('flower')} <b>Cây Hoa ${nearFlower + 1}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`;
-      $('interact').hidden = world.paused;
-    } else if (isNear) {
-      $('interact').innerHTML = `<kbd>E</kbd> Nói chuyện với Milo ${icon('arrow')}`;
-      $('interact').hidden = world.paused;
-    } else {
-      $('interact').hidden = true;
-    }
-
-    const m = world.project(new Vector3(-3, 3.5, 1.5)),
-      b = world.project(new Vector3(7, .8, 0)),
-      portalTargetPos = nearPortalObj ? new Vector3(nearPortalObj.source.x, 3.8, nearPortalObj.source.z) : world.portalPos.clone().add(new Vector3(0, 4.4, 0)),
-      p = world.project(portalTargetPos);
-    $('milo-label').style.transform = `translate(${m.x}px,${m.y}px) translate(-50%,-100%)`;
-    $('bridge-label').style.transform = `translate(${b.x}px,${b.y}px) translate(-50%,15px)`;
-    $('portal-label').style.transform = `translate(${p.x}px,${p.y}px) translate(-50%,-100%)`;
-    $('milo-label').classList.toggle('near', isNear);
-    $('portal-label').classList.toggle('near', isNearPortal);
-    $('bridge-label').hidden = world.paused || inGarden || inArchimedes;
-    $('portal-label').hidden = world.paused || (!inGarden && !isNearPortal);
-
-    if (nearPortalObj) {
-      const isParkPortal = nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village');
-      if (isParkPortal) {
-        $('portal-label').innerHTML = `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>${nearPortalObj.id.endsWith('_to_village') ? 'Về Làng Khởi Đầu' : 'Đến Công Viên Tri Thức'}</small>`;
-      } else {
-        $('portal-label').innerHTML = `<span class="milo-dot">🏛️</span><strong>${nearPortalObj.name || 'Cổng Archimedes'}</strong><small>Đền Cổng Archimedes</small>`;
-      }
-    } else {
-      $('portal-label').innerHTML = inGarden
-        ? `<span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small>`
-        : `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small>`;
-    }
-
-
-    if (world.active && !world.paused && crossed) {
-      const delta = adventure.completeRiverCrossing();
-      if (delta.completed) {
-        updateHUD();
-        audio.playCue('celebrate');
-        world.burst(world.player.position.clone().add(new Vector3(0, 1, 0)));
-        openDialog(
-          'Bạn đã làm được rồi!',
-          `<div class="completion-medal">${icon('crown')}</div><p class="dialog-copy centered">Nhờ bạn, hai bờ đã được nối liền.<br><b>Cây cầu tình bạn</b> đã hoàn thành!<br>Hãy khám phá <b>Vườn Hoa Tri Thức</b> ở bờ bên này nhé!</p><div class="completion-rewards"><span>★ +50 XP</span><span>◉ +10 xu</span></div><button id="keep-playing" class="primary wide">Tiếp tục khám phá ${icon('arrow')}</button>`,
-          'complete'
-        );
-        $('keep-playing').onclick = closeDialog;
-      }
-    }
-  };
-  updateHUD();
-
-  // Nạp dữ liệu zones và câu hỏi ngay khi ứng dụng khởi động (áp dụng cache 30 phút & Stale-While-Revalidate)
-  loadZonesAndQuestions((fresh) => {
-    syncDynamicContent(fresh);
-    console.log('✨ [Sheets] Đã đồng bộ câu hỏi mới nhất từ Google Sheets!');
-  }).then((data) => {
-    syncDynamicContent(data);
-    $('loading').hidden = true;
-  }).catch((err) => {
-    console.warn('Lỗi nạp câu hỏi khởi động:', err);
-    $('loading').hidden = true;
-  });
-} catch (error) {
-  $('loading').innerHTML =
-    '<strong>Chưa mở được thế giới 3D</strong><p>Hãy bật tăng tốc đồ họa trong trình duyệt, hoặc thử Chrome / Edge mới hơn.</p><button class="primary" onclick="location.reload()">Thử lại</button>';
-  console.error(error);
+  return worldInstance;
 }
+
+// Khởi tạo ngay lập tức App Shell (<50ms)
+$('loading').hidden = true;
+initWelcomeProfile();
+updateHUD();
+
+// Tải ngầm 3D engine dưới nền khi luồng chính rảnh (Speculative Preload)
+if (typeof requestIdleCallback !== 'undefined') {
+  requestIdleCallback(() => {
+    worldLoader.preload().catch((err) => console.warn('Preload ngầm 3D:', err));
+  });
+} else {
+  setTimeout(() => {
+    worldLoader.preload().catch((err) => console.warn('Preload ngầm 3D:', err));
+  }, 100);
+}
+
+// Nạp câu hỏi và bản đồ từ Google Sheets dưới nền (cache 30 phút & Stale-While-Revalidate)
+loadZonesAndQuestions((fresh) => {
+  syncDynamicContent(fresh);
+  console.log('✨ [Sheets] Đã đồng bộ câu hỏi mới nhất từ Google Sheets!');
+}).then((data) => {
+  syncDynamicContent(data);
+}).catch((err) => {
+  console.warn('Lỗi nạp câu hỏi khởi động:', err);
+});
 
 // Read-only game state for browsers that support WebMCP.
 interface ModelContext {

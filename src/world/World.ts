@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { AssetRepository } from './assets/AssetRepository';
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
@@ -91,8 +91,10 @@ export class World {
   readonly parkModels: Map<number, THREE.Group> = new Map();
   readonly lakeModels: Map<number, THREE.Group> = new Map();
   private lakeFallbackDiscs: Map<number, THREE.Object3D> = new Map();
-  private cachedLakeModel?: THREE.Group;
-  private lakeLoadingPromise?: Promise<THREE.Group | null>;
+  readonly assets = new AssetRepository();
+  private readonly FIXED_DT = 1 / 60;
+  private readonly MAX_SUB_STEPS = 3;
+  private accumulator = 0;
   private villageParkPortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
 
@@ -909,68 +911,13 @@ export class World {
     }
   }
 
-  private getOrLoadLakeBaseModel(): Promise<THREE.Group | null> {
-    if (this.cachedLakeModel) return Promise.resolve(this.cachedLakeModel);
-    if (this.lakeLoadingPromise) return this.lakeLoadingPromise;
-    if (typeof window === 'undefined') return Promise.resolve(null);
-
-    this.lakeLoadingPromise = new Promise<THREE.Group | null>((resolve) => {
-      const loader = new GLTFLoader();
-      const baseUrl = import.meta.env?.BASE_URL ?? '/';
-      const url = `${baseUrl}3dmodel/maps/cozy_lake.glb`;
-
-      loader.load(
-        url,
-        (gltf) => {
-          const base = gltf.scene;
-
-          // 1. Remove unwanted/junk objects
-          const junkPrefixes = ['cloud', 'psolid', 'pcube', 'psphere', 'pcylinder', 'polysurface', 'box003'];
-          const toRemove: THREE.Object3D[] = [];
-          base.traverse((child) => {
-            const name = (child.name || '').toLowerCase();
-            if (junkPrefixes.some((p) => name.startsWith(p))) {
-              toRemove.push(child);
-            }
-          });
-          toRemove.forEach((child) => child.parent?.remove(child));
-
-          // 2. Level the island so water plane normal points exactly up (0, 1, 0)
-          const waterNormal = new THREE.Vector3(0.0083827, 0.9999342, 0.0078334).normalize();
-          const levelQuat = new THREE.Quaternion().setFromUnitVectors(waterNormal, new THREE.Vector3(0, 1, 0));
-          base.applyQuaternion(levelQuat);
-
-          // 3. Enable shadows across all meshes
-          base.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const mesh = child as THREE.Mesh;
-              mesh.castShadow = true;
-              mesh.receiveShadow = true;
-            }
-          });
-
-          this.cachedLakeModel = base;
-          resolve(base);
-        },
-        undefined,
-        (err) => {
-          console.error('Failed to load cozy_lake.glb:', err);
-          resolve(null);
-        }
-      );
-    });
-
-    return this.lakeLoadingPromise;
-  }
-
   private async loadLakeMap(zone: { id: number; center: { x: number; z: number }; template?: string }) {
     if (this.lakeModels.has(zone.id)) return;
-    const baseModel = await this.getOrLoadLakeBaseModel();
-    if (!baseModel) return;
+    const clone = await this.assets.instantiate('map:cozy_lake');
+    if (!clone) return;
 
     if (this.lakeModels.has(zone.id)) return;
 
-    const clone = baseModel.clone(true);
     const lakeGroup = new THREE.Group();
     lakeGroup.position.set(zone.center.x, 0, zone.center.z);
     lakeGroup.rotation.y = lakeRotationForZone(zone.id);
@@ -1053,135 +1000,107 @@ export class World {
     this.lakeModels.set(zone.id, lakeGroup);
   }
 
-  private loadParkMap(zone: RemoteZoneConfig) {
-    if (typeof window === 'undefined') return;
-    const loader = new GLTFLoader();
-    const baseUrl = import.meta.env?.BASE_URL ?? '/';
-    const url = `${baseUrl}3dmodel/maps/park.glb`;
+  private async loadParkMap(zone: RemoteZoneConfig) {
+    if (this.parkModels.has(zone.id)) return;
+    const model = await this.assets.instantiate('map:park');
+    if (!model) return;
+    if (this.parkModels.has(zone.id)) return;
 
-    loader.load(
-      url,
-      (gltf) => {
-        const model = gltf.scene;
+    const parkCx = zone.center.x;
+    const parkCz = zone.center.z;
+    model.position.set(parkCx, 0, parkCz);
+    model.updateMatrixWorld(true);
 
-        // Auto-scale to match Starter Village land area (~26 * 40 = 1040 m^2)
-        const initialBox = new THREE.Box3().setFromObject(model);
-        const initialSize = new THREE.Vector3();
-        initialBox.getSize(initialSize);
+    const initialBox = new THREE.Box3().setFromObject(model);
+    const initialSize = new THREE.Vector3();
+    initialBox.getSize(initialSize);
+    const scaledRadius = Math.max(initialSize.x, initialSize.z) / 2;
 
-        const villageArea = 26 * 40; // 1040 m^2
-        const initialRadius = Math.max(initialSize.x, initialSize.z) / 2;
-        const initialArea = Math.PI * (initialRadius ** 2);
-        const scaleFactor = Math.sqrt(villageArea / initialArea);
+    this.scene.add(model);
+    this.parkModels.set(zone.id, model);
+    this.spatial.setParkZone(parkCx, parkCz, scaledRadius, zone.name, zone.id);
 
-        model.scale.setScalar(scaleFactor);
+    // Detect all Tree and Pine meshes for challenges
+    const treeMeshes: { mesh: THREE.Mesh; center: THREE.Vector3; box: THREE.Box3; angle: number }[] = [];
+    const parkObstacles: Obstacle[] = [];
 
-        const parkCx = zone.center.x;
-        const parkCz = zone.center.z;
-        model.position.set(parkCx, 0, parkCz);
-        model.updateMatrixWorld(true);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const name = (mesh.name || mesh.parent?.name || '').toLowerCase();
+        const isTreeOrPine = name.includes('pine') || name.includes('tree');
+        const isObstacleCandidate =
+          isTreeOrPine ||
+          name.includes('lamp') ||
+          name.includes('stone') ||
+          name.includes('rock') ||
+          name.includes('cylinder01') ||
+          name.includes('cube00');
 
-        const scaledRadius = initialRadius * scaleFactor;
-
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-          }
-        });
-
-        this.scene.add(model);
-        this.parkModels.set(zone.id, model);
-        this.spatial.setParkZone(parkCx, parkCz, scaledRadius, zone.name, zone.id);
-
-        // Detect all Tree and Pine meshes for challenges
-        const treeMeshes: { mesh: THREE.Mesh; center: THREE.Vector3; box: THREE.Box3; angle: number }[] = [];
-        const parkObstacles: Obstacle[] = [];
-
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            const name = (mesh.name || mesh.parent?.name || '').toLowerCase();
-            const isTreeOrPine = name.includes('pine') || name.includes('tree');
-            const isObstacleCandidate =
-              isTreeOrPine ||
-              name.includes('lamp') ||
-              name.includes('stone') ||
-              name.includes('rock') ||
-              name.includes('cylinder01') ||
-              name.includes('cube00');
-
-            if (isObstacleCandidate) {
-              const box = new THREE.Box3().setFromObject(mesh);
-              const center = new THREE.Vector3();
-              box.getCenter(center);
-              const size = new THREE.Vector3();
-              box.getSize(size);
-              const radius = Math.max(0.4, Math.min(2.0, Math.max(size.x, size.z) * 0.35));
-              parkObstacles.push({
-                x: Number(center.x.toFixed(2)),
-                z: Number(center.z.toFixed(2)),
-                radius: Number(radius.toFixed(2))
-              });
-
-              if (isTreeOrPine) {
-                const angle = Math.atan2(center.z - parkCz, center.x - parkCx);
-                treeMeshes.push({ mesh, center, box, angle });
-              }
-            }
-          }
-        });
-
-        this.obstacles.push(...parkObstacles);
-        this.spatial.addObstacles(parkObstacles);
-
-        // Sort trees in a circular sequence starting near the eastern entrance
-        treeMeshes.sort((a, b) => {
-          const normA = (a.angle - 0.25 + 2 * Math.PI) % (2 * Math.PI);
-          const normB = (b.angle - 0.25 + 2 * Math.PI) % (2 * Math.PI);
-          return normA - normB;
-        });
-
-        const treePositions: { x: number; z: number }[] = [];
-        treeMeshes.forEach((item, idx) => {
-          const origMat = item.mesh.material as THREE.Material;
-          const grayMat = new THREE.MeshStandardMaterial({
-            color: 0x7a8288,
-            roughness: 0.85,
-            metalness: 0.05
+        if (isObstacleCandidate) {
+          const box = new THREE.Box3().setFromObject(mesh);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const radius = Math.max(0.4, Math.min(2.0, Math.max(size.x, size.z) * 0.35));
+          parkObstacles.push({
+            x: Number(center.x.toFixed(2)),
+            z: Number(center.z.toFixed(2)),
+            radius: Number(radius.toFixed(2))
           });
 
-          const isAwakened = this.isParkTreeAwakened?.(idx) ?? false;
-          item.mesh.material = isAwakened ? origMat : grayMat;
-
-          // Overhead guide beacon
-          const beacon = this.sphere(this.scene, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, 0x10b981);
-          beacon.castShadow = false;
-          beacon.visible = !isAwakened;
-
-          this.parkTrees.push({
-            index: idx,
-            id: idx + 1,
-            mesh: item.mesh,
-            originalMaterial: origMat,
-            grayMaterial: grayMat,
-            position: item.center.clone(),
-            beacon,
-            topY: item.box.max.y + 0.6,
-            awakened: isAwakened
-          });
-
-          treePositions.push({ x: Number(item.center.x.toFixed(2)), z: Number(item.center.z.toFixed(2)) });
-        });
-
-        this.spatial.setParkTreePositions(treePositions);
-      },
-      undefined,
-      (err) => {
-        console.error('Failed to load park.glb:', err);
+          if (isTreeOrPine) {
+            const angle = Math.atan2(center.z - parkCz, center.x - parkCx);
+            treeMeshes.push({ mesh, center, box, angle });
+          }
+        }
       }
-    );
+    });
+
+    this.obstacles.push(...parkObstacles);
+    this.spatial.addObstacles(parkObstacles);
+
+    // Sort trees in a circular sequence starting near the eastern entrance
+    treeMeshes.sort((a, b) => {
+      const normA = (a.angle - 0.25 + 2 * Math.PI) % (2 * Math.PI);
+      const normB = (b.angle - 0.25 + 2 * Math.PI) % (2 * Math.PI);
+      return normA - normB;
+    });
+
+    const treePositions: { x: number; z: number }[] = [];
+    treeMeshes.forEach((item, idx) => {
+      const origMat = item.mesh.material as THREE.Material;
+      const grayMat = new THREE.MeshStandardMaterial({
+        color: 0x7a8288,
+        roughness: 0.85,
+        metalness: 0.05
+      });
+
+      const isAwakened = this.isParkTreeAwakened?.(idx) ?? false;
+      item.mesh.material = isAwakened ? origMat : grayMat;
+
+      // Overhead guide beacon
+      const beacon = this.sphere(this.scene, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, 0x10b981);
+      beacon.castShadow = false;
+      beacon.visible = !isAwakened;
+
+      this.parkTrees.push({
+        index: idx,
+        id: idx + 1,
+        mesh: item.mesh,
+        originalMaterial: origMat,
+        grayMaterial: grayMat,
+        position: item.center.clone(),
+        beacon,
+        topY: item.box.max.y + 0.6,
+        awakened: isAwakened
+      });
+
+      treePositions.push({ x: Number(item.center.x.toFixed(2)), z: Number(item.center.z.toFixed(2)) });
+    });
+
+    this.spatial.setParkTreePositions(treePositions);
   }
 
   wakeParkTree(index: number) {
@@ -1298,23 +1217,53 @@ export class World {
     this.avatar.updateWalkAnimation(this.time, pose.moving);
   }
 
-  burst(position: THREE.Vector3) {
+  burst(position: THREE.Vector3 | { x: number; y: number; z: number }) {
     for (let i = 0; i < 20; i++) { const mesh = this.sphere(this.scene, position.x, position.y, position.z, .09, [0xffd164, 0xfff4c7, 0x7dd4b5, 0xf06292][i % 4]); mesh.castShadow = false; this.sparks.push({ mesh, life: 1.2, velocity: new THREE.Vector3((Math.random() - .5) * 5, 3 + Math.random() * 3, (Math.random() - .5) * 5) }); }
   }
 
-  project(point: THREE.Vector3) { const v = point.clone().project(this.camera); return { x: (v.x * .5 + .5) * this.canvas.clientWidth, y: (-.5 * v.y + .5) * this.canvas.clientHeight, visible: v.z < 1 }; }
+  burstPlayer(offsetY = 1.0) {
+    this.burst({
+      x: this.player.position.x,
+      y: this.player.position.y + offsetY,
+      z: this.player.position.z
+    });
+  }
+
+  project(point: THREE.Vector3 | { x: number; y: number; z: number }) {
+    const p = point instanceof THREE.Vector3 ? point : new THREE.Vector3(point.x, point.y, point.z);
+    const v = p.clone().project(this.camera);
+    return { x: (v.x * .5 + .5) * this.canvas.clientWidth, y: (-.5 * v.y + .5) * this.canvas.clientHeight, visible: v.z < 1 };
+  }
 
   private animate = () => {
-    this.frame = requestAnimationFrame(this.animate); const dt = Math.min(this.clock.getDelta(), .05); this.time += dt;
-    if (this.active && !this.paused) this.movement(dt);
+    this.frame = requestAnimationFrame(this.animate);
+    const rawDt = Math.min(this.clock.getDelta(), 0.1);
+    this.time += rawDt;
+
+    // Fixed-step simulation: physics & movement update at a constant 60Hz rate
+    this.accumulator += rawDt;
+    let steps = 0;
+    while (this.accumulator >= this.FIXED_DT && steps < this.MAX_SUB_STEPS) {
+      if (this.active && !this.paused) {
+        this.movement(this.FIXED_DT);
+      }
+      this.accumulator -= this.FIXED_DT;
+      steps++;
+    }
+    if (this.accumulator >= this.FIXED_DT) {
+      this.accumulator = 0; // prevent spiral of death
+    }
+
+    // Presentation tick: smooth camera lerp & procedural animations using rawDt
     const wantedY = this.avatar.activeAvatar === 'elsa' ? 0.7 : 0;
     const wanted = this.active ? new THREE.Vector3(this.player.position.x, wantedY, this.player.position.z) : new THREE.Vector3(-7, 0, 0);
-    this.target.lerp(wanted, 1 - Math.exp(-dt * 3));
+    this.target.lerp(wanted, 1 - Math.exp(-rawDt * 3));
     const distance = this.active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
     this.camera.position.set(this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, this.target.y + Math.sin(this.pitch) * distance, this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance);
-    this.camera.lookAt(this.target); this.windmill.rotation.z -= dt * .25;
-    this.bridge.children.forEach(p => p.position.y = Math.max(0, p.position.y - dt * 5));
-    this.clouds.forEach((c, i) => { c.position.x += dt * .12; if (c.position.x > 50) c.position.x = -50; c.position.y = 11 + (i % 3) * 2 + Math.sin(this.time * .2 + i) * .3; });
+    this.camera.lookAt(this.target);
+    this.windmill.rotation.z -= rawDt * .25;
+    this.bridge.children.forEach(p => p.position.y = Math.max(0, p.position.y - rawDt * 5));
+    this.clouds.forEach((c, i) => { c.position.x += rawDt * .12; if (c.position.x > 50) c.position.x = -50; c.position.y = 11 + (i % 3) * 2 + Math.sin(this.time * .2 + i) * .3; });
     this.milo.children.forEach(o => { if (o.userData.beacon) o.position.y = 3 + Math.sin(this.time * 2) * .15; });
 
     // Animate the 10 flowers
@@ -1324,7 +1273,7 @@ export class World {
         f.beacon.visible = !f.bloomed;
       }
       if (f.animating) {
-        f.bloomAnim = Math.min(1, f.bloomAnim + dt * 2.0);
+        f.bloomAnim = Math.min(1, f.bloomAnim + rawDt * 2.0);
         if (f.bloomAnim >= 1) {
           f.bloomAnim = 1;
           f.animating = false;
@@ -1337,7 +1286,7 @@ export class World {
         }
       }
       if (f.bloomed) {
-        f.bloom.rotation.y += dt * 0.35;
+        f.bloom.rotation.y += rawDt * 0.35;
       }
     });
 
@@ -1348,14 +1297,14 @@ export class World {
       }
     });
 
-    this.archimedes.updateAnimations(dt, this.time);
-    for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= dt; s.velocity.y -= dt * 6; s.mesh.position.addScaledVector(s.velocity, dt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
-    this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += dt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
+    this.archimedes.updateAnimations(rawDt, this.time);
+    for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= rawDt; s.velocity.y -= rawDt * 6; s.mesh.position.addScaledVector(s.velocity, rawDt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
+    this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += rawDt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
     this.renderer.render(this.scene, this.camera);
     this.onFrame?.(
       this.spatial.isNearMilo(),
       this.spatial.hasCrossedRiver(),
-      1 / Math.max(dt, .001),
+      1 / Math.max(rawDt, .001),
       this.spatial.nearFlowerIndex(),
       this.spatial.isNearPortal(),
       this.spatial.nearMonolithIndex(),
@@ -1364,5 +1313,5 @@ export class World {
   };
 
 
-  dispose() { cancelAnimationFrame(this.frame); this.observer.disconnect(); this.renderer.dispose(); }
+  dispose() { cancelAnimationFrame(this.frame); this.observer.disconnect(); this.assets.dispose(); this.renderer.dispose(); }
 }

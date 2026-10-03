@@ -9,7 +9,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "build:apps-script": "node --import tsx scripts/buildCodeGs.ts",
     "seed:sheets": "node --import tsx scripts/seedSheets.ts",
-    "generate:icons": "node --import tsx scripts/generateIcons.ts"
+    "generate:icons": "node --import tsx scripts/generateIcons.ts",
+    "preview": "vite preview"
   },
   "dependencies": {
     "three": "^0.180.0"
