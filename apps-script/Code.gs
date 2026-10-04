@@ -185,26 +185,6 @@ function handleSeedDatabase(ss, payload) {
   }
   configSheet.setFrozenRows(1);
 
-  // Hàm bảo vệ ô tính khỏi lỗi công thức Google Sheets (#ERROR! với dấu =, <=, >=)
-  function escapeSheetsText(val) {
-    if (val === undefined || val === null) return '';
-    var str = String(val);
-    var trimmed = str.trim();
-    if (
-      trimmed.indexOf('=') === 0 ||
-      trimmed.indexOf('+') === 0 ||
-      trimmed.indexOf('-') === 0 ||
-      trimmed.indexOf('@') === 0 ||
-      trimmed.indexOf('<') === 0 ||
-      trimmed.indexOf('>') === 0 ||
-      trimmed.indexOf('≤') === 0 ||
-      trimmed.indexOf('≥') === 0
-    ) {
-      return "'" + str;
-    }
-    return str;
-  }
-
   // 2. Tạo hoặc làm mới từng sheet câu hỏi (Bảng Thử Thách)
   const sheetNames = Object.keys(questionsBySheet);
   sheetNames.forEach(function(sName) {
@@ -696,6 +676,28 @@ function fetchQuestionsFromSheet(ss, sheetName) {
   }
 
   return problemOrder.map(function(pId) { return problemMap[pId]; });
+}
+
+/**
+ * Hàm bảo vệ ô tính khỏi lỗi công thức Google Sheets (#ERROR! với dấu =, <=, >=)
+ */
+function escapeSheetsText(val) {
+  if (val === undefined || val === null) return '';
+  var str = String(val);
+  var trimmed = str.trim();
+  if (
+    trimmed.indexOf('=') === 0 ||
+    trimmed.indexOf('+') === 0 ||
+    trimmed.indexOf('-') === 0 ||
+    trimmed.indexOf('@') === 0 ||
+    trimmed.indexOf('<') === 0 ||
+    trimmed.indexOf('>') === 0 ||
+    trimmed.indexOf('≤') === 0 ||
+    trimmed.indexOf('≥') === 0
+  ) {
+    return "'" + str;
+  }
+  return str;
 }
 
 function createJsonResponse(data) {
