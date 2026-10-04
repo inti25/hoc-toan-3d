@@ -2,7 +2,7 @@ import './style.css';
 import type { World } from './world/World';
 import { WorldLoader } from './boot/WorldLoader';
 import { HudPresenter } from './world/loop/HudPresenter';
-import { Adventure } from './core/adventure';
+import { Adventure, getArchimedesSolvedCount } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
 import { CHARACTERS, getCharacter } from './data/characters';
 import { ARCHIMEDES_ZONES, type ArchimedesMonolith } from './data/archimedesTrialMap';
@@ -20,7 +20,7 @@ import {
   REMOTE_CACHE_KEY,
   loadPlayerProgressFromSheets
 } from './core/sheetsClient';
-import { normalizePasscode, defaultStorage } from './core/profile';
+import { normalizePasscode, defaultStorage, profileManager } from './core/profile';
 import { sanitizeSaveState } from './core/state';
 import {
   SyncManager,
@@ -35,7 +35,15 @@ import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const adventure = new Adventure();
-const syncManager = new SyncManager(adventure);
+
+let activeRemoteZones: RemoteZoneConfig[] = [];
+let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
+let activeMonolithProblems: RemoteProblem[] = [];
+
+
+const syncManager = new SyncManager(adventure, profileManager, {
+  getMonolithCount: (s) => getArchimedesSolvedCount(s, activeMonolithProblems)
+});
 const audio = new AudioManager();
 const worldLoader = new WorldLoader();
 const hudPresenter = new HudPresenter();
@@ -50,9 +58,6 @@ let nearPortal = false;
 let nearMonolith = -1;
 let nearParkTree = -1;
 let frameTick = 0;
-let activeRemoteZones: RemoteZoneConfig[] = [];
-let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
-let activeMonolithProblems: RemoteProblem[] = [];
 let deferredSpawnPosition: { x: number; z: number } | null = null;
 let lastSavedPos = { x: -6, z: 6 };
 let savePositionTimer: number | undefined;
@@ -112,7 +117,6 @@ function getThemeBadgeIcon(theme?: string): string {
 function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) {
   activeRemoteZones = data.zones;
   activeRemoteQuestions = data.questionsBySheet;
-  if (!world) return;
 
   const monolithProblems: RemoteProblem[] = [];
   data.zones.forEach((z) => {
@@ -127,32 +131,38 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
   });
   activeMonolithProblems = monolithProblems;
 
-  world.renderDynamicZones(
-    data.zones,
-    monolithProblems.map((p) => ({
-      id: p.id,
-      position: p.position!,
-      color: p.color,
-      title: p.title
-    }))
-  );
+  const changed = adventure.reconcileZoneProgress(data.zones, data.questionsBySheet);
+  if (changed) {
+    syncManager.queueSync(false);
+  }
 
-  const currentState = adventure.getState();
-  world.setMonolithsActivated((id, index) => {
-    return (
-      adventure.isProblemSolved(id) ||
-      (typeof id === 'number' && id >= 306 && currentState.monoliths[id - 306] === true) ||
-      currentState.monoliths[index] === true
+  if (world) {
+    world.renderDynamicZones(
+      data.zones,
+      monolithProblems.map((p) => ({
+        id: p.id,
+        position: p.position!,
+        color: p.color,
+        title: p.title
+      }))
     );
-  });
 
+    const currentState = adventure.getState();
+    world.setMonolithsActivated((id, index) => {
+      return (
+        adventure.isProblemSolved(id) ||
+        (typeof id === 'number' && id >= 306 && currentState.monoliths[id - 306] === true) ||
+        currentState.monoliths[index] === true
+      );
+    });
 
-  if (deferredSpawnPosition && world) {
-    const safe = world.spatial.resolveSafeSpawn(deferredSpawnPosition.x, deferredSpawnPosition.z);
-    if (safe) {
-      world.teleport(safe.x, safe.z);
-      queueSavePosition(safe.x, safe.z, true);
-      deferredSpawnPosition = null;
+    if (deferredSpawnPosition) {
+      const safe = world.spatial.resolveSafeSpawn(deferredSpawnPosition.x, deferredSpawnPosition.z);
+      if (safe) {
+        world.teleport(safe.x, safe.z);
+        queueSavePosition(safe.x, safe.z, true);
+        deferredSpawnPosition = null;
+      }
     }
   }
 
@@ -356,7 +366,7 @@ function updateHUD() {
     .join('');
 
   // Archimedes & Kingdom quest tracker
-  const monolithCount = state.monoliths.filter(Boolean).length;
+  const monolithCount = getArchimedesSolvedCount(state, activeMonolithProblems);
   const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
   $('monolith-count').textContent = `${monolithCount} / ${totalMonoliths} Bia Đá`;
   const zonesForBadges = activeRemoteZones.length > 0
@@ -689,7 +699,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
   const zones: RemoteZoneConfig[] = activeRemoteZones.length > 0 ? activeRemoteZones : getBundledFallbackData().zones;
   const currentZone = zones.find((z) => z.id === selectedZoneId);
 
-  const totalMonolithCompleted = state.monoliths.filter(Boolean).length;
+  const totalMonolithCompleted = getArchimedesSolvedCount(state, activeMonolithProblems);
   const totalFlowerCompleted = state.flowers.filter(Boolean).length;
   const badgesEarned = state.zoneBadges.filter(Boolean).length;
 
@@ -1086,7 +1096,7 @@ $('travel').onclick = () => {
 function openQuestDialog() {
   const state = adventure.getState();
   const bloomedCount = state.flowers.filter(Boolean).length;
-  const monolithCount = state.monoliths.filter(Boolean).length;
+  const monolithCount = getArchimedesSolvedCount(state, activeMonolithProblems);
   const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
   const zonesForBadges = activeRemoteZones.length > 0
     ? activeRemoteZones.filter((z) => z.id !== 6 && z.sheetName !== 'VuonHoa')

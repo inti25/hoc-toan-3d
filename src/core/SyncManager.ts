@@ -75,12 +75,39 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     }
   });
 
+  for (const [k, val] of Object.entries(solvedProblems)) {
+    if (val === true) {
+      const num = Number(k);
+      if (!isNaN(num) && num >= 306) {
+        const mIdx = num - 306;
+        if (mIdx >= 0) {
+          while (monoliths.length <= mIdx) {
+            monoliths.push(false);
+          }
+          monoliths[mIdx] = true;
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < 10; i++) {
+    if (solvedProblems[`flower_${i + 1}`] || solvedProblems[String(i + 1)]) {
+      flowers[i] = true;
+    }
+  }
+
   parkTrees.forEach((done, i) => {
     if (done) {
       solvedProblems[`park_tree_${i + 1}`] = true;
       solvedProblems[`tree_${i + 1}`] = true;
     }
   });
+
+  for (let i = 0; i < 20; i++) {
+    if (solvedProblems[`park_tree_${i + 1}`] || solvedProblems[`tree_${i + 1}`]) {
+      parkTrees[i] = true;
+    }
+  }
 
   // Hợp nhất lịch sử làm bài (QuestionStats)
   const questionStats: Record<string, QuestionStat> = {};
@@ -160,6 +187,7 @@ export interface SyncManagerOptions {
     player?: RemotePlayerProgress;
     message?: string;
   }>;
+  getMonolithCount?: (state: SaveState) => number;
 }
 
 /**
@@ -204,7 +232,10 @@ export class SyncManager {
     this.enableAutoSync = options.enableAutoSync ?? true;
     this.saveFn = options.saveFn ?? savePlayerProgressToSheets;
     this.loadFn = options.loadFn ?? loadPlayerProgressFromSheets;
+    this.getMonolithCount = options.getMonolithCount;
   }
+
+  private getMonolithCount?: (state: SaveState) => number;
 
   getStatus(): SyncStatus {
     return this.status;
@@ -294,7 +325,14 @@ export class SyncManager {
         totalCoins: state.coins,
         bridgeParts: state.bridge,
         flowersBloomed: state.flowers.filter(Boolean).length,
-        monolithsActivated: state.monoliths.filter(Boolean).length,
+        monolithsActivated: this.getMonolithCount
+          ? this.getMonolithCount(state)
+          : Math.max(
+              state.monoliths.filter(Boolean).length,
+              Object.keys(state.solvedProblems || {}).filter(
+                (k) => state.solvedProblems[k] && !isNaN(Number(k)) && Number(k) >= 306
+              ).length
+            ),
         treesAwakened: (state.parkTrees || []).filter(Boolean).length,
         saveData: state
       };

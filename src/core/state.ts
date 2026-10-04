@@ -45,21 +45,37 @@ export function parseSave(raw: string | null): SaveState {
     if (Array.isArray(d.flowers)) {
       const fl = d.flowers;
       base.flowers = Array.from({ length: 10 }, (_, i) => fl[i] === true);
-      base.flowers.forEach((isDone, idx) => {
-        if (isDone) {
-          base.solvedProblems[`flower_${idx + 1}`] = true;
-          base.solvedProblems[String(idx + 1)] = true;
-        }
-      });
+    }
+    for (let i = 0; i < 10; i++) {
+      if (base.flowers[i]) {
+        base.solvedProblems[`flower_${i + 1}`] = true;
+        base.solvedProblems[String(i + 1)] = true;
+      } else if (base.solvedProblems[`flower_${i + 1}`] === true || base.solvedProblems[String(i + 1)] === true) {
+        base.flowers[i] = true;
+      }
     }
     if (Array.isArray(d.monoliths)) {
       const mo = d.monoliths;
       base.monoliths = Array.from({ length: Math.max(40, mo.length) }, (_, i) => mo[i] === true);
-      base.monoliths.forEach((isDone, idx) => {
-        if (isDone) {
-          base.solvedProblems[String(306 + idx)] = true;
+    }
+    base.monoliths.forEach((isDone, idx) => {
+      if (isDone) {
+        base.solvedProblems[String(306 + idx)] = true;
+      }
+    });
+    for (const [k, val] of Object.entries(base.solvedProblems)) {
+      if (val === true) {
+        const num = Number(k);
+        if (!isNaN(num) && num >= 306) {
+          const mIdx = num - 306;
+          if (mIdx >= 0) {
+            while (base.monoliths.length <= mIdx) {
+              base.monoliths.push(false);
+            }
+            base.monoliths[mIdx] = true;
+          }
         }
-      });
+      }
     }
     if (Array.isArray(d.zoneBadges)) {
       const zb = d.zoneBadges;
@@ -68,12 +84,14 @@ export function parseSave(raw: string | null): SaveState {
     if (Array.isArray(d.parkTrees)) {
       const pt = d.parkTrees;
       base.parkTrees = Array.from({ length: 20 }, (_, i) => pt[i] === true);
-      base.parkTrees.forEach((isDone, idx) => {
-        if (isDone) {
-          base.solvedProblems[`park_tree_${idx + 1}`] = true;
-          base.solvedProblems[`tree_${idx + 1}`] = true;
-        }
-      });
+    }
+    for (let i = 0; i < 20; i++) {
+      if (base.parkTrees[i]) {
+        base.solvedProblems[`park_tree_${i + 1}`] = true;
+        base.solvedProblems[`tree_${i + 1}`] = true;
+      } else if (base.solvedProblems[`park_tree_${i + 1}`] === true || base.solvedProblems[`tree_${i + 1}`] === true) {
+        base.parkTrees[i] = true;
+      }
     }
     if (d.position && typeof d.position === 'object') {
       const p = d.position as Record<string, unknown>;

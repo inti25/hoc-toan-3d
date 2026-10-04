@@ -362,7 +362,12 @@ export class Adventure {
     return this.state.solvedProblems[key] === true || this.state.solvedProblems[`flower_${key}`] === true;
   }
 
-  activateMonolith(index: number, problemId?: number | string, zoneIdInput?: number): MonolithActivationDelta {
+  activateMonolith(
+    index: number,
+    problemId?: number | string,
+    zoneIdInput?: number,
+    zoneProblemIds?: (number | string)[]
+  ): MonolithActivationDelta {
     const idKey = problemId !== undefined ? String(problemId) : String(306 + index);
     const monolith = ARCHIMEDES_MONOLITHS[index];
     const zoneId = zoneIdInput || (monolith ? monolith.zoneId : 1);
@@ -371,6 +376,31 @@ export class Adventure {
       this.state.solvedProblems[idKey] === true;
 
     if (alreadyActivated) {
+      let stateChanged = false;
+      if (index >= 0 && index < this.state.monoliths.length && !this.state.monoliths[index]) {
+        this.state.monoliths[index] = true;
+        stateChanged = true;
+      }
+      const numId = Number(problemId);
+      if (!isNaN(numId) && numId >= 306) {
+        const mIdx = numId - 306;
+        if (mIdx >= 0) {
+          while (this.state.monoliths.length <= mIdx) {
+            this.state.monoliths.push(false);
+          }
+          if (!this.state.monoliths[mIdx]) {
+            this.state.monoliths[mIdx] = true;
+            stateChanged = true;
+          }
+        }
+      }
+      if (this.state.solvedProblems[idKey] !== true) {
+        this.state.solvedProblems[idKey] = true;
+        stateChanged = true;
+      }
+      if (stateChanged) {
+        this.save();
+      }
       return {
         alreadyActivated: true,
         monolithIndex: index,
@@ -389,12 +419,35 @@ export class Adventure {
     if (index >= 0 && index < this.state.monoliths.length) {
       this.state.monoliths[index] = true;
     }
+    const numId = Number(problemId);
+    if (!isNaN(numId) && numId >= 306) {
+      const mIdx = numId - 306;
+      if (mIdx >= 0) {
+        while (this.state.monoliths.length <= mIdx) {
+          this.state.monoliths.push(false);
+        }
+        this.state.monoliths[mIdx] = true;
+      }
+    }
     this.state.solvedProblems[idKey] = true;
     let xpGained = 20;
     let coinsGained = 10;
 
     const zoneMonoliths = getMonolithsByZone(zoneId);
-    const zoneCompletedNow = zoneMonoliths.length > 0 && zoneMonoliths.every(m => this.state.solvedProblems[String(m.id)] || this.state.monoliths[m.id - 306]);
+    const hasStaticZoneMonoliths = zoneMonoliths.length > 0;
+    const hasDynamicZoneProblems = Array.isArray(zoneProblemIds) && zoneProblemIds.length > 0;
+
+    let zoneCompletedNow = false;
+    if (hasDynamicZoneProblems) {
+      zoneCompletedNow = zoneProblemIds.every(
+        (id) => this.isProblemSolved(id) || (typeof id === 'number' && id >= 306 && this.state.monoliths[id - 306])
+      );
+    } else if (hasStaticZoneMonoliths) {
+      zoneCompletedNow = zoneMonoliths.every(
+        (m) => this.isProblemSolved(m.id) || this.state.monoliths[m.id - 306]
+      );
+    }
+
     let zoneCompleted = false;
 
     if (zoneCompletedNow && zoneId >= 1 && zoneId <= 5 && !this.state.zoneBadges[zoneId - 1]) {
@@ -430,6 +483,59 @@ export class Adventure {
     };
   }
 
+  reconcileZoneProgress(
+    zones: { id: number; sheetName?: string }[],
+    questionsBySheet: Record<string, { id: number | string }[]>
+  ): boolean {
+    let changed = false;
+    for (const [sheet, questions] of Object.entries(questionsBySheet || {})) {
+      if (Array.isArray(questions)) {
+        questions.forEach((q, idx) => {
+          if (this.isProblemSolved(q.id)) {
+            if (idx >= 0 && idx < this.state.monoliths.length && !this.state.monoliths[idx]) {
+              this.state.monoliths[idx] = true;
+              changed = true;
+            }
+            const num = Number(q.id);
+            if (!isNaN(num) && num >= 306) {
+              const mIdx = num - 306;
+              while (this.state.monoliths.length <= mIdx) {
+                this.state.monoliths.push(false);
+              }
+              if (!this.state.monoliths[mIdx]) {
+                this.state.monoliths[mIdx] = true;
+                changed = true;
+              }
+            }
+          }
+        });
+      }
+    }
+
+    for (const z of zones) {
+      if (z.id >= 1 && z.id <= 5 && !this.state.zoneBadges[z.id - 1]) {
+        const sheet = z.sheetName || `Zone_${z.id}_Archimedes`;
+        const qList = questionsBySheet[sheet];
+        if (Array.isArray(qList) && qList.length > 0) {
+          const allSolved = qList.every((q) => this.isProblemSolved(q.id));
+          if (allSolved) {
+            this.state.zoneBadges[z.id - 1] = true;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      this.save();
+    }
+    return changed;
+  }
+
+  getArchimedesSolvedCount(monolithProblems: { id: number | string }[] = []): number {
+    return getArchimedesSolvedCount(this.state, monolithProblems);
+  }
+
   restoreState(newState: SaveState): void {
     this.state = newState;
     this.save();
@@ -440,3 +546,24 @@ export class Adventure {
     this.save();
   }
 }
+
+export function getArchimedesSolvedCount(
+  state: SaveState,
+  monolithProblems: { id: number | string }[] = []
+): number {
+  if (monolithProblems && monolithProblems.length > 0) {
+    return monolithProblems.filter(
+      (p) =>
+        state.solvedProblems[String(p.id)] === true ||
+        (typeof p.id === 'number' && p.id >= 306 && state.monoliths[p.id - 306] === true)
+    ).length;
+  }
+  const solvedArchIds = new Set<string>();
+  for (const [key, val] of Object.entries(state.solvedProblems || {})) {
+    if (val === true && !isNaN(Number(key)) && Number(key) >= 306) {
+      solvedArchIds.add(key);
+    }
+  }
+  return Math.max(state.monoliths.filter(Boolean).length, solvedArchIds.size);
+}
+

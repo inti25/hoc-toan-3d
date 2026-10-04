@@ -1256,7 +1256,10 @@ export class ChallengeDialog implements ChallengeSessionPort {
             nextStepBtn.focus();
           }
         } else {
-          const delta = this.host.adventure.activateMonolith(monolithIndex, m.id, m.zoneId);
+          const zone = activeRemoteZones.find((z) => z.id === m.zoneId);
+          const zoneQuestions = zone ? activeRemoteQuestions[zone.sheetName] || [] : [];
+          const zoneProblemIds = zoneQuestions.map((p) => p.id);
+          const delta = this.host.adventure.activateMonolith(monolithIndex, m.id, m.zoneId, zoneProblemIds);
           this.host.getWorld().activateMonolith(m.id);
           this.host.playCue('celebrate');
           this.host.burstPlayer();
