@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { AssetKey, AssetRepositorySeam, AssetPostProcessOptions } from './types';
+import type { AssetKey, AssetRepositorySeam, AssetPostProcessOptions, PrefabInstanceResult } from './types';
+import { prefabCatalog } from './PrefabCatalog';
+import type { MeshCatalogItem } from '../../data/meshCatalogTypes';
 
 export class AssetRepository implements AssetRepositorySeam {
   private loader: GLTFLoader | null = null;
@@ -56,11 +58,34 @@ export class AssetRepository implements AssetRepositorySeam {
       };
     }
 
+    if (key.startsWith('prefab:')) {
+      const prefabId = key.replace('prefab:', '');
+      const item = this.getPrefabItem(prefabId);
+      const prefabPath = item?.prefabPath || `3dmodel/prefabs/${prefabId}.glb`;
+      return {
+        path: prefabPath,
+        options: {
+          enableShadows: true,
+          isSkinned: false
+        }
+      };
+    }
+
     throw new Error(`Unknown asset key: ${key}`);
   }
 
   has(key: AssetKey): boolean {
     return this.cache.has(key);
+  }
+
+  async loadPrefabCatalog(): Promise<void> {
+    if (prefabCatalog.isLoaded()) return;
+    const url = this.resolveUrl('data/meshCatalog.json');
+    await prefabCatalog.load(url);
+  }
+
+  getPrefabItem(id: string): MeshCatalogItem | undefined {
+    return prefabCatalog.getItem(id);
   }
 
   async preload(key: AssetKey): Promise<void> {
@@ -70,7 +95,14 @@ export class AssetRepository implements AssetRepositorySeam {
       return;
     }
 
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      if (key.startsWith('prefab:')) {
+        const item = this.getPrefabItem(key.replace('prefab:', ''));
+        const placeholder = prefabCatalog.createPlaceholder(item);
+        this.cache.set(key, placeholder);
+      }
+      return;
+    }
 
     const config = this.getAssetConfig(key);
     const url = this.resolveUrl(config.path);
@@ -88,6 +120,16 @@ export class AssetRepository implements AssetRepositorySeam {
         undefined,
         (err) => {
           console.warn(`[AssetRepository] Không thể nạp ${key} (${url}):`, err);
+          // Fallback tạo placeholder nếu là prefab để không crash game
+          if (key.startsWith('prefab:')) {
+            const item = this.getPrefabItem(key.replace('prefab:', ''));
+            const placeholder = prefabCatalog.createPlaceholder(item);
+            this.applyPostProcessing(placeholder, config.options, key);
+            this.cache.set(key, placeholder);
+            this.pending.delete(key);
+            resolve(placeholder);
+            return;
+          }
           this.pending.delete(key);
           resolve(null);
         }
@@ -113,6 +155,75 @@ export class AssetRepository implements AssetRepositorySeam {
 
     // Static environmental meshes share geometries and materials to conserve VRAM
     return cached.clone(true);
+  }
+
+  async instantiatePrefab(
+    id: string,
+    transform?: {
+      position?: { x: number; y?: number; z: number };
+      rotationY?: number;
+      scale?: number;
+    }
+  ): Promise<PrefabInstanceResult | null> {
+    const key: AssetKey = `prefab:${id}`;
+    let item = this.getPrefabItem(id);
+
+    if (!item && !prefabCatalog.isLoaded()) {
+      await this.loadPrefabCatalog();
+      item = this.getPrefabItem(id);
+    }
+
+    let group = await this.instantiate(key);
+    if (!group) {
+      // Graceful fallback nếu không instantiate được
+      group = prefabCatalog.createPlaceholder(item);
+    }
+
+    const posX = transform?.position?.x ?? 0;
+    const posY = transform?.position?.y ?? 0;
+    const posZ = transform?.position?.z ?? 0;
+    const rotY = transform?.rotationY ?? 0;
+    const scale = transform?.scale ?? 1;
+
+    group.position.set(posX, posY, posZ);
+    group.rotation.y = rotY;
+    if (scale !== 1) {
+      group.scale.setScalar(scale);
+    }
+
+    let obstacle: { x: number; z: number; radius: number } | undefined;
+    if (item?.isObstacle && item.obstacleRadius > 0) {
+      obstacle = {
+        x: Number(posX.toFixed(2)),
+        z: Number(posZ.toFixed(2)),
+        radius: Number((item.obstacleRadius * scale).toFixed(2))
+      };
+    }
+
+    const resolvedItem: MeshCatalogItem = item || {
+      id,
+      name: id,
+      sourceFile: '',
+      category: 'PROP',
+      subCategory: 'decor',
+      nodePath: [id],
+      meshNames: [id],
+      primitiveCount: 1,
+      vertexCount: 0,
+      triangleCount: 0,
+      bounds: { min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5], center: [0, 0.5, 0], size: [1, 1, 1] },
+      normalizedBounds: { min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5], center: [0, 0.5, 0], size: [1, 1, 1] },
+      obstacleRadius: 0.5,
+      isObstacle: true,
+      materials: [],
+      tags: []
+    };
+
+    return {
+      group,
+      item: resolvedItem,
+      obstacle
+    };
   }
 
   prefetchForPortal(portalId: string): void {

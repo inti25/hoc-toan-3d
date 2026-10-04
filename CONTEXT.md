@@ -216,3 +216,23 @@ _Avoid_: Ghi đè mới nhất, Sync đè, Last write wins
 **Hàng Đợi Đồng Bộ Tiến Trình (Throttled Sync Queue)**:
 Cơ chế đệm gom nhóm và làm trễ các yêu cầu đồng bộ lên Google Sheets (hoãn 15 giây hoặc khi hoàn thành mốc nhiệm vụ lớn), đảm bảo trải nghiệm chơi mượt mà ngoại tuyến (offline-first) và bảo vệ hạn ngạch API của Google Apps Script.
 _Avoid_: Realtime sync, Gửi liên tục, Direct post
+
+**Bộ Khảo Sát Mô Hình 3D (3D Mesh Catalog)**:
+Tập tin cấu trúc dữ liệu JSON (`meshCatalog.json`) lưu trữ toàn bộ thông tin hình học bóc tách từ các file 3D (tên mesh, bounding box, kích thước, tâm xoay, bán kính vật cản ước tính, vật liệu và nhãn phân loại ngữ nghĩa).
+_Avoid_: File list 3D, Database mesh, Bảng kê model
+
+**Mảnh Ghép Mô Hình (Prefab Mesh / Standalone GLB)**:
+Tệp mô hình 3D (.glb) độc lập, siêu nhẹ được bóc tách từ các mô hình cảnh quan tổng hợp lớn (ví dụ: từng cây thông, ghế đá, cột đèn, đài phun nước từ park.glb), sẵn sàng để nạp riêng lẻ và lắp ráp linh hoạt vào các vùng đất mới.
+_Avoid_: Model con, Sub-mesh rời, File 3D cắt
+
+**Bộ Cắt Tách Mô Hình (Prefab Slicer CLI)**:
+Công cụ dòng lệnh Node.js sử dụng `@gltf-transform` để đọc toàn bộ mô hình trong thư mục `public/3dmodel/`, tính toán phân tích hình học, tạo danh mục JSON và xuất các Mảnh Ghép Mô Hình chuẩn GLB.
+_Avoid_: Tool convert 3D, Script xuất hình, Trình xuất mesh
+
+**Phân Loại Ngữ Nghĩa 3D (3D Semantic Classification)**:
+Hệ thống nhãn định danh chức năng cho từng mesh trong không gian 3D gồm: `TERRAIN` (mặt đất/nền đi lại), `FOLIAGE` (cây cỏ/hoa lá), `PROP` (đồ vật/ghế/đèn), `OBSTACLE` (vật cản lớn), và `CHARACTER` (nhân vật/linh vật).
+_Avoid_: Tag model, Type linh tinh, Phân loại thủ công
+
+**Bản Mẫu Vùng Đất Tùy Biến (Custom Land Sanctuary / PROCEDURAL_SANCTUARY)**:
+Bản Mẫu Vùng Đất thế hệ mới cho phép kiến tạo các hòn đảo 3D động dựa trên cấu hình chủ đề (theme) và mật độ trang trí (decorDensity) từ Google Sheets, tự động lấy các Mảnh Ghép Mô Hình từ Bộ Khảo Sát để phối cảnh và cắm Bia Đá Tri Thức.
+_Avoid_: Map ngẫu nhiên, Đảo tự tạo, Procedural map

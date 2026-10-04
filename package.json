@@ -10,12 +10,18 @@
     "build:apps-script": "node --import tsx scripts/buildCodeGs.ts",
     "seed:sheets": "node --import tsx scripts/seedSheets.ts",
     "generate:icons": "node --import tsx scripts/generateIcons.ts",
+    "scan:models": "node --import tsx scripts/scan3dModels.ts",
+    "slice:prefabs": "node --import tsx scripts/slicePrefabs.ts",
     "preview": "vite preview"
   },
   "dependencies": {
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "@types/node": "^26.6.4",
     "@types/three": "^0.180.0",
     "sharp": "^0.35.5",
     "tsx": "^4.20.5",

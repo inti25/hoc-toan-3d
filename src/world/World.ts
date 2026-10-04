@@ -17,6 +17,7 @@ import {
   lakeRotationForZone,
   usesLakeTerrain
 } from '../data/lakeLand';
+import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -713,7 +714,44 @@ export class World {
       if (!this.dynamicIslandIds.has(z.id)) {
         this.dynamicIslandIds.add(z.id);
 
-        if (usesLakeTerrain(z.template)) {
+        if (z.template === 'PROCEDURAL_SANCTUARY') {
+          void proceduralLandBuilder.buildLand(z, this.assets).then((res) => {
+            this.scene.add(res.group);
+            this.dynamicObstacles.push(...res.obstacles);
+            this.spatial.addObstacles(res.obstacles);
+
+            // Cổng kết nối từ Hub tới đảo mới
+            const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
+            const hubX = 60 + Math.cos(angle) * 8.5;
+            const hubZ = Math.sin(angle) * 8.5;
+            this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
+
+            // Cổng quay về từ đảo mới về Hub Archimedes
+            this.createPortalArch(
+              res.portalAnchors.returnPortal.x,
+              res.portalAnchors.returnPortal.z,
+              0x38bdf8,
+              res.portalAnchors.returnPortal.rotationY
+            );
+
+            customPortals.push(
+              {
+                id: `hub_to_z${z.id}`,
+                name: `Đến ${z.name}`,
+                source: { x: hubX, z: hubZ },
+                target: { x: res.portalAnchors.arrival.x, z: res.portalAnchors.arrival.z },
+                triggerRadius: 1.5
+              },
+              {
+                id: `z${z.id}_to_hub`,
+                name: 'Về Đền Cổng Archimedes',
+                source: { x: res.portalAnchors.returnPortal.x, z: res.portalAnchors.returnPortal.z },
+                target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
+                triggerRadius: 1.5
+              }
+            );
+          });
+        } else if (usesLakeTerrain(z.template)) {
           this.createLakeFallback(z.id, z.center.x, z.center.z, z.color);
           this.loadLakeMap(z);
 

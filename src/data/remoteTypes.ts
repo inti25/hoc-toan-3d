@@ -1,4 +1,4 @@
-export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY';
+export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY' | 'PROCEDURAL_SANCTUARY';
 export type ZoneThemeType = 'GARDEN' | 'RUINS' | 'FOREST' | 'CRYSTAL' | 'VILLAGE';
 export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -163,6 +163,18 @@ export function computeProceduralEntityPositions(
     case 'CIRCLE_SANCTUARY':
     case 'GRID_SANCTUARY': {
       return computeLakeEntityPositions(template, count, center);
+    }
+
+    case 'PROCEDURAL_SANCTUARY': {
+      const radius = Math.min(width, depth) * 0.32;
+      for (let i = 0; i < count; i++) {
+        const angle = -Math.PI * 0.7 + (i / Math.max(1, count - 1)) * (Math.PI * 1.4);
+        positions.push({
+          x: Math.round((center.x + Math.cos(angle) * radius) * 10) / 10,
+          z: Math.round((center.z + Math.sin(angle) * radius) * 10) / 10
+        });
+      }
+      break;
     }
 
     case 'FLOWER_BEDS':

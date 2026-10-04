@@ -375,7 +375,7 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       name: String(z.name || z.ZoneName || 'Vùng Đất Mới').trim(),
       title: String(z.title || z.Title || '').trim(),
       description: String(z.description || z.Description || '').trim(),
-      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY'].includes(z.template)
+      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY'].includes(z.template)
         ? z.template
         : 'GRID_SANCTUARY') as any,
       theme: validTheme,

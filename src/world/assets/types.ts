@@ -1,9 +1,17 @@
 import type * as THREE from 'three';
+import type { MeshCatalogItem } from '../../data/meshCatalogTypes';
 
 export type AssetKey =
   | 'map:park'
   | 'map:cozy_lake'
-  | `avatar:${string}`;
+  | `avatar:${string}`
+  | `prefab:${string}`;
+
+export interface PrefabInstanceResult {
+  group: THREE.Group;
+  item: MeshCatalogItem;
+  obstacle?: { x: number; z: number; radius: number };
+}
 
 export interface AssetPostProcessOptions {
   /** Remove unwanted/junk objects matching name prefixes */
@@ -27,6 +35,22 @@ export interface AssetRepositorySeam {
   /** Creates or clones an optimized instance ready for scene graph */
   instantiate(key: AssetKey): Promise<THREE.Group | null>;
 
+  /** Nạp danh mục prefab từ meshCatalog.json */
+  loadPrefabCatalog(): Promise<void>;
+
+  /** Lấy thông tin metadata của một prefab từ catalog */
+  getPrefabItem(id: string): MeshCatalogItem | undefined;
+
+  /** Nhân bản và định vị prefab kèm vật cản tự động */
+  instantiatePrefab(
+    id: string,
+    transform?: {
+      position?: { x: number; y?: number; z: number };
+      rotationY?: number;
+      scale?: number;
+    }
+  ): Promise<PrefabInstanceResult | null>;
+
   /** Automatic proximity prefetching when approaching a portal */
   prefetchForPortal(portalId: string): void;
 
@@ -36,3 +60,4 @@ export interface AssetRepositorySeam {
   /** Disposes GPU resources (geometries, textures, materials) */
   dispose(key?: AssetKey): void;
 }
+
