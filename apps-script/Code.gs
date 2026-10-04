@@ -13,7 +13,8 @@
 // Tiêu đề các cột cho sheet CONFIG
 const CONFIG_HEADERS = [
   'ZoneId', 'Name', 'Title', 'Description', 'Template', 'Theme', 'DecorDensity',
-  'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge'
+  'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge',
+  'Active', 'StartAt'
 ];
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
@@ -174,7 +175,9 @@ function handleSeedDatabase(ss, payload) {
       z.width || 24,
       z.depth || 32,
       z.colorHex || '#38bdf8',
-      z.badge || ''
+      z.badge || '',
+      z.active === false ? 'FALSE' : 'TRUE',
+      z.startAt || ''
     ];
   });
 
@@ -491,7 +494,9 @@ function menuCreateNewZone() {
     26,
     32,
     theme === 'CRYSTAL' ? '#a855f7' : (theme === 'GARDEN' ? '#ec4899' : (theme === 'FOREST' ? '#22c55e' : '#38bdf8')),
-    '🌟 Huy Hiệu ' + zoneName
+    '🌟 Huy Hiệu ' + zoneName,
+    'TRUE',
+    ''
   ]);
 
   let questSheet = ss.getSheetByName(sheetName);
@@ -572,11 +577,33 @@ function fetchZonesFromSheet(ss) {
       depth: Number(rowObj.Depth) || 32,
       color: parseColorHex(rowObj.ColorHex),
       colorHex: String(rowObj.ColorHex || '#38bdf8'),
-      badge: String(rowObj.Badge || '🏆 Huy Chương Thám Hiểm')
+      badge: String(rowObj.Badge || '🏆 Huy Chương Thám Hiểm'),
+      active: parseActiveFlag(rowObj.Active),
+      startAt: normalizeStartAt(rowObj.StartAt)
     });
   }
 
   return zones;
+}
+
+/**
+ * Cột Active: trống hoặc giá trị lạ = TRUE (tương thích ngược); FALSE/0/NO/KHONG = ẩn vùng
+ */
+function parseActiveFlag(val) {
+  if (val === false || val === 0) return false;
+  var s = String(val === undefined || val === null ? '' : val).trim().toUpperCase();
+  return !(s === 'FALSE' || s === '0' || s === 'NO' || s === 'KHONG' || s === 'KHÔNG');
+}
+
+/**
+ * Cột StartAt: chuẩn hóa về chuỗi ISO có múi giờ Việt Nam; ô trống = hiện ngay
+ */
+function normalizeStartAt(val) {
+  if (val === undefined || val === null || val === '') return '';
+  if (Object.prototype.toString.call(val) === '[object Date]') {
+    return isNaN(val.getTime()) ? '' : Utilities.formatDate(val, 'Asia/Ho_Chi_Minh', "yyyy-MM-dd'T'HH:mm:ssXXX");
+  }
+  return String(val).trim();
 }
 
 /**

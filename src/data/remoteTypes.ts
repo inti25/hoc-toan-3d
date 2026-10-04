@@ -41,6 +41,10 @@ export interface RemoteZoneConfig {
   color: number;
   colorHex: string;
   badge: string;
+  /** Cột Active trong CONFIG; false = ẩn vùng. Mặc định true */
+  active?: boolean;
+  /** Cột StartAt trong CONFIG (ISO hoặc 'yyyy-MM-dd HH:mm' giờ VN); trống = hiện ngay */
+  startAt?: string;
 }
 
 export interface ExplorerProfile {

@@ -346,6 +346,38 @@ export async function loadZonesAndQuestions(
 }
 
 /**
+ * Cột Active: trống hoặc giá trị lạ = true (tương thích ngược); FALSE/0/NO = ẩn vùng
+ */
+function parseActiveFlag(val: unknown): boolean {
+  if (val === false || val === 0) return false;
+  const s = String(val ?? '').trim().toUpperCase();
+  return !(s === 'FALSE' || s === '0' || s === 'NO' || s === 'KHONG' || s === 'KHÔNG');
+}
+
+/**
+ * Phân tích StartAt thành mili-giây. Chuỗi không có múi giờ được hiểu theo giờ Việt Nam (UTC+7).
+ * Trả về null nếu để trống hoặc không hợp lệ (coi như hiện ngay).
+ */
+export function parseZoneStartAt(raw: string | undefined): number | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  let iso = s.replace(' ', 'T');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) iso += 'T00:00:00';
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(iso)) iso += '+07:00';
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Vùng đất chỉ hiện khi Active = TRUE và đã đến giờ StartAt (nếu có)
+ */
+export function isZoneVisible(zone: { active?: boolean; startAt?: string }, nowMs: number = Date.now()): boolean {
+  if (zone.active === false) return false;
+  const start = parseZoneStartAt(zone.startAt);
+  return start === null || nowMs >= start;
+}
+
+/**
  * Chuẩn hóa danh sách cấu hình phân khu / vùng đất
  */
 export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
@@ -386,7 +418,9 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       depth: Number(z.depth ?? z.Depth) || 32,
       color: Number(z.color) || 0x38bdf8,
       colorHex: String(z.colorHex || z.ColorHex || '#38bdf8'),
-      badge: String(z.badge || z.Badge || '🏆 Huy Chương Thám Hiểm')
+      badge: String(z.badge || z.Badge || '🏆 Huy Chương Thám Hiểm'),
+      active: parseActiveFlag(z.active ?? z.Active),
+      startAt: String(z.startAt ?? z.StartAt ?? '').trim()
     };
   });
 }

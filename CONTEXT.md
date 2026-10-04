@@ -92,6 +92,10 @@ _Avoid_: Scene preset, Layout mẫu, Map template
 Bảng tính trung tâm lưu trữ danh mục và thuộc tính của tất cả các vùng đất (mã vùng, tên hiển thị, template sử dụng, liên kết sheet câu hỏi, màu sắc hào quang).
 _Avoid_: Bảng cài đặt, Config sheet, Danh mục đảo
 
+**Lịch Mở Vùng Đất (Zone Unlock Schedule)**:
+Hai cột `Active` và `StartAt` trong Sổ Đăng Ký Vùng Đất. Vùng chỉ xuất hiện (sinh đảo, có Cổng Dịch Chuyển, có trong bản đồ) khi `Active` khác FALSE VÀ thời điểm hiện tại ≥ `StartAt`. Ô trống nghĩa là hiện ngay (`Active` trống = TRUE). `StartAt` không có múi giờ được hiểu theo giờ Việt Nam (UTC+7). Máy chủ luôn trả đủ dòng, client tự so giờ máy; vùng đang ẩn vẫn giữ nguyên tiến trình đã lưu, và người chơi có tọa độ lưu trong vùng bị ẩn sẽ ở lại Làng Khởi Đầu theo Khởi Tạo Vị Trí Trì Hoãn. Chỉ áp dụng cho các dòng trong `CONFIG`.
+_Avoid_: Hẹn giờ, Feature flag, Ẩn/hiện vùng
+
 **Bảng Thử Thách Vùng Đất (Zone Quest Sheet)**:
 Trang tính chứa ngân hàng câu hỏi, các bước giải, gợi ý và đáp án cho một vùng đất cụ thể.
 _Avoid_: Sheet câu hỏi, Tab bài tập

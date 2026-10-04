@@ -17,6 +17,7 @@ import {
   resolveZoneProblemsWithPositions,
   seedRemoteDatabase,
   getBundledFallbackData,
+  isZoneVisible,
   REMOTE_CACHE_KEY,
   loadPlayerProgressFromSheets
 } from './core/sheetsClient';
@@ -115,11 +116,13 @@ function getThemeBadgeIcon(theme?: string): string {
 }
 
 function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) {
-  activeRemoteZones = data.zones;
+  // Lọc vùng đất theo cột Active/StartAt trong CONFIG; tiến trình vẫn được giữ nguyên cho vùng đang ẩn
+  const visibleZones = data.zones.filter((z) => isZoneVisible(z));
+  activeRemoteZones = visibleZones;
   activeRemoteQuestions = data.questionsBySheet;
 
   const monolithProblems: RemoteProblem[] = [];
-  data.zones.forEach((z) => {
+  visibleZones.forEach((z) => {
     const list = data.questionsBySheet[z.sheetName] || [];
     const resolved = resolveZoneProblemsWithPositions(z, list);
 
@@ -138,7 +141,7 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
 
   if (world) {
     world.renderDynamicZones(
-      data.zones,
+      visibleZones,
       monolithProblems.map((p) => ({
         id: p.id,
         position: p.position!,
