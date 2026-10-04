@@ -415,11 +415,11 @@ export function getSyncStatusLabel(
 ): string {
   switch (status) {
     case 'synced':
-      return `☁️ Đã lưu lên đám mây (${formatTimeAgo(lastSyncedAt)})`;
+      return '☁️ Đã lưu lên đám mây';
     case 'syncing':
-      return '🔄 Đang đồng bộ lên Google Sheets...';
+      return '🔄 Đang đồng bộ...';
     case 'offline':
-      return '⚡ Offline (Chờ kết nối mạng)';
+      return '⚡ Offline (Chờ mạng)';
     case 'error':
       return `⚠️ Lỗi kết nối (${errorMessage || 'Thử lại'})`;
     case 'idle':

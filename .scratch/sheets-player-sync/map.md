@@ -16,6 +16,7 @@ Bản đặc tả kiến trúc (Spec & ADR) và kế hoạch triển khai từng
 - [01: Schema Tab PLAYERS và API Apps Script](file:///d:/Work/Github/vuong-quoc-cuu-chuong-3d/.scratch/sheets-player-sync/issues/01-sheets-players-schema-and-apps-script-api.md): 14 cột theo dõi trực quan kết hợp SaveDataJson, khóa kịch bản 15s tránh race condition, escape công thức chống #ERROR!, client API save/load bất đồng bộ và kiểm thử 100% pass.
 - [02: Bộ Sinh Mã Thám Hiểm và Khôi Phục Đa Thiết Bị](file:///d:/Work/Github/vuong-quoc-cuu-chuong-3d/.scratch/sheets-player-sync/issues/02-explorer-passcode-generator-and-recovery.md): Sinh mã MTH-XXX loại trừ ký tự gây nhầm, bộ chuẩn hóa vị tha, modal khôi phục tài khoản với thẻ xem trước dũng sĩ, cập nhật tức thì thế giới 3D.
 - [03: Thuật toán Union-Max và Hàng đợi Throttled Sync](file:///d:/Work/Github/vuong-quoc-cuu-chuong-3d/.scratch/sheets-player-sync/issues/03-union-max-sync-and-throttled-queue.md): mergeStates hợp nhất thành tích cực đại không bao giờ mất điểm, hàng đợi debounce 15s gom request, milestone flush tức thì, exponential backoff khi mất mạng.
+- [04: Di chuyển Dữ liệu Cục bộ Hiện tại và Giao diện Chỉ báo Đám mây](file:///d:/Work/Github/vuong-quoc-cuu-chuong-3d/.scratch/sheets-player-sync/issues/04-local-storage-migration-and-cloud-status-ui.md): runLocalStorageMigration bảo toàn người chơi cũ, icon đám mây trực quan trên topbar, chỉ báo thời gian đồng bộ thực tế và bộ nút quản lý tài khoản trong Settings.
 
 ## Not yet specified
 

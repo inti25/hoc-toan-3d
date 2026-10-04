@@ -1444,9 +1444,9 @@ function settings() {
       </div>
       <div class="sheets-action-row" style="margin-top:10px">
         <button id="save-profile-btn" class="secondary small">${icon('check')} Lưu hồ sơ</button>
-        <button id="force-sync-btn" class="secondary small">${icon('cloud')} Đồng bộ ngay bây giờ</button>
-        <button id="settings-restore-btn" class="secondary small">${icon('reset')} Chuyển tài khoản / Khôi phục mã khác</button>
+        <button id="force-sync-btn" class="secondary small">${icon('cloud')} Đồng bộ ngay</button>
       </div>
+      <button id="settings-restore-btn" class="secondary small wide" style="margin-top:8px">${icon('reset')} Chuyển tài khoản / Khôi phục mã khác</button>
     </div>
 
 

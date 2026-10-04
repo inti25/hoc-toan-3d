@@ -38,9 +38,9 @@ test('formatTimeAgo handles various timestamps accurately in Vietnamese', () => 
 
 test('getSyncStatusLabel formats labels with expressive emojis for all statuses', () => {
   const now = Date.now();
-  assert.match(getSyncStatusLabel('synced', now), /☁️ Đã lưu lên đám mây \(Vừa xong\)/);
-  assert.equal(getSyncStatusLabel('syncing', now), '🔄 Đang đồng bộ lên Google Sheets...');
-  assert.equal(getSyncStatusLabel('offline', now), '⚡ Offline (Chờ kết nối mạng)');
+  assert.equal(getSyncStatusLabel('synced', now), '☁️ Đã lưu lên đám mây');
+  assert.equal(getSyncStatusLabel('syncing', now), '🔄 Đang đồng bộ...');
+  assert.equal(getSyncStatusLabel('offline', now), '⚡ Offline (Chờ mạng)');
   assert.match(getSyncStatusLabel('error', now, 'Mất kết nối mạng'), /⚠️ Lỗi kết nối \(Mất kết nối mạng\)/);
   assert.equal(getSyncStatusLabel('idle', null), '☁️ Sẵn sàng đồng bộ');
 });
