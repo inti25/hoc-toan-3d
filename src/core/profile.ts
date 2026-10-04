@@ -11,6 +11,44 @@ export const FRIENDLY_NICKNAMES = [
   'Sao Băng Nhí'
 ] as const;
 
+/**
+ * Bảng chữ cái thân thiện cho trẻ em, loại trừ các ký tự dễ nhầm lẫn (0/O, 1/I/l)
+ */
+export const PASSCODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
+ * Tạo Mã Thám Hiểm định dạng thân thiện: MTH-XXX (ví dụ: MTH-882, MTH-9KP)
+ */
+export function generateExplorerPasscode(): string {
+  let suffix = '';
+  for (let i = 0; i < 3; i++) {
+    suffix += PASSCODE_ALPHABET.charAt(Math.floor(Math.random() * PASSCODE_ALPHABET.length));
+  }
+  return `MTH-${suffix}`;
+}
+
+/**
+ * Tạo Explorer ID ngẫu nhiên không trùng lặp
+ */
+export function generateExplorerId(): string {
+  return `exp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+}
+
+/**
+ * Chuẩn hóa Mã Thám Hiểm (bỏ khoảng trắng, viết hoa, tự động thêm tiền tố MTH- nếu cần)
+ */
+export function normalizePasscode(input: string): string {
+  if (!input) return '';
+  let clean = input.trim().toUpperCase().replace(/\s+/g, '');
+  // Nếu học sinh gõ 3 ký tự (ví dụ: 882 hoặc 9KP), tự động thêm MTH-
+  if (/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/i.test(clean)) {
+    clean = `MTH-${clean}`;
+  } else if (/^MTH[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/i.test(clean)) {
+    clean = `MTH-${clean.slice(3)}`;
+  }
+  return clean;
+}
+
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -71,11 +109,46 @@ export class ExplorerProfileManager {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
+          const nickname = typeof parsed.nickname === 'string' && parsed.nickname.trim()
+            ? parsed.nickname.trim()
+            : 'Dũng Sĩ Tí Hon';
+          const className = typeof parsed.className === 'string' && parsed.className.trim()
+            ? parsed.className.trim()
+            : 'Lớp 2';
+          const isAnonymous = Boolean(parsed.isAnonymous);
+
+          let explorerId = typeof parsed.explorerId === 'string' && parsed.explorerId.trim()
+            ? parsed.explorerId.trim()
+            : '';
+          let passcode = typeof parsed.passcode === 'string' && parsed.passcode.trim()
+            ? normalizePasscode(parsed.passcode)
+            : '';
+
+          let shouldPersist = false;
+          if (!explorerId) {
+            explorerId = generateExplorerId();
+            shouldPersist = true;
+          }
+          if (!passcode) {
+            passcode = generateExplorerPasscode();
+            shouldPersist = true;
+          }
+
           const profile: ExplorerProfile = {
-            nickname: typeof parsed.nickname === 'string' && parsed.nickname.trim() ? parsed.nickname.trim() : 'Dũng Sĩ Tí Hon',
-            className: typeof parsed.className === 'string' && parsed.className.trim() ? parsed.className.trim() : 'Lớp 2',
-            isAnonymous: Boolean(parsed.isAnonymous)
+            nickname,
+            className,
+            isAnonymous,
+            explorerId,
+            passcode,
+            avatar: typeof parsed.avatar === 'string' && parsed.avatar.trim() ? parsed.avatar.trim() : undefined
           };
+
+          if (shouldPersist) {
+            try {
+              this.storage.setItem(EXPLORER_PROFILE_KEY, JSON.stringify(profile));
+            } catch (_) {}
+          }
+
           this.memoryFallback = profile;
           return profile;
         }
@@ -89,8 +162,13 @@ export class ExplorerProfileManager {
     const defaultProfile: ExplorerProfile = {
       nickname: 'Dũng Sĩ Tí Hon',
       className: 'Lớp 2',
-      isAnonymous: true
+      isAnonymous: true,
+      explorerId: generateExplorerId(),
+      passcode: generateExplorerPasscode()
     };
+    try {
+      this.storage.setItem(EXPLORER_PROFILE_KEY, JSON.stringify(defaultProfile));
+    } catch (_) {}
     this.memoryFallback = defaultProfile;
     return defaultProfile;
   }
@@ -98,6 +176,11 @@ export class ExplorerProfileManager {
   saveProfile(profile: Partial<ExplorerProfile>): ExplorerProfile {
     const current = this.getProfile();
     const resolved = this.resolveProfileData(profile.nickname, profile.className, current);
+    resolved.explorerId = profile.explorerId?.trim() || current.explorerId || generateExplorerId();
+    resolved.passcode = profile.passcode ? normalizePasscode(profile.passcode) : (current.passcode || generateExplorerPasscode());
+    resolved.avatar = profile.avatar || current.avatar;
+
+
     this.memoryFallback = resolved;
     try {
       this.storage.setItem(EXPLORER_PROFILE_KEY, JSON.stringify(resolved));
@@ -117,7 +200,9 @@ export class ExplorerProfileManager {
       return {
         nickname: rawName,
         className,
-        isAnonymous: false
+        isAnonymous: false,
+        explorerId: fallbackProfile?.explorerId,
+        passcode: fallbackProfile?.passcode
       };
     }
 
@@ -125,7 +210,9 @@ export class ExplorerProfileManager {
       return {
         nickname: fallbackProfile.nickname,
         className,
-        isAnonymous: false
+        isAnonymous: false,
+        explorerId: fallbackProfile?.explorerId,
+        passcode: fallbackProfile?.passcode
       };
     }
 
@@ -133,7 +220,9 @@ export class ExplorerProfileManager {
     return {
       nickname: randomNick,
       className,
-      isAnonymous: true
+      isAnonymous: true,
+      explorerId: fallbackProfile?.explorerId,
+      passcode: fallbackProfile?.passcode
     };
   }
 
@@ -162,3 +251,4 @@ export function getExplorerProfile(): ExplorerProfile {
 export function saveExplorerProfile(profile: Partial<ExplorerProfile>): ExplorerProfile {
   return profileManager.saveProfile(profile);
 }
+

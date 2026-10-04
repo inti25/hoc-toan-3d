@@ -37,6 +37,13 @@ const LOG_HEADERS = [
   'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details'
 ];
 
+// Tiêu đề các cột cho sheet PLAYERS (Sổ Theo Dõi Người Chơi & Lưu Trữ Đám Mây)
+const PLAYER_HEADERS = [
+  'ExplorerId', 'Passcode', 'Nickname', 'ClassName', 'Avatar',
+  'Level', 'TotalXP', 'TotalCoins', 'BridgeParts', 'FlowersBloomed',
+  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson'
+];
+
 /**
  * Xử lý HTTP GET
  */
@@ -67,6 +74,9 @@ function doGet(e) {
         }
       });
       result = { status: 'success', zones: zones, questions: allQuestions };
+    } else if (action === 'loadPlayerProgress') {
+      const identifier = params.passcode || params.explorerId || params.identifier;
+      result = handleLoadPlayerProgress(ss, identifier);
     } else {
       throw new Error('Action không hợp lệ: ' + action);
     }
@@ -78,7 +88,7 @@ function doGet(e) {
 }
 
 /**
- * Xử lý HTTP POST (Ghi nhật ký làm bài hoặc Seed Database)
+ * Xử lý HTTP POST (Ghi nhật ký làm bài, Lưu tiến trình, hoặc Seed Database)
  */
 function doPost(e) {
   try {
@@ -97,7 +107,20 @@ function doPost(e) {
       return createJsonResponse(seedResult);
     }
 
-    // 2. Mặc định: Ghi nhật ký tiến trình vào sheet LOGS
+    // 2. Xử lý lưu tiến trình học sinh vào sheet PLAYERS
+    if (payload.action === 'savePlayerProgress') {
+      const saveResult = handleSavePlayerProgress(ss, payload);
+      return createJsonResponse(saveResult);
+    }
+
+    // 3. Xử lý tải tiến trình học sinh từ sheet PLAYERS
+    if (payload.action === 'loadPlayerProgress') {
+      const identifier = payload.passcode || payload.explorerId || payload.identifier;
+      const loadResult = handleLoadPlayerProgress(ss, identifier);
+      return createJsonResponse(loadResult);
+    }
+
+    // 4. Mặc định: Ghi nhật ký tiến trình vào sheet LOGS
     let logSheet = ss.getSheetByName('LOGS');
     if (!logSheet) {
       logSheet = ss.insertSheet('LOGS');
@@ -252,10 +275,175 @@ function handleSeedDatabase(ss, payload) {
     logSheet.setFrozenRows(1);
   }
 
+  // 4. Đảm bảo sheet PLAYERS tồn tại mà KHÔNG xóa danh sách người chơi đã có
+  let playersSheet = ss.getSheetByName('PLAYERS');
+  if (!playersSheet) {
+    playersSheet = ss.insertSheet('PLAYERS');
+    playersSheet.appendRow(PLAYER_HEADERS);
+    playersSheet.setFrozenRows(1);
+    playersSheet.getRange(1, 1, 1, PLAYER_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+  }
+
   return {
     status: 'success',
-    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất và ' + sheetNames.length + ' bảng câu hỏi với đầy đủ bài toán!'
+    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất, ' + sheetNames.length + ' bảng câu hỏi và sổ PLAYERS!'
   };
+}
+
+/**
+ * Lấy hoặc khởi tạo sheet PLAYERS với định dạng chuẩn
+ */
+function getOrCreatePlayersSheet(ss) {
+  let sheet = ss.getSheetByName('PLAYERS');
+  if (!sheet) {
+    sheet = ss.insertSheet('PLAYERS');
+    sheet.appendRow(PLAYER_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, PLAYER_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+    sheet.setColumnWidth(1, 160); // ExplorerId
+    sheet.setColumnWidth(2, 110); // Passcode
+    sheet.setColumnWidth(3, 140); // Nickname
+    sheet.setColumnWidth(4, 90);  // ClassName
+    sheet.setColumnWidth(5, 80);  // Avatar
+    sheet.setColumnWidth(6, 70);  // Level
+    sheet.setColumnWidth(7, 90);  // TotalXP
+    sheet.setColumnWidth(8, 90);  // TotalCoins
+    sheet.setColumnWidth(9, 100); // BridgeParts
+    sheet.setColumnWidth(10, 110); // FlowersBloomed
+    sheet.setColumnWidth(11, 130); // MonolithsActivated
+    sheet.setColumnWidth(12, 120); // TreesAwakened
+    sheet.setColumnWidth(13, 160); // LastActiveAt
+    sheet.setColumnWidth(14, 250); // SaveDataJson
+  }
+  return sheet;
+}
+
+/**
+ * Lưu tiến trình học sinh lên tab PLAYERS (Upsert theo ExplorerId hoặc Passcode)
+ */
+function handleSavePlayerProgress(ss, payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const sheet = getOrCreatePlayersSheet(ss);
+    const explorerId = String(payload.explorerId || '').trim();
+    const passcode = String(payload.passcode || '').trim().toUpperCase();
+
+    if (!explorerId && !passcode) {
+      throw new Error('Yêu cầu explorerId hoặc passcode');
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      const rowId = String(data[i][0]).trim();
+      const rowPass = String(data[i][1]).trim().toUpperCase();
+      if ((passcode && rowPass === passcode) || (explorerId && rowId === explorerId)) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const nickname = escapeSheetsText(payload.nickname || payload.explorerName || 'Dũng Sĩ');
+    const className = escapeSheetsText(payload.className || 'Tự do');
+    const avatar = escapeSheetsText(payload.avatar || 'boy');
+    const level = Number(payload.level) || 1;
+    const totalXP = Number(payload.xp !== undefined ? payload.xp : payload.totalXP) || 0;
+    const totalCoins = Number(payload.coins !== undefined ? payload.coins : payload.totalCoins) || 0;
+    const bridgeParts = Number(payload.bridge !== undefined ? payload.bridge : payload.bridgeParts) || 0;
+    const flowersBloomed = Number(payload.flowersBloomed) || 0;
+    const monolithsActivated = Number(payload.monolithsActivated) || 0;
+    const treesAwakened = Number(payload.treesAwakened) || 0;
+    const rawJson = typeof payload.saveData === 'object' ? JSON.stringify(payload.saveData) : String(payload.saveData || '{}');
+    const saveDataJson = escapeSheetsText(rawJson);
+
+    const rowValues = [
+      escapeSheetsText(explorerId),
+      escapeSheetsText(passcode),
+      nickname,
+      className,
+      avatar,
+      level,
+      totalXP,
+      totalCoins,
+      bridgeParts,
+      flowersBloomed,
+      monolithsActivated,
+      treesAwakened,
+      timestamp,
+      saveDataJson
+    ];
+
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 1, 1, PLAYER_HEADERS.length).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
+
+    return {
+      status: 'success',
+      message: 'Đã lưu tiến trình học sinh thành công',
+      passcode: passcode,
+      lastActiveAt: timestamp
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Tải tiến trình học sinh từ tab PLAYERS theo Passcode hoặc ExplorerId
+ */
+function handleLoadPlayerProgress(ss, identifier) {
+  const sheet = ss.getSheetByName('PLAYERS');
+  if (!sheet) {
+    return { status: 'not_found', message: 'Chưa có bảng dữ liệu PLAYERS trên Google Sheets' };
+  }
+
+  const query = String(identifier || '').trim().toUpperCase();
+  if (!query) {
+    return { status: 'error', message: 'Thiếu Mã Thám Hiểm hoặc ExplorerId cần tìm' };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const rowId = String(data[i][0]).trim().toUpperCase();
+    const rowPass = String(data[i][1]).trim().toUpperCase();
+    if (rowPass === query || rowId === query) {
+      let rawJson = String(data[i][13] || '{}');
+      if (rawJson.indexOf("'") === 0) {
+        rawJson = rawJson.slice(1);
+      }
+      let parsedSave = {};
+      try {
+        parsedSave = JSON.parse(rawJson);
+      } catch (_) {}
+
+      return {
+        status: 'success',
+        player: {
+          explorerId: String(data[i][0] || '').replace(/^'/, ''),
+          passcode: String(data[i][1] || '').replace(/^'/, ''),
+          nickname: String(data[i][2] || '').replace(/^'/, ''),
+          className: String(data[i][3] || '').replace(/^'/, ''),
+          avatar: String(data[i][4] || '').replace(/^'/, ''),
+          level: Number(data[i][5]) || 1,
+          totalXP: Number(data[i][6]) || 0,
+          totalCoins: Number(data[i][7]) || 0,
+          bridgeParts: Number(data[i][8]) || 0,
+          flowersBloomed: Number(data[i][9]) || 0,
+          monolithsActivated: Number(data[i][10]) || 0,
+          treesAwakened: Number(data[i][11]) || 0,
+          lastActiveAt: data[i][12],
+          saveData: parsedSave
+        }
+      };
+    }
+  }
+
+  return { status: 'not_found', message: 'Không tìm thấy Mã Thám Hiểm: ' + query };
 }
 
 /**

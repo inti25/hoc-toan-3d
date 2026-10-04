@@ -5,7 +5,9 @@ import {
   computeArchipelagoOrbitalPosition,
   type RemoteZoneConfig,
   type RemoteProblem,
-  type ExplorerProfile
+  type ExplorerProfile,
+  type RemotePlayerProgress,
+  type SavePlayerProgressPayload
 } from '../data/remoteTypes';
 import { usesLakeTerrain, isValidLakePosition } from '../data/lakeLand';
 import { resolveImageUrl, extractMarkdownImage } from './imageResolver';
@@ -23,6 +25,13 @@ export {
   saveExplorerProfile,
   profileManager,
   ExplorerProfileManager
+};
+export type {
+  RemoteZoneConfig,
+  RemoteProblem,
+  ExplorerProfile,
+  RemotePlayerProgress,
+  SavePlayerProgressPayload
 };
 
 export const APPS_SCRIPT_URL_KEY = 'aigame3d_apps_script_url';
@@ -519,3 +528,99 @@ export async function seedRemoteDatabase(customUrl?: string): Promise<{ success:
     throw new Error(result.message || 'Lỗi từ Apps Script khi seed database');
   }
 }
+
+/**
+ * Lưu tiến trình học sinh lên tab PLAYERS trên Google Sheets (Bảo vệ đồng bộ nền)
+ */
+export async function savePlayerProgressToSheets(
+  payload: SavePlayerProgressPayload,
+  customUrl?: string
+): Promise<{ success: boolean; message: string; passcode?: string; lastActiveAt?: string }> {
+  const scriptUrl = (customUrl || getAppsScriptUrl()).trim();
+  if (!scriptUrl) {
+    return { success: false, message: 'Chưa cấu hình URL Google Apps Script' };
+  }
+
+  if (!payload.explorerId && !payload.passcode) {
+    return { success: false, message: 'Cần explorerId hoặc passcode để lưu tiến trình' };
+  }
+
+  const bodyData: SavePlayerProgressPayload = {
+    ...payload,
+    action: 'savePlayerProgress'
+  };
+
+  try {
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(bodyData)
+    });
+
+    if (!response.ok) {
+      return { success: false, message: `HTTP Error ${response.status}` };
+    }
+
+    const result = await response.json();
+    if (result.status === 'success') {
+      return {
+        success: true,
+        message: result.message || 'Đã lưu tiến trình thành công',
+        passcode: result.passcode,
+        lastActiveAt: result.lastActiveAt
+      };
+    } else {
+      return {
+        success: false,
+        message: result.message || 'Lỗi khi lưu dữ liệu lên Apps Script'
+      };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'Không thể kết nối đến máy chủ Google Sheets'
+    };
+  }
+}
+
+/**
+ * Tải tiến trình học sinh từ tab PLAYERS theo Mã Thám Hiểm hoặc ExplorerId
+ */
+export async function loadPlayerProgressFromSheets(
+  identifier: string,
+  customUrl?: string
+): Promise<{ success: boolean; player?: RemotePlayerProgress; message?: string }> {
+  const cleanId = (identifier || '').trim().toUpperCase();
+  if (!cleanId) {
+    return { success: false, message: 'Mã Thám Hiểm hoặc ExplorerId không hợp lệ' };
+  }
+
+  const scriptUrl = (customUrl || getAppsScriptUrl()).trim();
+  if (!scriptUrl) {
+    return { success: false, message: 'Chưa cấu hình URL Google Apps Script' };
+  }
+
+  try {
+    const url = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}action=loadPlayerProgress&identifier=${encodeURIComponent(cleanId)}&_t=${Date.now()}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+
+    if (!response.ok) {
+      return { success: false, message: `Lỗi kết nối máy chủ (${response.status})` };
+    }
+
+    const data = await response.json();
+    if (data.status === 'success' && data.player) {
+      return { success: true, player: data.player, message: data.message };
+    } else if (data.status === 'not_found') {
+      return { success: false, message: data.message || 'Không tìm thấy dữ liệu học sinh' };
+    } else {
+      return { success: false, message: data.message || 'Lỗi xử lý dữ liệu từ Apps Script' };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Không thể kết nối đến máy chủ Google Sheets' };
+  }
+}
+

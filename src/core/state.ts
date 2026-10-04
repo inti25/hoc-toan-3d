@@ -88,3 +88,9 @@ export function parseSave(raw: string | null): SaveState {
 }
 export function loadState(): SaveState { try { return parseSave(localStorage.getItem(SAVE_KEY)); } catch { return freshState(); } }
 export function saveState(state: SaveState): boolean { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); return true; } catch { return false; } }
+
+export function sanitizeSaveState(data: any): SaveState {
+  if (!data) return freshState();
+  if (typeof data === 'string') return parseSave(data);
+  return parseSave(JSON.stringify(data));
+}

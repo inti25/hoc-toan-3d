@@ -47,6 +47,44 @@ export interface ExplorerProfile {
   nickname: string;
   className: string;
   isAnonymous: boolean;
+  explorerId?: string;
+  passcode?: string;
+  avatar?: string;
+}
+
+
+export interface RemotePlayerProgress {
+  explorerId: string;
+  passcode: string;
+  nickname: string;
+  className: string;
+  avatar: string;
+  level: number;
+  totalXP: number;
+  totalCoins: number;
+  bridgeParts: number;
+  flowersBloomed: number;
+  monolithsActivated: number;
+  treesAwakened: number;
+  lastActiveAt?: string;
+  saveData?: any;
+}
+
+export interface SavePlayerProgressPayload {
+  action?: 'savePlayerProgress';
+  explorerId: string;
+  passcode: string;
+  nickname: string;
+  className: string;
+  avatar: string;
+  level: number;
+  totalXP: number;
+  totalCoins: number;
+  bridgeParts: number;
+  flowersBloomed: number;
+  monolithsActivated: number;
+  treesAwakened: number;
+  saveData: any;
 }
 
 /**

@@ -201,6 +201,18 @@ _Avoid_: Phím ảo, Nút bấm di chuyển, D-pad
 Quy tắc điều hướng chuyển động bắt buộc thông qua Bánh Xe Điều Khiển hoặc cụm phím điều hướng (WASD/phím mũi tên), triệt tiêu hoàn toàn tính năng nhấp chuột/chạm đất tự động tìm đường (Point-and-Click Pathfinding) để tăng tính chủ động khám phá và tránh chạm nhầm khi xoay camera.
 _Avoid_: Click to move, Tự tìm đường, Bấm màn hình đi
 
+**Mã Thám Hiểm (Explorer Passcode)**:
+Chuỗi mã 6 ký tự thân thiện dễ nhớ (ví dụ: `MTH-782`) cấp cho người chơi, dùng để định danh và khôi phục tiến trình khi đổi thiết bị mà không cần đăng nhập tài khoản Google.
+_Avoid_: Password, Khóa bí mật, Token, Account ID
 
+**Sổ Theo Dõi Người Chơi (Players Roster / Tab PLAYERS)**:
+Trang tính chuyên biệt trên Google Sheets lưu danh mục học sinh, hiển thị các cột chỉ số thành tích tổng quan (XP, xu, cấp độ, số hoa/bia đá/cây đã hoàn thành) để giáo viên theo dõi, đồng thời lưu chuỗi dữ liệu trạng thái phục hồi (`SaveDataJson`).
+_Avoid_: Bảng điểm, User table, Member list
 
+**Thuật Toán Hợp Nhất Thành Tích (Union-Max Sync Algorithm)**:
+Quy tắc hòa giải xung đột dữ liệu giữa máy cục bộ và máy chủ Google Sheets theo nguyên tắc tối đa hóa thành quả của học sinh: lấy điểm số và cấp độ cao nhất (`Math.max`), kết hợp phép hợp logic `OR` cho toàn bộ các mảng thử thách đã vượt qua.
+_Avoid_: Ghi đè mới nhất, Sync đè, Last write wins
 
+**Hàng Đợi Đồng Bộ Tiến Trình (Throttled Sync Queue)**:
+Cơ chế đệm gom nhóm và làm trễ các yêu cầu đồng bộ lên Google Sheets (hoãn 15 giây hoặc khi hoàn thành mốc nhiệm vụ lớn), đảm bảo trải nghiệm chơi mượt mà ngoại tuyến (offline-first) và bảo vệ hạn ngạch API của Google Apps Script.
+_Avoid_: Realtime sync, Gửi liên tục, Direct post

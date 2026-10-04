@@ -20,11 +20,12 @@ Tài liệu này hướng dẫn cách kết nối Google Sheets làm Database v�
 1. Tại thanh công cụ phía trên của Apps Script, ở ô chọn hàm (Function dropdown), chọn hàm **`seedFullKingdomDatabase`**.
 2. Bấm nút **▷ Chạy** (Run).
 3. Google sẽ yêu cầu cấp quyền truy cập bảng tính lần đầu (Review Permissions ➔ Chọn tài khoản của bạn ➔ Bấm **Nâng cao / Advanced** ➔ Bấm **Đi tới... (không an toàn)** ➔ Bấm **Cho phép / Allow**).
-4. Khi chạy xong (chỉ 1 - 2 giây), quay lại tab Google Sheets, bạn sẽ thấy 7 tab được tạo tự động với đầy đủ 50 bài toán:
+4. Khi chạy xong (chỉ 1 - 2 giây), quay lại tab Google Sheets, bạn sẽ thấy 8 tab được tạo tự động với đầy đủ 50 bài toán và sổ theo dõi:
    - **`CONFIG` (Sổ Đăng Ký Vùng Đất)**: Khai báo 6 vùng đất 3D (5 phân khu Archimedes + 1 Vườn hoa).
    - **`Zone_1_Archimedes` đến `Zone_5_Archimedes`**: 40 bài toán Archimedes (trang 128 - 139).
    - **`VuonHoa`**: 10 bài toán Vườn Hoa Tri Thức.
-   - **`LOGS` (Nhật Ký Thám Hiểm)**: Tự động ghi nhận lịch sử giải bài của học sinh (bảo toàn vĩnh viễn, không bị xóa).
+   - **`LOGS` (Nhật Ký Thám Hiểm)**: Tự động ghi nhận lịch sử từng lượt giải bài của học sinh (bảo toàn vĩnh viễn, không bị xóa).
+   - **`PLAYERS` (Sổ Theo Dõi Người Chơi & Đám Mây)**: Tự động lưu trữ danh mục học sinh, cấp độ, tổng XP, số hoa/bia đá/cây hoàn thành, và dữ liệu khôi phục đa thiết bị qua Mã Thám Hiểm.
 
 ### Bước 4: Triển khai Web App (Deploy)
 1. Ở góc trên bên phải của Apps Script, bấm nút **Triển khai** (Deploy) ➔ Chọn **Quản lý bản triển khai** (nếu đã tạo) hoặc **Tùy chọn triển khai mới** (New deployment).

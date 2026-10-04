@@ -430,6 +430,11 @@ export class Adventure {
     };
   }
 
+  restoreState(newState: SaveState): void {
+    this.state = newState;
+    this.save();
+  }
+
   resetProgress(): void {
     this.state = freshState();
     this.save();

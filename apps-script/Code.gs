@@ -29,6 +29,13 @@ const LOG_HEADERS = [
   'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details'
 ];
 
+// Tiêu đề các cột cho sheet PLAYERS (Sổ Theo Dõi Người Chơi & Lưu Trữ Đám Mây)
+const PLAYER_HEADERS = [
+  'ExplorerId', 'Passcode', 'Nickname', 'ClassName', 'Avatar',
+  'Level', 'TotalXP', 'TotalCoins', 'BridgeParts', 'FlowersBloomed',
+  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson'
+];
+
 /**
  * Xử lý HTTP GET
  */
@@ -59,6 +66,9 @@ function doGet(e) {
         }
       });
       result = { status: 'success', zones: zones, questions: allQuestions };
+    } else if (action === 'loadPlayerProgress') {
+      const identifier = params.passcode || params.explorerId || params.identifier;
+      result = handleLoadPlayerProgress(ss, identifier);
     } else {
       throw new Error('Action không hợp lệ: ' + action);
     }
@@ -70,7 +80,7 @@ function doGet(e) {
 }
 
 /**
- * Xử lý HTTP POST (Ghi nhật ký làm bài hoặc Seed Database)
+ * Xử lý HTTP POST (Ghi nhật ký làm bài, Lưu tiến trình, hoặc Seed Database)
  */
 function doPost(e) {
   try {
@@ -89,7 +99,20 @@ function doPost(e) {
       return createJsonResponse(seedResult);
     }
 
-    // 2. Mặc định: Ghi nhật ký tiến trình vào sheet LOGS
+    // 2. Xử lý lưu tiến trình học sinh vào sheet PLAYERS
+    if (payload.action === 'savePlayerProgress') {
+      const saveResult = handleSavePlayerProgress(ss, payload);
+      return createJsonResponse(saveResult);
+    }
+
+    // 3. Xử lý tải tiến trình học sinh từ sheet PLAYERS
+    if (payload.action === 'loadPlayerProgress') {
+      const identifier = payload.passcode || payload.explorerId || payload.identifier;
+      const loadResult = handleLoadPlayerProgress(ss, identifier);
+      return createJsonResponse(loadResult);
+    }
+
+    // 4. Mặc định: Ghi nhật ký tiến trình vào sheet LOGS
     let logSheet = ss.getSheetByName('LOGS');
     if (!logSheet) {
       logSheet = ss.insertSheet('LOGS');
@@ -244,10 +267,175 @@ function handleSeedDatabase(ss, payload) {
     logSheet.setFrozenRows(1);
   }
 
+  // 4. Đảm bảo sheet PLAYERS tồn tại mà KHÔNG xóa danh sách người chơi đã có
+  let playersSheet = ss.getSheetByName('PLAYERS');
+  if (!playersSheet) {
+    playersSheet = ss.insertSheet('PLAYERS');
+    playersSheet.appendRow(PLAYER_HEADERS);
+    playersSheet.setFrozenRows(1);
+    playersSheet.getRange(1, 1, 1, PLAYER_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+  }
+
   return {
     status: 'success',
-    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất và ' + sheetNames.length + ' bảng câu hỏi với đầy đủ bài toán!'
+    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất, ' + sheetNames.length + ' bảng câu hỏi và sổ PLAYERS!'
   };
+}
+
+/**
+ * Lấy hoặc khởi tạo sheet PLAYERS với định dạng chuẩn
+ */
+function getOrCreatePlayersSheet(ss) {
+  let sheet = ss.getSheetByName('PLAYERS');
+  if (!sheet) {
+    sheet = ss.insertSheet('PLAYERS');
+    sheet.appendRow(PLAYER_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, PLAYER_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+    sheet.setColumnWidth(1, 160); // ExplorerId
+    sheet.setColumnWidth(2, 110); // Passcode
+    sheet.setColumnWidth(3, 140); // Nickname
+    sheet.setColumnWidth(4, 90);  // ClassName
+    sheet.setColumnWidth(5, 80);  // Avatar
+    sheet.setColumnWidth(6, 70);  // Level
+    sheet.setColumnWidth(7, 90);  // TotalXP
+    sheet.setColumnWidth(8, 90);  // TotalCoins
+    sheet.setColumnWidth(9, 100); // BridgeParts
+    sheet.setColumnWidth(10, 110); // FlowersBloomed
+    sheet.setColumnWidth(11, 130); // MonolithsActivated
+    sheet.setColumnWidth(12, 120); // TreesAwakened
+    sheet.setColumnWidth(13, 160); // LastActiveAt
+    sheet.setColumnWidth(14, 250); // SaveDataJson
+  }
+  return sheet;
+}
+
+/**
+ * Lưu tiến trình học sinh lên tab PLAYERS (Upsert theo ExplorerId hoặc Passcode)
+ */
+function handleSavePlayerProgress(ss, payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const sheet = getOrCreatePlayersSheet(ss);
+    const explorerId = String(payload.explorerId || '').trim();
+    const passcode = String(payload.passcode || '').trim().toUpperCase();
+
+    if (!explorerId && !passcode) {
+      throw new Error('Yêu cầu explorerId hoặc passcode');
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      const rowId = String(data[i][0]).trim();
+      const rowPass = String(data[i][1]).trim().toUpperCase();
+      if ((passcode && rowPass === passcode) || (explorerId && rowId === explorerId)) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const nickname = escapeSheetsText(payload.nickname || payload.explorerName || 'Dũng Sĩ');
+    const className = escapeSheetsText(payload.className || 'Tự do');
+    const avatar = escapeSheetsText(payload.avatar || 'boy');
+    const level = Number(payload.level) || 1;
+    const totalXP = Number(payload.xp !== undefined ? payload.xp : payload.totalXP) || 0;
+    const totalCoins = Number(payload.coins !== undefined ? payload.coins : payload.totalCoins) || 0;
+    const bridgeParts = Number(payload.bridge !== undefined ? payload.bridge : payload.bridgeParts) || 0;
+    const flowersBloomed = Number(payload.flowersBloomed) || 0;
+    const monolithsActivated = Number(payload.monolithsActivated) || 0;
+    const treesAwakened = Number(payload.treesAwakened) || 0;
+    const rawJson = typeof payload.saveData === 'object' ? JSON.stringify(payload.saveData) : String(payload.saveData || '{}');
+    const saveDataJson = escapeSheetsText(rawJson);
+
+    const rowValues = [
+      escapeSheetsText(explorerId),
+      escapeSheetsText(passcode),
+      nickname,
+      className,
+      avatar,
+      level,
+      totalXP,
+      totalCoins,
+      bridgeParts,
+      flowersBloomed,
+      monolithsActivated,
+      treesAwakened,
+      timestamp,
+      saveDataJson
+    ];
+
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 1, 1, PLAYER_HEADERS.length).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
+
+    return {
+      status: 'success',
+      message: 'Đã lưu tiến trình học sinh thành công',
+      passcode: passcode,
+      lastActiveAt: timestamp
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Tải tiến trình học sinh từ tab PLAYERS theo Passcode hoặc ExplorerId
+ */
+function handleLoadPlayerProgress(ss, identifier) {
+  const sheet = ss.getSheetByName('PLAYERS');
+  if (!sheet) {
+    return { status: 'not_found', message: 'Chưa có bảng dữ liệu PLAYERS trên Google Sheets' };
+  }
+
+  const query = String(identifier || '').trim().toUpperCase();
+  if (!query) {
+    return { status: 'error', message: 'Thiếu Mã Thám Hiểm hoặc ExplorerId cần tìm' };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const rowId = String(data[i][0]).trim().toUpperCase();
+    const rowPass = String(data[i][1]).trim().toUpperCase();
+    if (rowPass === query || rowId === query) {
+      let rawJson = String(data[i][13] || '{}');
+      if (rawJson.indexOf("'") === 0) {
+        rawJson = rawJson.slice(1);
+      }
+      let parsedSave = {};
+      try {
+        parsedSave = JSON.parse(rawJson);
+      } catch (_) {}
+
+      return {
+        status: 'success',
+        player: {
+          explorerId: String(data[i][0] || '').replace(/^'/, ''),
+          passcode: String(data[i][1] || '').replace(/^'/, ''),
+          nickname: String(data[i][2] || '').replace(/^'/, ''),
+          className: String(data[i][3] || '').replace(/^'/, ''),
+          avatar: String(data[i][4] || '').replace(/^'/, ''),
+          level: Number(data[i][5]) || 1,
+          totalXP: Number(data[i][6]) || 0,
+          totalCoins: Number(data[i][7]) || 0,
+          bridgeParts: Number(data[i][8]) || 0,
+          flowersBloomed: Number(data[i][9]) || 0,
+          monolithsActivated: Number(data[i][10]) || 0,
+          treesAwakened: Number(data[i][11]) || 0,
+          lastActiveAt: data[i][12],
+          saveData: parsedSave
+        }
+      };
+    }
+  }
+
+  return { status: 'not_found', message: 'Không tìm thấy Mã Thám Hiểm: ' + query };
 }
 
 /**
@@ -650,6 +838,25 @@ const SEED_DATA = {
       "color": 15485081,
       "colorHex": "#ec4899",
       "badge": "🌸 Tinh Thể Vườn Hoa"
+    },
+    {
+      "id": 7,
+      "name": "Công Viên Xanh",
+      "title": "Công Viên Thư Giãn",
+      "description": "Đánh thức 20 Cây Tri Thức trong công viên bằng các bài toán nhân chia nâng cao",
+      "template": "PARK_SANCTUARY",
+      "theme": "GARDEN",
+      "decorDensity": "HIGH",
+      "sheetName": "CongVienXanh",
+      "center": {
+        "x": -45,
+        "z": 0
+      },
+      "width": 36,
+      "depth": 36,
+      "color": 1096065,
+      "colorHex": "#10b981",
+      "badge": "🌳 Mầm Xanh Tri Thức"
     }
   ],
   "questionsBySheet": {
@@ -2985,6 +3192,708 @@ const SEED_DATA = {
               "Đếm tất cả các số trên: có đúng 9 số thỏa mãn."
             ],
             "explanation": "Các số có 2 chữ số có tổng bằng 10 gồm: 19, 28, 37, 46, 55, 64, 73, 82, 91 -> tổng cộng có 9 số."
+          }
+        ]
+      }
+    ],
+    "CongVienXanh": [
+      {
+        "id": 1,
+        "title": "Cây Tri Thức #1",
+        "subtitle": "Bảng nhân 8: 8 × 7 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #1",
+        "steps": [
+          {
+            "stepId": "tree_1",
+            "prompt": "Tính giá trị của phép tính: 8 × 7 = ?",
+            "options": [
+              {
+                "label": "54",
+                "value": "54"
+              },
+              {
+                "label": "56",
+                "value": "56"
+              },
+              {
+                "label": "58",
+                "value": "58"
+              }
+            ],
+            "answer": "56",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 56."
+            ],
+            "explanation": "8 × 7 = 56."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Cây Tri Thức #2",
+        "subtitle": "Bảng chia 9: 72 : 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #2",
+        "steps": [
+          {
+            "stepId": "tree_2",
+            "prompt": "Tính giá trị của phép tính: 72 : 9 = ?",
+            "options": [
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              }
+            ],
+            "answer": "8",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 8."
+            ],
+            "explanation": "72 : 9 = 8."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Cây Tri Thức #3",
+        "subtitle": "Bảng nhân 6: 6 × 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #3",
+        "steps": [
+          {
+            "stepId": "tree_3",
+            "prompt": "Tính giá trị của phép tính: 6 × 9 = ?",
+            "options": [
+              {
+                "label": "48",
+                "value": "48"
+              },
+              {
+                "label": "54",
+                "value": "54"
+              },
+              {
+                "label": "56",
+                "value": "56"
+              }
+            ],
+            "answer": "54",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 54."
+            ],
+            "explanation": "6 × 9 = 54."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Cây Tri Thức #4",
+        "subtitle": "Bảng chia 8: 56 : 8 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #4",
+        "steps": [
+          {
+            "stepId": "tree_4",
+            "prompt": "Tính giá trị của phép tính: 56 : 8 = ?",
+            "options": [
+              {
+                "label": "6",
+                "value": "6"
+              },
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              }
+            ],
+            "answer": "7",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 7."
+            ],
+            "explanation": "56 : 8 = 7."
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Cây Tri Thức #5",
+        "subtitle": "Bảng nhân 9: 9 × 8 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #5",
+        "steps": [
+          {
+            "stepId": "tree_5",
+            "prompt": "Tính giá trị của phép tính: 9 × 8 = ?",
+            "options": [
+              {
+                "label": "64",
+                "value": "64"
+              },
+              {
+                "label": "72",
+                "value": "72"
+              },
+              {
+                "label": "81",
+                "value": "81"
+              }
+            ],
+            "answer": "72",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 72."
+            ],
+            "explanation": "9 × 8 = 72."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Cây Tri Thức #6",
+        "subtitle": "Bảng chia 7: 63 : 7 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #6",
+        "steps": [
+          {
+            "stepId": "tree_6",
+            "prompt": "Tính giá trị của phép tính: 63 : 7 = ?",
+            "options": [
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              },
+              {
+                "label": "10",
+                "value": "10"
+              }
+            ],
+            "answer": "9",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 9."
+            ],
+            "explanation": "63 : 7 = 9."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Cây Tri Thức #7",
+        "subtitle": "Bảng nhân 4: 4 × 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #7",
+        "steps": [
+          {
+            "stepId": "tree_7",
+            "prompt": "Tính giá trị của phép tính: 4 × 9 = ?",
+            "options": [
+              {
+                "label": "32",
+                "value": "32"
+              },
+              {
+                "label": "36",
+                "value": "36"
+              },
+              {
+                "label": "40",
+                "value": "40"
+              }
+            ],
+            "answer": "36",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 36."
+            ],
+            "explanation": "4 × 9 = 36."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Cây Tri Thức #8",
+        "subtitle": "Bảng chia 6: 48 : 6 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #8",
+        "steps": [
+          {
+            "stepId": "tree_8",
+            "prompt": "Tính giá trị của phép tính: 48 : 6 = ?",
+            "options": [
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              }
+            ],
+            "answer": "8",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 8."
+            ],
+            "explanation": "48 : 6 = 8."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Cây Tri Thức #9",
+        "subtitle": "Bảng nhân 7: 7 × 7 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #9",
+        "steps": [
+          {
+            "stepId": "tree_9",
+            "prompt": "Tính giá trị của phép tính: 7 × 7 = ?",
+            "options": [
+              {
+                "label": "42",
+                "value": "42"
+              },
+              {
+                "label": "49",
+                "value": "49"
+              },
+              {
+                "label": "56",
+                "value": "56"
+              }
+            ],
+            "answer": "49",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 49."
+            ],
+            "explanation": "7 × 7 = 49."
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Cây Tri Thức #10",
+        "subtitle": "Bảng chia 9: 81 : 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #10",
+        "steps": [
+          {
+            "stepId": "tree_10",
+            "prompt": "Tính giá trị của phép tính: 81 : 9 = ?",
+            "options": [
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              },
+              {
+                "label": "10",
+                "value": "10"
+              }
+            ],
+            "answer": "9",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 9."
+            ],
+            "explanation": "81 : 9 = 9."
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Cây Tri Thức #11",
+        "subtitle": "Bảng nhân 9: 9 × 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #11",
+        "steps": [
+          {
+            "stepId": "tree_11",
+            "prompt": "Tính giá trị của phép tính: 9 × 9 = ?",
+            "options": [
+              {
+                "label": "72",
+                "value": "72"
+              },
+              {
+                "label": "81",
+                "value": "81"
+              },
+              {
+                "label": "90",
+                "value": "90"
+              }
+            ],
+            "answer": "81",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 81."
+            ],
+            "explanation": "9 × 9 = 81."
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Cây Tri Thức #12",
+        "subtitle": "Bảng chia 6: 42 : 6 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #12",
+        "steps": [
+          {
+            "stepId": "tree_12",
+            "prompt": "Tính giá trị của phép tính: 42 : 6 = ?",
+            "options": [
+              {
+                "label": "6",
+                "value": "6"
+              },
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              }
+            ],
+            "answer": "7",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 7."
+            ],
+            "explanation": "42 : 6 = 7."
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Cây Tri Thức #13",
+        "subtitle": "Bảng nhân 8: 8 × 6 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #13",
+        "steps": [
+          {
+            "stepId": "tree_13",
+            "prompt": "Tính giá trị của phép tính: 8 × 6 = ?",
+            "options": [
+              {
+                "label": "42",
+                "value": "42"
+              },
+              {
+                "label": "48",
+                "value": "48"
+              },
+              {
+                "label": "54",
+                "value": "54"
+              }
+            ],
+            "answer": "48",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 48."
+            ],
+            "explanation": "8 × 6 = 48."
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Cây Tri Thức #14",
+        "subtitle": "Bảng chia 8: 64 : 8 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #14",
+        "steps": [
+          {
+            "stepId": "tree_14",
+            "prompt": "Tính giá trị của phép tính: 64 : 8 = ?",
+            "options": [
+              {
+                "label": "7",
+                "value": "7"
+              },
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              }
+            ],
+            "answer": "8",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 8."
+            ],
+            "explanation": "64 : 8 = 8."
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Cây Tri Thức #15",
+        "subtitle": "Bảng nhân 7: 7 × 8 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #15",
+        "steps": [
+          {
+            "stepId": "tree_15",
+            "prompt": "Tính giá trị của phép tính: 7 × 8 = ?",
+            "options": [
+              {
+                "label": "54",
+                "value": "54"
+              },
+              {
+                "label": "56",
+                "value": "56"
+              },
+              {
+                "label": "63",
+                "value": "63"
+              }
+            ],
+            "answer": "56",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 56."
+            ],
+            "explanation": "7 × 8 = 56."
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "title": "Cây Tri Thức #16",
+        "subtitle": "Bảng chia 5: 45 : 5 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #16",
+        "steps": [
+          {
+            "stepId": "tree_16",
+            "prompt": "Tính giá trị của phép tính: 45 : 5 = ?",
+            "options": [
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              },
+              {
+                "label": "10",
+                "value": "10"
+              }
+            ],
+            "answer": "9",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 9."
+            ],
+            "explanation": "45 : 5 = 9."
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "title": "Cây Tri Thức #17",
+        "subtitle": "Bảng nhân 6: 6 × 7 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #17",
+        "steps": [
+          {
+            "stepId": "tree_17",
+            "prompt": "Tính giá trị của phép tính: 6 × 7 = ?",
+            "options": [
+              {
+                "label": "36",
+                "value": "36"
+              },
+              {
+                "label": "42",
+                "value": "42"
+              },
+              {
+                "label": "48",
+                "value": "48"
+              }
+            ],
+            "answer": "42",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 42."
+            ],
+            "explanation": "6 × 7 = 42."
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "title": "Cây Tri Thức #18",
+        "subtitle": "Bảng chia 9: 54 : 9 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #18",
+        "steps": [
+          {
+            "stepId": "tree_18",
+            "prompt": "Tính giá trị của phép tính: 54 : 9 = ?",
+            "options": [
+              {
+                "label": "5",
+                "value": "5"
+              },
+              {
+                "label": "6",
+                "value": "6"
+              },
+              {
+                "label": "7",
+                "value": "7"
+              }
+            ],
+            "answer": "6",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 6."
+            ],
+            "explanation": "54 : 9 = 6."
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "title": "Cây Tri Thức #19",
+        "subtitle": "Bảng nhân 9: 9 × 5 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #19",
+        "steps": [
+          {
+            "stepId": "tree_19",
+            "prompt": "Tính giá trị của phép tính: 9 × 5 = ?",
+            "options": [
+              {
+                "label": "40",
+                "value": "40"
+              },
+              {
+                "label": "45",
+                "value": "45"
+              },
+              {
+                "label": "50",
+                "value": "50"
+              }
+            ],
+            "answer": "45",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 45."
+            ],
+            "explanation": "9 × 5 = 45."
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "title": "Cây Tri Thức #20",
+        "subtitle": "Bảng chia 10: 90 : 10 = ?",
+        "position": null,
+        "color": 1096065,
+        "badge": "🌳 Cây Tri Thức #20",
+        "steps": [
+          {
+            "stepId": "tree_20",
+            "prompt": "Tính giá trị của phép tính: 90 : 10 = ?",
+            "options": [
+              {
+                "label": "8",
+                "value": "8"
+              },
+              {
+                "label": "9",
+                "value": "9"
+              },
+              {
+                "label": "10",
+                "value": "10"
+              }
+            ],
+            "answer": "9",
+            "hints": [
+              "Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.",
+              "Thử nhân ngược lại: nếu phép chia thì lấy thương nhân số chia.",
+              "Kết quả chính xác là 9."
+            ],
+            "explanation": "90 : 10 = 9."
           }
         ]
       }

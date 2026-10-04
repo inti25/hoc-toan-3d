@@ -17,19 +17,30 @@ import {
   resolveZoneProblemsWithPositions,
   seedRemoteDatabase,
   getBundledFallbackData,
-  REMOTE_CACHE_KEY
+  REMOTE_CACHE_KEY,
+  loadPlayerProgressFromSheets
 } from './core/sheetsClient';
-import type { RemoteZoneConfig, RemoteProblem } from './data/remoteTypes';
+import { normalizePasscode, defaultStorage } from './core/profile';
+import { sanitizeSaveState } from './core/state';
+import {
+  SyncManager,
+  formatTimeAgo,
+  getSyncStatusLabel,
+  runLocalStorageMigration
+} from './core/SyncManager';
+import type { RemoteZoneConfig, RemoteProblem, RemotePlayerProgress } from './data/remoteTypes';
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
 import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const adventure = new Adventure();
+const syncManager = new SyncManager(adventure);
 const audio = new AudioManager();
 const worldLoader = new WorldLoader();
 const hudPresenter = new HudPresenter();
 let world: World | null = null;
+
 let mode: 'bridge' | 'practice' = 'bridge';
 let currentDialog = '';
 let toastTimer = 0;
@@ -155,7 +166,7 @@ app.innerHTML = `
     <div id="loading" class="loading"><div class="loading-logo-box"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="loading-logo-img" /></div><strong>Đang mở cánh cổng…</strong></div>
     <header class="topbar">
       <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="brand-logo-img" /></span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
-      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhiệm vụ & Tiến độ" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
+      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="cloud-status-btn" class="icon-button cloud-status-btn" title="Trạng thái đồng bộ đám mây" aria-label="Trạng thái đồng bộ đám mây"><span class="cloud-status-icon">${icon('cloud')}</span><i id="cloud-status-dot" class="cloud-status-dot idle"></i></button><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhiệm vụ & Tiến độ" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
       <div class="chapter"><span></span> MỘT CUỘC PHIÊU LƯU NHỎ</div>
@@ -177,6 +188,7 @@ app.innerHTML = `
       </div>
       <button id="play" class="primary play-button">Bắt đầu phiêu lưu ${icon('arrow')}</button>
       <button id="learn-welcome" class="text-button">${icon('book')} Khám phá bảng cửu chương</button>
+      <button id="restore-welcome" class="text-button restore-welcome-btn">${icon('cloud')} Khôi phục bằng Mã Thám Hiểm</button>
       <div class="welcome-notes"><span>✦ Học qua những chuyến đi</span><span>Không giới hạn thời gian</span></div>
     </section>
     <div id="world-caption" class="world-caption"><span>01</span><div>Làng Khởi Đầu<small>Bảng cửu chương ×1 – ×10 & Vườn Hoa</small></div></div>
@@ -354,7 +366,18 @@ function updateHUD() {
     const earned = state.zoneBadges[i];
     return `<span class="archimedes-badge-dot ${earned ? 'earned' : ''}" title="${z.name} (${earned ? 'Đã đạt' : 'Chưa đạt'})">${earned ? '🏆' : '✦'}</span>`;
   }).join('');
+
+  // Tự động đưa vào hàng đợi đồng bộ nền lên Google Sheets
+  if (state.started) {
+    const isMilestone =
+      state.bridge === BRIDGE_PARTS ||
+      state.questComplete ||
+      bloomedCount === 10 ||
+      (monolithCount > 0 && monolithCount === totalMonoliths);
+    syncManager.queueSync(isMilestone);
+  }
 }
+
 
 function openDialog(title: string, body: string, kind: string) {
   if (world) {
@@ -1194,6 +1217,190 @@ function setWheelControlEnabled(val: boolean) {
   updateWheelControlVisibility();
 }
 
+function applyRestoredPlayer(player: RemotePlayerProgress) {
+  // 1. Phục hồi SaveState
+  const parsedState = sanitizeSaveState(player.saveData);
+  if (player.avatar) {
+    parsedState.avatar = player.avatar as any;
+  }
+  adventure.restoreState(parsedState);
+
+  // 2. Cập nhật Profile
+  saveExplorerProfile({
+    nickname: player.nickname,
+    className: player.className,
+    avatar: player.avatar,
+    explorerId: player.explorerId,
+    passcode: player.passcode,
+    isAnonymous: false
+  });
+
+  // 3. Cập nhật HUD & Inputs
+  updateHUD();
+  initWelcomeProfile();
+
+  // 4. Cập nhật Thế giới 3D nếu đang chạy
+  if (world) {
+    world.setAvatar(parsedState.avatar);
+    world.setBridge(parsedState.bridge);
+    world.setFlowersBloomed(parsedState.flowers);
+    world.setMonolithsActivated((id, index) => {
+      return (
+        adventure.isProblemSolved(id) ||
+        (typeof id === 'number' && id >= 306 && parsedState.monoliths[id - 306] === true) ||
+        parsedState.monoliths[index] === true
+      );
+    });
+    if (parsedState.parkTrees && world.syncAwakenedParkTrees) {
+      world.syncAwakenedParkTrees(parsedState.parkTrees);
+    }
+  }
+
+  closeDialog();
+  toast(`🎉 Chào mừng ${player.nickname} trở lại! Tiến trình đã được khôi phục thành công.`);
+}
+
+function openRestorePasscodeDialog() {
+  openDialog(
+    'Khôi phục bằng Mã Thám Hiểm',
+    `
+    <div class="dialog-eyebrow">ĐỒNG BỘ ĐA THIẾT BỊ · GOOGLE SHEETS</div>
+    <p class="dialog-copy" style="font-size:14px;margin-bottom:12px">
+      Nhập Mã Thám Hiểm (ví dụ: <b>MTH-882</b>) để khôi phục cấp độ, số xu, cây cầu và các bài toán đã giải từ thiết bị khác.
+    </p>
+    <div class="restore-input-group">
+      <input
+        id="restore-passcode-input"
+        class="welcome-input passcode-input"
+        type="text"
+        maxlength="16"
+        placeholder="MTH-882"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="characters"
+        spellcheck="false"
+      />
+    </div>
+    <button id="restore-lookup-btn" class="primary wide" style="margin-top:12px">
+      ${icon('cloud')} Tìm kiếm dữ liệu
+    </button>
+    <div id="restore-result-box" style="margin-top:12px"></div>
+    <button id="restore-cancel-btn" class="text-button centered" style="margin-top:8px">Đóng</button>
+    `,
+    'cloud'
+  );
+
+  const cancelBtn = $('restore-cancel-btn');
+  if (cancelBtn) cancelBtn.onclick = closeDialog;
+
+  const inputEl = $<HTMLInputElement>('restore-passcode-input');
+  const lookupBtn = $<HTMLButtonElement>('restore-lookup-btn');
+  const resultBox = $('restore-result-box');
+
+  const executeLookup = async () => {
+    if (!inputEl) return;
+    const rawCode = inputEl.value.trim();
+    const cleanCode = normalizePasscode(rawCode);
+    if (!cleanCode) {
+      if (resultBox) {
+        resultBox.innerHTML = '<p class="feedback gentle" style="display:block">Vui lòng nhập Mã Thám Hiểm của bạn.</p>';
+      }
+      inputEl.focus();
+      return;
+    }
+
+    if (lookupBtn) {
+      lookupBtn.disabled = true;
+      lookupBtn.innerHTML = '<span>⏳ Đang tìm kiếm trên Google Sheets...</span>';
+    }
+    if (resultBox) {
+      resultBox.innerHTML = '<div style="text-align:center;padding:16px;color:#5a7463"><div class="spinner"></div> Đang kiểm tra sổ PLAYERS...</div>';
+    }
+
+    const res = await loadPlayerProgressFromSheets(cleanCode);
+    if (lookupBtn) {
+      lookupBtn.disabled = false;
+      lookupBtn.innerHTML = `${icon('cloud')} Tìm kiếm dữ liệu`;
+    }
+
+    if (!res.success || !res.player) {
+      if (resultBox) {
+        resultBox.innerHTML = `
+          <div class="feedback gentle" style="display:block;background:#fceee8;border:1px solid #f2cfc2;padding:12px;border-radius:12px;color:#9b4731">
+            <strong>Không tìm thấy dữ liệu!</strong>
+            <p style="margin:4px 0 0;font-size:13px">${res.message || 'Kiểm tra lại mã và thử lại nhé.'}</p>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    const player = res.player;
+    const playerChar = getCharacter((player.avatar as any) || 'boy');
+    const flowerText = `${player.flowersBloomed || 0}/10 hoa nở`;
+    const bridgeText = `${player.bridgeParts || 0}/6 nhịp cầu`;
+    const monolithText = `${player.monolithsActivated || 0} bia đá`;
+
+    if (resultBox) {
+      resultBox.innerHTML = `
+        <div class="restore-student-card">
+          <div class="restore-student-header">
+            <div class="restore-avatar-face">${playerChar.emoji}</div>
+            <div class="restore-student-info">
+              <h4>${player.nickname} <small style="font-weight:normal;color:#788b7f">(${player.className || 'Tự do'})</small></h4>
+              <span>Mã Thám Hiểm: <b>${player.passcode}</b></span>
+            </div>
+          </div>
+          <div class="restore-stats-grid">
+            <div class="restore-stat-item">
+              <span>Cấp độ</span>
+              <strong>Cấp ${player.level}</strong>
+            </div>
+            <div class="restore-stat-item">
+              <span>Kinh nghiệm</span>
+              <strong>${player.totalXP} XP</strong>
+            </div>
+            <div class="restore-stat-item">
+              <span>Tiền xu</span>
+              <strong>${player.totalCoins} 🪙</strong>
+            </div>
+          </div>
+          <div class="restore-progress-pills">
+            <span class="restore-pill">🌉 ${bridgeText}</span>
+            <span class="restore-pill">🌸 ${flowerText}</span>
+            <span class="restore-pill">🏛️ ${monolithText}</span>
+            ${player.lastActiveAt ? `<span class="restore-pill">🕒 ${player.lastActiveAt}</span>` : ''}
+          </div>
+        </div>
+        <p style="font-size:13px;color:#5a7463;line-height:1.5;margin:8px 0 14px">
+          Bạn có muốn nạp dữ liệu của bạn <b>${player.nickname}</b> vào thiết bị này không?
+        </p>
+        <button id="confirm-restore-btn" class="primary wide" style="margin-bottom:8px">
+          ${icon('check')} Đồng ý khôi phục tiến trình này
+        </button>
+      `;
+
+      const confirmBtn = $<HTMLButtonElement>('confirm-restore-btn');
+      if (confirmBtn) {
+        confirmBtn.onclick = () => {
+          applyRestoredPlayer(player);
+        };
+      }
+    }
+  };
+
+  if (lookupBtn) lookupBtn.onclick = executeLookup;
+  if (inputEl) {
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        executeLookup();
+      }
+    });
+    inputEl.focus();
+  }
+}
+
 function settings() {
   const state = adventure.getState();
   const profile = getExplorerProfile();
@@ -1207,17 +1414,24 @@ function settings() {
     <div class="settings-row"><span>Bánh xe di chuyển (Wheel Control)</span><button id="toggle-wheel" class="switch" role="switch" aria-checked="${isWheelControlEnabled()}" aria-label="Bánh xe di chuyển"><i></i></button></div>
 
     <div class="sheets-config-box">
-      <h4>${icon('settings')} Thư Viện Tri Thức Trực Tuyến</h4>
-      <p>Câu hỏi và bản đồ được nạp tự động từ Google Sheets của hệ thống.</p>
-      <div class="sheets-action-row">
-        <button id="refresh-sheets-btn" class="primary small" title="Tải lại câu hỏi mới nhất từ Google Sheets">${icon('reset')} Đồng bộ câu hỏi mới nhất</button>
-        <button id="seed-sheets-btn" class="secondary small" title="Khởi tạo lại 50 câu hỏi mẫu lên Google Sheets">${icon('star')} ⚡ Khởi tạo 50 câu mẫu</button>
+      <h4>${icon('crown')} Hồ Sơ & Mã Thám Hiểm</h4>
+      <p>Mã Thám Hiểm dùng để đồng bộ tiến trình học tập sang thiết bị khác.</p>
+      <div class="passcode-display-row">
+        <div>
+          <small style="display:block;color:#6b8173;font-size:11px">Mã Thám Hiểm của bạn:</small>
+          <strong class="passcode-value" id="current-passcode-display">${profile.passcode || 'Đang tạo...'}</strong>
+        </div>
+        <button id="copy-passcode-btn" class="passcode-copy-btn" title="Sao chép Mã Thám Hiểm">${icon('copy')} Sao chép</button>
       </div>
-    </div>
-
-    <div class="sheets-config-box">
-      <h4>${icon('crown')} Hồ Sơ Dũng Sĩ</h4>
-      <p>Thông tin ghi nhận kết quả và nhật ký làm bài trên Google Sheets.</p>
+      <div class="cloud-sync-status-row">
+        <div class="cloud-sync-status-badge">
+          <span id="settings-sync-indicator-dot" class="status-indicator-dot ${syncManager.getStatus()}"></span>
+          <span id="settings-sync-status-text">${getSyncStatusLabel(syncManager.getStatus(), syncManager.getLastSyncedAt(), syncManager.getLastErrorMessage())}</span>
+        </div>
+        <small id="settings-sync-time-text" style="color:#6b8173;font-size:11px">
+          ${syncManager.getLastSyncedAt() ? `Đồng bộ gần nhất: ${formatTimeAgo(syncManager.getLastSyncedAt())}` : 'Chưa đồng bộ'}
+        </small>
+      </div>
       <div class="profile-inputs-row">
         <div class="profile-field">
           <label for="profile-name">Tên dũng sĩ:</label>
@@ -1228,13 +1442,25 @@ function settings() {
           <input type="text" id="profile-class" value="${profile.className}">
         </div>
       </div>
-      <div class="sheets-action-row">
+      <div class="sheets-action-row" style="margin-top:10px">
         <button id="save-profile-btn" class="secondary small">${icon('check')} Lưu hồ sơ</button>
+        <button id="force-sync-btn" class="secondary small">${icon('cloud')} Đồng bộ ngay bây giờ</button>
+        <button id="settings-restore-btn" class="secondary small">${icon('reset')} Chuyển tài khoản / Khôi phục mã khác</button>
+      </div>
+    </div>
+
+
+    <div class="sheets-config-box">
+      <h4>${icon('settings')} Thư Viện Tri Thức Trực Tuyến</h4>
+      <p>Câu hỏi và bản đồ được nạp tự động từ Google Sheets của hệ thống.</p>
+      <div class="sheets-action-row">
+        <button id="refresh-sheets-btn" class="primary small" title="Tải lại câu hỏi mới nhất từ Google Sheets">${icon('reset')} Đồng bộ câu hỏi mới nhất</button>
+        <button id="seed-sheets-btn" class="secondary small" title="Khởi tạo lại 50 câu hỏi mẫu lên Google Sheets">${icon('star')} ⚡ Khởi tạo 50 câu mẫu</button>
       </div>
     </div>
 
     <div class="sheets-config-box">
-      <h4>${icon('device')} Ứng Dụng Thiết Bị (PWA)</h4>
+      <h4>${icon('device')} Ứng Dụng Thiết BI (PWA)</h4>
       <p>Cài đặt Vương Quốc Học Toán 3D về màn hình chính của máy tính bảng hoặc điện thoại để mở nhanh và học ngoại tuyến.</p>
       <div class="sheets-action-row">
         ${isStandalone()
@@ -1304,6 +1530,57 @@ function settings() {
       });
   };
 
+  const copyPasscodeBtn = $('copy-passcode-btn');
+  if (copyPasscodeBtn) {
+    copyPasscodeBtn.onclick = async () => {
+      const code = profile.passcode || '';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        copyPasscodeBtn.innerHTML = `${icon('check')} Đã chép!`;
+        toast(`Đã sao chép Mã Thám Hiểm: ${code}`);
+        setTimeout(() => {
+          if (copyPasscodeBtn) copyPasscodeBtn.innerHTML = `${icon('copy')} Sao chép`;
+        }, 2000);
+      } catch (_) {
+        toast(`Mã Thám Hiểm của bạn: ${code}`);
+      }
+    };
+  }
+
+  const forceSyncBtn = $<HTMLButtonElement>('force-sync-btn');
+  if (forceSyncBtn) {
+    forceSyncBtn.onclick = async () => {
+      forceSyncBtn.disabled = true;
+      forceSyncBtn.innerHTML = '<span>⏳ Đang đồng bộ...</span>';
+      toast('⏳ Đang đồng bộ tiến trình lên Google Sheets...');
+      const ok = await syncManager.flushNow();
+      forceSyncBtn.disabled = false;
+      forceSyncBtn.innerHTML = `${icon('cloud')} Đồng bộ ngay bây giờ`;
+      if (ok) {
+        toast('☁️ Đã đồng bộ tiến trình lên Google Sheets thành công!');
+      } else {
+        toast(`⚠️ Đồng bộ thất bại: ${syncManager.getLastErrorMessage() || 'Kiểm tra lại kết nối mạng'}`);
+      }
+    };
+  }
+
+  const settingsRestoreBtn = $('settings-restore-btn');
+  if (settingsRestoreBtn) {
+    settingsRestoreBtn.onclick = () => {
+      closeDialog();
+      openRestorePasscodeDialog();
+    };
+  }
+
   $('save-profile-btn').onclick = () => {
     const nameInput = $<HTMLInputElement>('profile-name');
     const classInput = $<HTMLInputElement>('profile-class');
@@ -1362,7 +1639,66 @@ function settings() {
     };
   };
 }
+const cloudStatusBtn = $('cloud-status-btn');
+if (cloudStatusBtn) {
+  cloudStatusBtn.onclick = () => {
+    const status = syncManager.getStatus();
+    const profile = getExplorerProfile();
+    if (status === 'offline' || status === 'error') {
+      toast('🔄 Đang thử kết nối và đồng bộ lại lên Google Sheets...');
+      void syncManager.flushNow();
+    } else if (status === 'syncing') {
+      toast('⏳ Đang đồng bộ tiến trình của bé lên đám mây...');
+    } else if (status === 'synced') {
+      const timeText = formatTimeAgo(syncManager.getLastSyncedAt());
+      toast(`☁️ Tiến trình đã được lưu an toàn trên đám mây (${timeText}). Mã: ${profile.passcode}`);
+    } else {
+      toast(`☁️ Mã Thám Hiểm của bạn: ${profile.passcode}. Sẵn sàng đồng bộ.`);
+    }
+  };
+}
+
+syncManager.onStatusChange((status, lastSyncedAt, errorMsg) => {
+  const dot = $('cloud-status-dot');
+  const btn = $('cloud-status-btn');
+  if (dot) {
+    dot.className = `cloud-status-dot ${status}`;
+  }
+  if (btn) {
+    let tooltip = 'Trạng thái đồng bộ đám mây';
+    if (status === 'synced') {
+      tooltip = `Đã lưu lên đám mây (${formatTimeAgo(lastSyncedAt)})`;
+    } else if (status === 'syncing') {
+      tooltip = 'Đang đồng bộ lên Google Sheets...';
+    } else if (status === 'offline') {
+      tooltip = 'Offline - Chờ kết nối mạng để đồng bộ';
+    } else if (status === 'error') {
+      tooltip = `Lỗi kết nối: ${errorMsg || 'Thử lại'}`;
+    }
+    btn.title = tooltip;
+    btn.setAttribute('aria-label', tooltip);
+  }
+
+  const settingsSyncText = $('settings-sync-status-text');
+  const settingsSyncDot = $('settings-sync-indicator-dot');
+  const settingsSyncTime = $('settings-sync-time-text');
+  if (settingsSyncText) {
+    settingsSyncText.textContent = getSyncStatusLabel(status, lastSyncedAt, errorMsg);
+  }
+  if (settingsSyncDot) {
+    settingsSyncDot.className = `status-indicator-dot ${status}`;
+  }
+  if (settingsSyncTime) {
+    settingsSyncTime.textContent = lastSyncedAt ? `Đồng bộ gần nhất: ${formatTimeAgo(lastSyncedAt)}` : 'Chưa đồng bộ';
+  }
+});
+
 $('settings').onclick = settings;
+const restoreWelcomeBtn = $('restore-welcome');
+if (restoreWelcomeBtn) {
+  restoreWelcomeBtn.onclick = () => openRestorePasscodeDialog();
+}
+
 document.querySelector('.player-card')?.addEventListener('click', () => settings());
 $('sound').onclick = () => {
   const state = adventure.getState();
@@ -1400,12 +1736,14 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     audio.music(false);
     if (world) queueSavePosition(world.player.position.x, world.player.position.z, true);
+    void syncManager.flushNow();
   } else if (world?.active) {
     audio.music(adventure.getState().music);
   }
 });
 window.addEventListener('beforeunload', () => {
   if (world) queueSavePosition(world.player.position.x, world.player.position.z, true);
+  void syncManager.flushNow();
 });
 
 const joystick = $('joystick');
@@ -1712,6 +2050,11 @@ async function ensureWorld(): Promise<World> {
 $('loading').hidden = true;
 initWelcomeProfile();
 updateHUD();
+
+// Tự động kiểm tra di chuyển dữ liệu cục bộ lên đám mây (Ticket 04)
+void runLocalStorageMigration(adventure, undefined, syncManager, defaultStorage, (msg) => {
+  toast(msg);
+});
 
 // Tải ngầm 3D engine dưới nền khi luồng chính rảnh (Speculative Preload)
 if (typeof requestIdleCallback !== 'undefined') {
