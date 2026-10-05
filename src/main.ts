@@ -126,8 +126,15 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     const list = data.questionsBySheet[z.sheetName] || [];
     const resolved = resolveZoneProblemsWithPositions(z, list);
 
-    // Vườn Hoa Tri Thức là khu vực hoa 3D, tuyệt đối KHÔNG sinh bia đá
-    if (z.template === 'FLOWER_BEDS' || z.id === 6 || z.sheetName === 'VuonHoa') {
+    // Vườn Hoa Tri Thức và Công Viên Xanh tuyệt đối KHÔNG sinh bia đá (công viên gắn bài vào cây)
+    if (
+      z.template === 'FLOWER_BEDS' ||
+      z.template === 'PARK_SANCTUARY' ||
+      z.id === 6 ||
+      z.id === 7 ||
+      z.sheetName === 'VuonHoa' ||
+      z.sheetName === 'CongVienXanh'
+    ) {
       return;
     }
     monolithProblems.push(...resolved);
@@ -147,7 +154,8 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
         position: p.position!,
         color: p.color,
         title: p.title
-      }))
+      })),
+      data.questionsBySheet
     );
 
     const currentState = adventure.getState();
@@ -584,7 +592,7 @@ function openParkSelectionDialog() {
     const questions = activeRemoteQuestions[pz.sheetName] || [];
     const state = adventure.getState();
     const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
-    const totalCount = questions.length || 20;
+    const totalCount = questions.length;
 
     return `
       <div class="zone-overview-card" style="margin-bottom:12px;background:#f0fdf4;border:1px solid #bbf7d0">
@@ -592,7 +600,7 @@ function openParkSelectionDialog() {
           <div class="zone-card-title">🌳 ${pz.name}</div>
           <div class="zone-card-meta">${pz.badge || 'CÔNG VIÊN TRI THỨC'} · Tọa độ: (${Math.round(pz.center.x)}, ${Math.round(pz.center.z)})</div>
           <p style="font-size:12px;color:#166534;margin:8px 0">
-            Khu bảo tồn thiên nhiên với 20 Cây Tri Thức cần đánh thức.
+            ${totalCount > 0 ? `Khu bảo tồn thiên nhiên với ${totalCount} Cây Tri Thức cần đánh thức.` : 'Công viên đang trong trạng thái thư giãn.'}
           </p>
           <div style="font-size:12px;font-weight:600;color:#047857">
             Tiến độ: ${awakenedCount} / ${totalCount} cây đã thức tỉnh
@@ -667,6 +675,9 @@ function openParkTreeDialog(index: number) {
       }
     } catch (_) { }
   }
+  if (!parkQuestions || index < 0 || index >= parkQuestions.length) {
+    return;
+  }
   return challengeDialog.startChallenge({
     type: 'park_tree',
     index,
@@ -713,7 +724,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const qList = activeRemoteQuestions[z.sheetName] || [];
       const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
       const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-      const total = qList.length || (isFlowerZone ? 10 : (isParkZone ? 20 : 0));
+      const total = isParkZone ? qList.length : (qList.length || (isFlowerZone ? 10 : 0));
       const done = qList.length > 0
         ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
         : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
@@ -744,7 +755,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
         const qList = activeRemoteQuestions[z.sheetName] || [];
         const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
         const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-        const total = qList.length || (isFlowerZone ? 10 : (isParkZone ? 20 : 0));
+        const total = isParkZone ? qList.length : (qList.length || (isFlowerZone ? 10 : 0));
         const done = qList.length > 0
           ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
           : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
@@ -850,11 +861,10 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
   } else if (currentZone?.template === 'PARK_SANCTUARY') {
     // 4. Vùng đất Công Viên Tri Thức (PARK_SANCTUARY)
     const remoteParkTrees = activeRemoteQuestions[currentZone.sheetName] || [];
-    const treeList = remoteParkTrees.length > 0
-      ? remoteParkTrees
-      : Array.from({ length: 20 }, (_, i) => ({ id: i + 1, title: `Cây Tri Thức #${i + 1}`, subtitle: `Thử thách nhân chia #${i + 1}` }));
+    // Chỉ lấy đúng số lượng câu hỏi trên Google Sheets, không tự sinh fallback 20 câu
+    const treeList = remoteParkTrees;
 
-    const treeCardsHtml = treeList.map((t: any, i: number) => {
+    const treeCardsHtml = treeList.length > 0 ? treeList.map((t: any, i: number) => {
       const treeId = t.id ?? (i + 1);
       const awakened = adventure.isParkTreeAwakened(i) || adventure.isProblemSolved(treeId);
       const treePos = world?.parkTrees[i]?.position ?? { x: currentZone.center.x, z: currentZone.center.z };
@@ -876,7 +886,13 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           </div>
         </div>
       `;
-    }).join('');
+    }).join('') : `
+      <div style="grid-column: 1 / -1; padding: 28px; text-align: center; color: #475569; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1;">
+        <div style="font-size: 32px; margin-bottom: 8px;">🌳</div>
+        <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">Công viên đang trong trạng thái thư giãn</div>
+        <div style="font-size: 13px; color: #64748b;">Chưa có bài tập nào được giao trên bảng tính cho công viên này.</div>
+      </div>
+    `;
 
     contentHtml = `
       <div class="zone-banner" style="background:linear-gradient(135deg,#064e3b,#047857)">

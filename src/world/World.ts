@@ -7,7 +7,7 @@ import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
 import { GeometryBuilder } from './geom';
 import { ArchimedesZoneBuilder, type MonolithItem, type Obstacle } from './ArchimedesZoneBuilder';
-import type { RemoteZoneConfig } from '../data/remoteTypes';
+import type { RemoteZoneConfig, RemoteProblem } from '../data/remoteTypes';
 import {
   LAKE_SCALE,
   LAKE_MODEL_CENTER,
@@ -41,10 +41,13 @@ export interface ParkTreeEntity {
   mesh: THREE.Mesh;
   originalMaterial: THREE.Material;
   grayMaterial: THREE.Material;
+  coloredMaterial?: THREE.Material;
   position: THREE.Vector3;
-  beacon: THREE.Mesh;
+  beacon?: THREE.Mesh;
   topY: number;
   awakened: boolean;
+  hasQuestion: boolean;
+  questionColor?: number;
 }
 
 export class World {
@@ -639,7 +642,8 @@ export class World {
 
   public renderDynamicZones(
     zones: RemoteZoneConfig[],
-    positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = []
+    positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = [],
+    questionsBySheet?: Record<string, RemoteProblem[]>
   ) {
     const customPortals: PortalLink[] = [];
 
@@ -686,14 +690,17 @@ export class World {
       );
 
       parkZones.forEach((z) => {
+        const parkQuestions = questionsBySheet?.[z.sheetName];
         if (!this.dynamicIslandIds.has(z.id)) {
           this.dynamicIslandIds.add(z.id);
-          this.loadParkMap(z);
+          this.loadParkMap(z, parkQuestions);
 
           // Cổng quay về từ Công Viên về Làng Khởi Đầu (đặt ở lối vào phía Đông của công viên)
           const retX = z.center.x + 14;
           const retZ = z.center.z;
           this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+        } else if (parkQuestions && parkQuestions.length > 0) {
+          this.syncParkQuestions(parkQuestions, z.color);
         }
 
         const retX = z.center.x + 14;
@@ -1038,7 +1045,7 @@ export class World {
     this.lakeModels.set(zone.id, lakeGroup);
   }
 
-  private async loadParkMap(zone: RemoteZoneConfig) {
+  private async loadParkMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
     if (this.parkModels.has(zone.id)) return;
     const model = await this.assets.instantiate('map:park');
     if (!model) return;
@@ -1106,6 +1113,7 @@ export class World {
       return normA - normB;
     });
 
+    const activeQuestions = questions || [];
     const treePositions: { x: number; z: number }[] = [];
     treeMeshes.forEach((item, idx) => {
       const origMat = item.mesh.material as THREE.Material;
@@ -1115,13 +1123,31 @@ export class World {
         metalness: 0.05
       });
 
-      const isAwakened = this.isParkTreeAwakened?.(idx) ?? false;
-      item.mesh.material = isAwakened ? origMat : grayMat;
+      const q = idx < activeQuestions.length ? activeQuestions[idx] : null;
+      const hasQuestion = q !== null;
+      const questionColor = q?.color || zone.color || 0x10b981;
 
-      // Overhead guide beacon
-      const beacon = this.sphere(this.scene, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, 0x10b981);
-      beacon.castShadow = false;
-      beacon.visible = !isAwakened;
+      let coloredMat: THREE.Material | undefined;
+      if (origMat && (origMat as any).isMeshStandardMaterial) {
+        coloredMat = (origMat as THREE.MeshStandardMaterial).clone();
+        if (q?.color) {
+          (coloredMat as THREE.MeshStandardMaterial).color.set(q.color);
+        }
+      }
+
+      const isAwakened = hasQuestion ? (this.isParkTreeAwakened?.(idx) ?? false) : true;
+
+      // Cây không có câu hỏi: TỰ TÔ MÀU theo thiết kế gốc của park.glb (origMat)
+      // Cây có câu hỏi: nếu đã thức tỉnh thì mang màu sắc tươi sáng (coloredMat || origMat), nếu ngủ say thì xám (grayMat)
+      item.mesh.material = hasQuestion ? (isAwakened ? (coloredMat || origMat) : grayMat) : origMat;
+
+      // Overhead guide beacon: chỉ hiển thị cho cây CÓ câu hỏi và ĐANG NGỦ SAY
+      let beacon: THREE.Mesh | undefined;
+      if (hasQuestion) {
+        beacon = this.sphere(this.scene, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, questionColor);
+        beacon.castShadow = false;
+        beacon.visible = !isAwakened;
+      }
 
       this.parkTrees.push({
         index: idx,
@@ -1129,13 +1155,19 @@ export class World {
         mesh: item.mesh,
         originalMaterial: origMat,
         grayMaterial: grayMat,
+        coloredMaterial: coloredMat,
         position: item.center.clone(),
         beacon,
         topY: item.box.max.y + 0.6,
-        awakened: isAwakened
+        awakened: isAwakened,
+        hasQuestion,
+        questionColor
       });
 
-      treePositions.push({ x: Number(item.center.x.toFixed(2)), z: Number(item.center.z.toFixed(2)) });
+      // Spatial proximity: chỉ kích hoạt tương tác cho cây CÓ câu hỏi
+      if (hasQuestion) {
+        treePositions.push({ x: Number(item.center.x.toFixed(2)), z: Number(item.center.z.toFixed(2)) });
+      }
     });
 
     this.spatial.setParkTreePositions(treePositions);
@@ -1143,9 +1175,9 @@ export class World {
 
   wakeParkTree(index: number) {
     const tree = this.parkTrees[index];
-    if (!tree) return;
+    if (!tree || !tree.hasQuestion) return;
     tree.awakened = true;
-    tree.mesh.material = tree.originalMaterial;
+    tree.mesh.material = tree.coloredMaterial || tree.originalMaterial;
     if (tree.beacon) {
       tree.beacon.visible = false;
     }
@@ -1154,11 +1186,59 @@ export class World {
 
   syncAwakenedParkTrees(awakenedList: boolean[]) {
     this.parkTrees.forEach((tree, idx) => {
+      if (!tree.hasQuestion) {
+        // Cây không có câu hỏi: tự tô màu, giữ nguyên thiết kế gốc
+        tree.awakened = true;
+        tree.mesh.material = tree.originalMaterial;
+        if (tree.beacon) tree.beacon.visible = false;
+        return;
+      }
       const isAwakened = awakenedList[idx] === true;
       tree.awakened = isAwakened;
-      tree.mesh.material = isAwakened ? tree.originalMaterial : tree.grayMaterial;
+      tree.mesh.material = isAwakened ? (tree.coloredMaterial || tree.originalMaterial) : tree.grayMaterial;
       if (tree.beacon) tree.beacon.visible = !isAwakened;
     });
+  }
+
+  syncParkQuestions(questions: RemoteProblem[], zoneColor = 0x10b981) {
+    const activePositions: { x: number; z: number }[] = [];
+    this.parkTrees.forEach((tree, idx) => {
+      const q = idx < questions.length ? questions[idx] : null;
+      const hasQuestion = q !== null;
+      const qColor = q?.color || zoneColor;
+
+      tree.hasQuestion = hasQuestion;
+      tree.questionColor = qColor;
+
+      if (tree.originalMaterial && (tree.originalMaterial as any).isMeshStandardMaterial) {
+        const coloredMat = (tree.originalMaterial as THREE.MeshStandardMaterial).clone();
+        if (q?.color) {
+          coloredMat.color.set(q.color);
+        }
+        tree.coloredMaterial = coloredMat;
+      }
+
+      if (!hasQuestion) {
+        // Tự tô màu và không hiển thị câu hỏi
+        tree.awakened = true;
+        tree.mesh.material = tree.originalMaterial;
+        if (tree.beacon) tree.beacon.visible = false;
+      } else {
+        const isAwakened = this.isParkTreeAwakened?.(idx) ?? false;
+        tree.awakened = isAwakened;
+        tree.mesh.material = isAwakened ? (tree.coloredMaterial || tree.originalMaterial) : tree.grayMaterial;
+        if (!tree.beacon) {
+          tree.beacon = this.sphere(this.scene, tree.position.x, tree.topY, tree.position.z, 0.32, qColor);
+          tree.beacon.castShadow = false;
+        } else {
+          (tree.beacon.material as THREE.MeshStandardMaterial).color.set(qColor);
+        }
+        tree.beacon.visible = !isAwakened;
+        activePositions.push({ x: Number(tree.position.x.toFixed(2)), z: Number(tree.position.z.toFixed(2)) });
+      }
+    });
+
+    this.spatial.setParkTreePositions(activePositions);
   }
 
   setBridge(count: number, animate = false) {
@@ -1233,11 +1313,13 @@ export class World {
       }
       const nearParkTreeIdx = this.spatial.nearParkTreeIndex();
       if (nearParkTreeIdx !== -1 && hit.distanceTo(this.parkTrees[nearParkTreeIdx].position) < 3.2) {
-        this.onParkTreeClick?.(nearParkTreeIdx);
-        return;
+        if (this.parkTrees[nearParkTreeIdx]?.hasQuestion) {
+          this.onParkTreeClick?.(nearParkTreeIdx);
+          return;
+        }
       }
       for (let i = 0; i < this.parkTrees.length; i++) {
-        if (hit.distanceTo(this.parkTrees[i].position) < 3.2 && this.spatial.nearParkTreeIndex() === i) {
+        if (this.parkTrees[i]?.hasQuestion && hit.distanceTo(this.parkTrees[i].position) < 3.2 && this.spatial.nearParkTreeIndex() === i) {
           this.onParkTreeClick?.(i);
           return;
         }

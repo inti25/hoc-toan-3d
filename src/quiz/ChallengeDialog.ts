@@ -818,10 +818,13 @@ export class ChallengeDialog implements ChallengeSessionPort {
   // Thử thách Cây Tri Thức (Công Viên Xanh - PARK_SANCTUARY)
   // -------------------------------------------------------------
   openParkTree(index: number, remoteParkProblems?: RemoteProblem[], zoneConfig?: RemoteZoneConfig): void {
+    if (!remoteParkProblems || index < 0 || index >= remoteParkProblems.length) {
+      return;
+    }
     const targetId = index + 1;
     const remoteQ =
-      remoteParkProblems &&
-      (remoteParkProblems.find((p) => Number(p.id) === targetId) || remoteParkProblems[index]);
+      remoteParkProblems.find((p) => Number(p.id) === targetId) || remoteParkProblems[index];
+    if (!remoteQ) return;
 
     const zoneName = zoneConfig?.name || 'Công Viên Xanh';
     const zoneId = zoneConfig?.id || 7;
@@ -1040,11 +1043,12 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
     const state = this.host.adventure.getState();
     const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
+    const totalCount = remoteParkProblems ? remoteParkProblems.length : 20;
 
     this.host.openDialog(
       `Cây Tri Thức #${targetId}: ${badge}`,
       `
-      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / 20</div>
+      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / ${totalCount}</div>
       <div class="flower-status-banner ${isAwakened ? 'bloomed' : 'bud'}">
         ${isAwakened ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.' : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!'}
       </div>
