@@ -9,6 +9,7 @@ export interface SaveState {
   monoliths: boolean[];
   zoneBadges: boolean[];
   parkTrees: boolean[];
+  farmRescued: Record<string, boolean>;
   solvedProblems: Record<string, boolean>;
   position?: { x: number; z: number };
   inventory: string[];
@@ -34,6 +35,7 @@ export const freshState = (): SaveState => ({
   monoliths: Array(40).fill(false),
   zoneBadges: Array(5).fill(false),
   parkTrees: Array(20).fill(false),
+  farmRescued: {},
   solvedProblems: {},
   inventory: [],
   equippedTrail: '',
@@ -66,6 +68,11 @@ export function parseSave(raw: string | null): SaveState {
     if (d.solvedProblems && typeof d.solvedProblems === 'object') {
       for (const [k, val] of Object.entries(d.solvedProblems as Record<string, unknown>)) {
         if (val === true) base.solvedProblems[String(k)] = true;
+      }
+    }
+    if (d.farmRescued && typeof d.farmRescued === 'object') {
+      for (const [k, val] of Object.entries(d.farmRescued as Record<string, unknown>)) {
+        if (val === true) base.farmRescued[String(k)] = true;
       }
     }
     if (Array.isArray(d.flowers)) {

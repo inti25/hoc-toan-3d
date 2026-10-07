@@ -18,6 +18,7 @@ import {
   usesLakeTerrain
 } from '../data/lakeLand';
 import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
+import { FarmSanctuary } from './farm/FarmSanctuary';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -68,6 +69,8 @@ export class World {
   readonly bridge = new THREE.Group();
   readonly flowers: FlowerItem[] = [];
   readonly archimedes: ArchimedesZoneBuilder;
+  public farmSanctuary: FarmSanctuary | null = null;
+  private farmRescued: Record<string, boolean> = {};
   readonly goal = new THREE.Vector3(16, 0, 0);
   readonly keys = new Set<string>();
   readonly spatial = new SpatialWorld(-6, 6);
@@ -98,7 +101,8 @@ export class World {
     nearPortal: boolean,
     nearMonolith: number,
     nearParkTree: number,
-    nearShop: boolean
+    nearShop: boolean,
+    nearFarmAnimal: string | null
   ) => void;
   onJump?: () => void;
   onSceneClick?: (near: boolean) => void;
@@ -812,6 +816,36 @@ export class World {
               }
             );
           });
+        } else if (z.template === 'FARM_SANCTUARY') {
+          this.loadFarmMap(z);
+          
+          // Cổng kết nối từ Hub tới Nông Trại
+          const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
+          const hubX = 60 + Math.cos(angle) * 8.5;
+          const hubZ = Math.sin(angle) * 8.5;
+          this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
+
+          // Cổng quay về từ Nông Trại (đặt cạnh cổng chuồng)
+          const retX = z.center.x - 8;
+          const retZ = z.center.z + 14;
+          this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+
+          customPortals.push(
+            {
+              id: `hub_to_z${z.id}`,
+              name: `Đến ${z.name}`,
+              source: { x: hubX, z: hubZ },
+              target: { x: z.center.x - 8, z: z.center.z + 10 },
+              triggerRadius: 1.5
+            },
+            {
+              id: `z${z.id}_to_hub`,
+              name: 'Về Đền Cổng Archimedes',
+              source: { x: retX, z: retZ },
+              target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
+              triggerRadius: 1.5
+            }
+          );
         } else if (usesLakeTerrain(z.template)) {
           this.createLakeFallback(z.id, z.center.x, z.center.z, z.color);
           this.loadLakeMap(z);
@@ -1097,6 +1131,25 @@ export class World {
 
     this.scene.add(lakeGroup);
     this.lakeModels.set(zone.id, lakeGroup);
+  }
+
+  private async loadFarmMap(zone: RemoteZoneConfig) {
+    if (!this.farmSanctuary) {
+      this.farmSanctuary = new FarmSanctuary();
+    }
+    await this.farmSanctuary.load(this.farmRescued);
+    
+    // Position farm at zone center
+    this.farmSanctuary.group.position.set(zone.center.x, 0, zone.center.z);
+    
+    // Create base terrain for farm (dirt and grass)
+    const base = new THREE.Group();
+    base.position.set(zone.center.x, 0, zone.center.z);
+    this.cylinder(base, 0, 0.05, 0, 32, 32, 0.1, 0x8ec963, 32); // Grass base
+    this.cylinder(base, 0, 0.06, 0, 12, 12, 0.1, 0xead5a3, 32); // Dirt path around pen
+    this.scene.add(base);
+    
+    this.scene.add(this.farmSanctuary.group);
   }
 
   private async loadParkMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
@@ -1488,6 +1541,9 @@ export class World {
     while (this.accumulator >= this.FIXED_DT && steps < this.MAX_SUB_STEPS) {
       if (this.active && !this.paused) {
         this.movement(this.FIXED_DT);
+        if (this.farmSanctuary) {
+          this.farmSanctuary.update(this.FIXED_DT, this.player.position);
+        }
       }
       this.accumulator -= this.FIXED_DT;
       steps++;
@@ -1564,7 +1620,19 @@ export class World {
     this.archimedes.updateAnimations(rawDt, this.time);
     for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= rawDt; s.velocity.y -= rawDt * 6; s.mesh.position.addScaledVector(s.velocity, rawDt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
     this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += rawDt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
-    this.renderer.render(this.scene, this.camera);
+    let nearFarmId: string | null = null;
+    if (this.farmSanctuary) {
+      const px = this.player.position.x;
+      const pz = this.player.position.z;
+      const triggers = this.farmSanctuary.getInteractTriggers();
+      for (const t of triggers) {
+        if (t.isActive && Math.hypot(px - t.position.x, pz - t.position.z) < t.radius) {
+          nearFarmId = t.animalId;
+          break;
+        }
+      }
+    }
+
     this.onFrame?.(
       this.spatial.isNearMilo(),
       this.spatial.hasCrossedRiver(),
@@ -1573,10 +1641,14 @@ export class World {
       this.spatial.isNearPortal(),
       this.spatial.nearMonolithIndex(),
       this.spatial.nearParkTreeIndex(),
-      this.spatial.isNearShop()
+      this.spatial.isNearShop(),
+      nearFarmId
     );
   };
 
+  setFarmRescued(rescued: Record<string, boolean>) {
+    this.farmRescued = rescued;
+  }
 
   dispose() { cancelAnimationFrame(this.frame); this.observer.disconnect(); this.assets.dispose(); this.renderer.dispose(); }
 }

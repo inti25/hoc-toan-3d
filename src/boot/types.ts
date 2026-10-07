@@ -7,6 +7,7 @@ export interface WorldLaunchOptions {
   flowers: boolean[];
   monolithChecker: (id: string | number, index: number) => boolean;
   parkTrees: boolean[];
+  farmRescued: Record<string, boolean>;
   initialPosition?: { x: number; z: number } | null;
   onTeleport?: (x: number, z: number) => void;
   onJump?: () => void;
@@ -25,7 +26,8 @@ export interface WorldLaunchOptions {
     isNearPortal: boolean,
     nearMonolithIdx: number,
     nearParkTreeIdx: number,
-    isNearShop: boolean
+    isNearShop: boolean,
+    nearFarmAnimal: string | null
   ) => void;
 }
 

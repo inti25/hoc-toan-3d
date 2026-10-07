@@ -1,4 +1,4 @@
-export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY' | 'PROCEDURAL_SANCTUARY';
+export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY' | 'PROCEDURAL_SANCTUARY' | 'FARM_SANCTUARY';
 export type ZoneThemeType = 'GARDEN' | 'RUINS' | 'FOREST' | 'CRYSTAL' | 'VILLAGE';
 export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 

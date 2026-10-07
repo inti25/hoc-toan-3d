@@ -620,6 +620,26 @@ export class Adventure {
     this.state = freshState();
     this.save();
   }
+
+  // --- Nông Trại Vui Vẻ (Farm Sanctuary) ---
+  isFarmRescued(animalId: string): boolean {
+    if (!this.state.farmRescued) return false;
+    return this.state.farmRescued[animalId] === true;
+  }
+
+  setFarmRescued(animalId: string, rescued: boolean = true): void {
+    if (!this.state.farmRescued) this.state.farmRescued = {};
+    this.state.farmRescued[animalId] = rescued;
+    this.save();
+  }
+
+  addProduceToInventory(produceId: string, count: number = 1): void {
+    if (!this.state.inventory) this.state.inventory = [];
+    for (let i = 0; i < count; i++) {
+      this.state.inventory.push(produceId);
+    }
+    this.save();
+  }
 }
 
 export function getArchimedesSolvedCount(
@@ -642,3 +662,59 @@ export function getArchimedesSolvedCount(
   return Math.max(state.monoliths.filter(Boolean).length, solvedArchIds.size);
 }
 
+// Hàm tự động sinh câu hỏi Toán dựa theo bảng cửu chương cho nông trại
+export function generateFarmMultiplicationProblem(
+  animalIndex: number,
+  species: string = 'cow'
+): any {
+  // Lấy ngẫu nhiên thừa số thứ 1 (bảng 2 đến 5 cho thân thiện, hoặc 2-9)
+  const tables = [2, 3, 4, 5];
+  const table = tables[animalIndex % tables.length];
+  const multiplier = Math.floor(Math.random() * 9) + 1; // 1 đến 9
+  const result = table * multiplier;
+
+  const names: Record<string, string> = {
+    cow: 'bò',
+    calf: 'bê',
+    pig: 'heo',
+    piglet: 'heo con',
+    chicken: 'gà',
+    chick: 'gà con',
+    duck: 'vịt',
+    duckling: 'vịt con',
+    dog: 'cún'
+  };
+  const animalName = names[species] || 'bạn thú';
+  
+  const isWordProblem = Math.random() > 0.5;
+
+  let prompt = '';
+  if (isWordProblem) {
+    prompt = `Bác nông dân có ${multiplier} chuồng ${animalName}, mỗi chuồng có ${table} con. Hỏi có tất cả bao nhiêu con ${animalName}?`;
+  } else {
+    prompt = `Giải phép tính để cứu ${animalName} nhé:\n${table} × ${multiplier} = ?`;
+  }
+
+  // Fake 3 wrong options
+  const wrong1 = result + table;
+  const wrong2 = result - table > 0 ? result - table : result + multiplier;
+  let wrong3 = (table + 1) * multiplier;
+  if (wrong3 === result || wrong3 === wrong1 || wrong3 === wrong2) {
+    wrong3 = result + 2;
+  }
+
+  const choices = [result, wrong1, wrong2, wrong3].sort(() => Math.random() - 0.5);
+  const options = choices.map((c, i) => String.fromCharCode(65 + i) + '. ' + c);
+  const answerIdx = choices.indexOf(result);
+  const answerLetter = String.fromCharCode(65 + answerIdx);
+
+  return {
+    id: `farm_${species}_${animalIndex}`,
+    ZoneName: 'Nông Trại Vui Vẻ',
+    Problem: prompt,
+    Hint: `Nhẩm bảng nhân ${table} xem sao! (${table} × ${multiplier})`,
+    Explain: `${table} nhân với ${multiplier} bằng ${result}.`,
+    Options: options.join('\n'),
+    Answer: answerLetter
+  };
+}

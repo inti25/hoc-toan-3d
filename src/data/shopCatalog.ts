@@ -1,4 +1,4 @@
-export type ShopItemType = 'trail' | 'charm';
+export type ShopItemType = 'trail' | 'charm' | 'produce';
 export type ItemRarity = 'common' | 'rare' | 'legendary';
 
 export interface ShopItem {
@@ -61,6 +61,61 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     badge: 'Bùa Phép Tiêu Hao',
     rarity: 'rare',
     themeColor: '#8b5cf6'
+  },
+  {
+    id: 'produce_milk',
+    name: 'Bình Sữa Tươi',
+    description: 'Sữa bò tươi ngon thu hoạch từ Nông Trại Vui Vẻ.',
+    price: 30, // có thể đem đổi/bán lại tiệm
+    type: 'produce',
+    icon: '🥛',
+    badge: 'Nông Sản',
+    rarity: 'common',
+    themeColor: '#38bdf8'
+  },
+  {
+    id: 'produce_egg',
+    name: 'Trứng Gà Vàng',
+    description: 'Quả trứng vàng lấp lánh do gà mái đẻ.',
+    price: 30,
+    type: 'produce',
+    icon: '🥚',
+    badge: 'Nông Sản',
+    rarity: 'common',
+    themeColor: '#f59e0b'
+  },
+  {
+    id: 'produce_duck_egg',
+    name: 'Trứng Vịt Xanh',
+    description: 'Trứng vịt to tròn, vỏ xanh nhạt dễ thương.',
+    price: 30,
+    type: 'produce',
+    icon: '🪺',
+    badge: 'Nông Sản',
+    rarity: 'common',
+    themeColor: '#10b981'
+  },
+  {
+    id: 'produce_truffle',
+    name: 'Nấm Quý Truffle',
+    description: 'Nấm quý hiếm do bạn Heo tìm thấy dưới gốc cây.',
+    price: 80,
+    type: 'produce',
+    icon: '🍄',
+    badge: 'Nông Sản Quý',
+    rarity: 'rare',
+    themeColor: '#a855f7'
+  },
+  {
+    id: 'produce_bone',
+    name: 'Xương May Mắn',
+    description: 'Khúc xương may mắn của bạn Cún chăn cừu.',
+    price: 50,
+    type: 'produce',
+    icon: '🦴',
+    badge: 'Nông Sản',
+    rarity: 'rare',
+    themeColor: '#ec4899'
   }
 ] as const;
 

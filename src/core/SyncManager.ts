@@ -177,6 +177,7 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     monoliths,
     zoneBadges,
     parkTrees,
+    farmRescued: { ...local.farmRescued, ...remote.farmRescued },
     solvedProblems,
     questionStats,
     review,

@@ -256,3 +256,37 @@ _Avoid_: Pay-to-win, Bùa hack, Nút giải hộ
 **Hiệu Ứng Bước Chân (Trail Footstep Effect)**:
 Hiệu ứng hạt ánh sáng thẩm mỹ xuất hiện bám theo từng bước chạy của nhân vật (ví dụ: hoa cỏ nở rộ, bong bóng nước lung linh, bụi sao băng lấp lánh), tạo niềm vui thị giác khi khám phá vương quốc 3D.
 _Avoid_: Particle linh tinh, Vết chân dơ
+
+**Bản Mẫu Nông Trại (Farm Sanctuary Template / FARM_SANCTUARY)**:
+Bản Mẫu Vùng Đất chuyên biệt định hình cảnh quan nông trại đồng quê nạp động từ Google Sheets, nổi bật với Khu Chuồng Trại Trung Tâm quây rào cùng Cánh Đồng Tự Do nơi đàn vật nuôi xổng chuồng lang thang mang theo các bài toán thử thách.
+_Avoid_: Farm template, Map nông trại, Vườn thú
+
+**Khu Chuồng Trại Trung Tâm (Central Farm Pen / Barn Yard)**:
+Khuôn viên trung tâm của Ốc Đảo Nông Trại được rào chắn an toàn với cổng gỗ, máng ăn uống, đống rơm và các Chòi Trú Ẩn Theo Loài, là đích đến an toàn của các con vật sau khi được bé giải cứu.
+_Avoid_: Chuồng chính, Trại nhốt, Nhà thú
+
+**Cánh Đồng Tự Do (Free-Range Pasture)**:
+Vùng đồng cỏ hoa đồng nội rộng mở bao bọc quanh Khu Chuồng Trại, nơi các Động Vật Xổng Chuồng thong dong gặm cỏ, dạo chơi và chờ bé đến tương tác.
+_Avoid_: Bãi cỏ quiz, Khu đi dạo, Đồng cỏ hoang
+
+**Động Vật Xổng Chuồng (Escaped Farm Animal / Roaming Animal)**:
+Một trong các thực thể vật nuôi (Bò, Bê, Heo, Vịt, Gà, Chó chăn cừu) đi lạc ra ngoài Cánh Đồng Tự Do, mang theo một bài toán thử thách. Khi người chơi lại gần, con vật dừng bước thân thiện để bắt đầu Thử Thách.
+_Avoid_: Quái vật, Mob, Pet đi lạc, Thú quiz
+
+**Hành Trình Về Chuồng (Homeward Walk)**:
+Hoạt cảnh chuyển động tự động của Động Vật Xổng Chuồng sau khi người chơi giải đúng thử thách toán học, nhảy cẫng ăn mừng rồi thong thả rảo bước từ cánh đồng quay trở về đúng Chòi Trú Ẩn Theo Loài trong Khu Chuồng Trại.
+_Avoid_: Tele về chuồng, Biến mất, Đi theo sau
+
+**Chòi Trú Ẩn Theo Loài (Species Shelter)**:
+Công trình mái che đặc thù bên trong Khu Chuồng Trại dành riêng cho từng giống loài (Chuồng gà `coop`, Chuồng bò `cow_shelter`, Chuồng heo `pig_shelter`, Chuồng vịt `duck_shelter`, Chòi cún `dog_shelter`) nơi con vật nghỉ ngơi sau khi hoàn thành Hành Trình Về Chuồng.
+_Avoid_: Nhà riêng, Chuồng con, Ô chuồng
+
+**Nông Sản Thu Hoạch (Farmstead Produce)**:
+Vật phẩm thưởng đặc thù (Bình sữa tươi, Trứng gà vàng, Nấm quý, Trứng vịt, Xương may mắn) xuất hiện khi một Động Vật Xổng Chuồng hoàn thành Hành Trình Về Chuồng, bay lên lấp lánh rồi thu vào Túi Đồ Dũng Sĩ.
+_Avoid_: Đồ loot, Drop rác, Vật phẩm rơi
+
+**Cổng Gỗ Đồng Quê (Rustic Farm Gate / Starter Village Farm Portal)**:
+Cổng dịch chuyển kiến trúc gỗ mộc mạc đặt bên bờ sông Làng Khởi Đầu (gần cối xay gió), kết nối trực tiếp học sinh tới các vùng đất mang Bản Mẫu Nông Trại (`FARM_SANCTUARY`).
+_Avoid_: Cổng đá, Cổng Archimedes, Cửa chuồng
+
+

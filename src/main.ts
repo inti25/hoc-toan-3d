@@ -60,6 +60,7 @@ let nearPortal = false;
 let nearMonolith = -1;
 let nearParkTree = -1;
 let nearShop = false;
+let nearFarmAnimalId: string | null = null;
 let frameTick = 0;
 let deferredSpawnPosition: { x: number; z: number } | null = null;
 let lastSavedPos = { x: -6, z: 6 };
@@ -585,6 +586,8 @@ function interactAction() {
     openParkTreeDialog(nearParkTree);
   } else if (nearMonolith !== -1) {
     openArchimedesMonolithDialog(nearMonolith, 0);
+  } else if (nearFarmAnimalId) {
+    openFarmAnimalDialog(nearFarmAnimalId);
   } else if (nearPortal) {
     const nearP = world.spatial.getNearPortal();
     if (nearP?.requiresSelection) {
@@ -720,6 +723,61 @@ function openFlowerDialog(index: number) {
     type: 'flower',
     index,
     remoteFlowers
+  });
+}
+
+function openFarmAnimalDialog(animalId: string) {
+  if (!world || !world.farmSanctuary) return;
+  const trigger = world.farmSanctuary.getInteractTriggers().find(t => t.animalId === animalId);
+  if (!trigger || !trigger.isActive) return;
+
+  const pd = trigger.problemData;
+  openDialog(
+    'Bé Thú Bị Lạc',
+    `
+    <div class="dialog-eyebrow">GIÚP BÉ VỀ CHUỒNG</div>
+    <p class="dialog-copy" style="font-size:16px;">
+      <b>${pd.Problem}</b>
+    </p>
+    <div class="options-grid" style="margin-top:16px;">
+      ${pd.Options.split('\n').map((opt: string) => {
+        const letter = opt.substring(0, 1);
+        return `<button class="primary dialog-btn" data-answer="${letter}" style="font-size:16px;padding:12px;">${opt}</button>`;
+      }).join('')}
+    </div>
+    <p style="font-size:13px; color:#6b7280; margin-top:12px; text-align:center;">Gợi ý: ${pd.Hint}</p>
+    `,
+    'farmAnimal'
+  );
+
+  document.querySelectorAll<HTMLButtonElement>('.dialog-btn').forEach(btn => {
+    btn.onclick = () => {
+      if (btn.dataset.answer === pd.Answer) {
+        audio.playCue('correct');
+        world!.farmSanctuary!.onAnimalRescued(animalId);
+        adventure.setFarmRescued(animalId, true);
+        
+        // Random produce reward
+        const produces = ['produce_milk', 'produce_egg', 'produce_duck_egg', 'produce_bone'];
+        const randomProduce = produces[Math.floor(Math.random() * produces.length)];
+        adventure.addProduceToInventory(randomProduce, 1);
+        
+        toast('🎉 Trả lời đúng! Bé thú đang vui vẻ đi về chuồng. +1 Nông sản!');
+        closeDialog();
+        
+        // Effect
+        world!.burstPlayer(1.2);
+        
+        // Add XP/Coins manually
+        const delta = adventure.recordQuizResult({ isCorrect: true, questionId: pd.id });
+        updateHUD();
+      } else {
+        audio.playCue('hint');
+        btn.classList.add('shake');
+        setTimeout(() => btn.classList.remove('shake'), 400);
+        toast('❌ Sai rồi, thử lại nhé!');
+      }
+    };
   });
 }
 
@@ -2074,6 +2132,7 @@ async function ensureWorld(): Promise<World> {
       );
     },
     parkTrees: init.parkTrees || [],
+    farmRescued: init.farmRescued || {},
     equippedTrail: init.equippedTrail || '',
     initialPosition: (init.started && init.position) ? init.position : null,
     onTeleport: (x, z) => queueSavePosition(x, z, true),

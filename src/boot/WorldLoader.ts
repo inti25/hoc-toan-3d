@@ -57,6 +57,7 @@ export class WorldLoader implements WorldLoaderSeam {
     world.setMonolithsActivated(options.monolithChecker);
     world.setAvatar(options.avatar);
     world.syncAwakenedParkTrees(options.parkTrees);
+    if (world.setFarmRescued) world.setFarmRescued(options.farmRescued);
     if (options.equippedTrail) world.setEquippedTrail(options.equippedTrail);
 
     // Callbacks
