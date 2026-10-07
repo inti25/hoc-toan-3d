@@ -1784,7 +1784,6 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => world?.keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => {
   world?.clearInput();
-  if (world?.active && !$<HTMLDialogElement>('dialog').open) settings();
 });
 document.addEventListener('visibilitychange', () => {
   world?.clearInput();
