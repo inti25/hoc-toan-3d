@@ -16,12 +16,14 @@ function createMemoryStorage(initial: Record<string, string> = {}): StorageAdapt
   };
 }
 
-test('SHOP_CATALOG defines 3 permanent footstep trails and 1 consumable double XP charm', () => {
-  assert.equal(SHOP_CATALOG.length, 4);
+test('SHOP_CATALOG defines 3 permanent footstep trails, 1 consumable double XP charm, and 5 farm produce items', () => {
+  assert.equal(SHOP_CATALOG.length, 9);
   const trails = SHOP_CATALOG.filter((i) => i.type === 'trail');
   const charms = SHOP_CATALOG.filter((i) => i.type === 'charm');
+  const produces = SHOP_CATALOG.filter((i) => i.type === 'produce');
   assert.equal(trails.length, 3);
   assert.equal(charms.length, 1);
+  assert.equal(produces.length, 5);
 
   const flowerTrail = SHOP_CATALOG.find((i) => i.id === 'trail_flower');
   assert.ok(flowerTrail);

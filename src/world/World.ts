@@ -1624,14 +1624,18 @@ export class World {
     if (this.farmSanctuary) {
       const px = this.player.position.x;
       const pz = this.player.position.z;
+      const farmX = this.farmSanctuary.group.position.x;
+      const farmZ = this.farmSanctuary.group.position.z;
       const triggers = this.farmSanctuary.getInteractTriggers();
       for (const t of triggers) {
-        if (t.isActive && Math.hypot(px - t.position.x, pz - t.position.z) < t.radius) {
+        if (t.isActive && Math.hypot(px - (farmX + t.position.x), pz - (farmZ + t.position.z)) < t.radius) {
           nearFarmId = t.animalId;
           break;
         }
       }
     }
+
+    this.renderer.render(this.scene, this.camera);
 
     this.onFrame?.(
       this.spatial.isNearMilo(),
