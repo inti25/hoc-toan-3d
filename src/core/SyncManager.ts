@@ -147,6 +147,19 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
   const review = [...new Set([...(local.review || []), ...(remote.review || [])])].slice(0, 100);
   const position = local.position || remote.position;
 
+  // Gộp túi đồ (phép hợp các vật phẩm đã mở khóa)
+  const inventory = [...new Set([...(local.inventory || []), ...(remote.inventory || [])])];
+
+  // Giữ hiệu ứng đang trang bị (ưu tiên local nếu hợp lệ, fallback remote)
+  const equippedTrail = local.equippedTrail || remote.equippedTrail || '';
+
+  // Hợp nhất bùa phép (lấy max giữa local và remote để tránh hao hụt khi đồng bộ)
+  const charms: Record<string, number> = {};
+  const allCharmKeys = new Set([...Object.keys(local.charms || {}), ...Object.keys(remote.charms || {})]);
+  for (const key of allCharmKeys) {
+    charms[key] = Math.max(local.charms?.[key] || 0, remote.charms?.[key] || 0);
+  }
+
   return {
     version: 1,
     xp,
@@ -167,7 +180,10 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     solvedProblems,
     questionStats,
     review,
-    position
+    position,
+    inventory,
+    equippedTrail,
+    charms
   };
 }
 

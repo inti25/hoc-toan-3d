@@ -84,6 +84,7 @@ export class SpatialWorld {
   private portalCooldown = 0;
   private obstacles: Obstacle[] = [];
   readonly miloPos = { x: -3, z: 1.5 };
+  readonly shopPos = { x: -12.4, z: -3.5 };
 
   constructor(initialX = -6, initialZ = 6) {
     this.x = initialX;
@@ -360,6 +361,10 @@ export class SpatialWorld {
 
   isNearMilo(): boolean {
     return Math.hypot(this.x - this.miloPos.x, this.z - this.miloPos.z) < 3.1;
+  }
+
+  isNearShop(): boolean {
+    return Math.hypot(this.x - this.shopPos.x, this.z - this.shopPos.z) < 3.2;
   }
 
   nearFlowerIndex(): number {

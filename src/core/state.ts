@@ -11,8 +11,34 @@ export interface SaveState {
   parkTrees: boolean[];
   solvedProblems: Record<string, boolean>;
   position?: { x: number; z: number };
+  inventory: string[];
+  equippedTrail: string;
+  charms: Record<string, number>;
 }
-export const freshState = (): SaveState => ({ version: 1, xp: 0, coins: 0, bridge: 0, questAccepted: false, questComplete: false, avatar: 'boy', table: 0, sound: true, music: false, combo: 0, questionStats: {}, review: [], started: false, flowers: Array(10).fill(false), monoliths: Array(40).fill(false), zoneBadges: Array(5).fill(false), parkTrees: Array(20).fill(false), solvedProblems: {} });
+export const freshState = (): SaveState => ({
+  version: 1,
+  xp: 0,
+  coins: 0,
+  bridge: 0,
+  questAccepted: false,
+  questComplete: false,
+  avatar: 'boy',
+  table: 0,
+  sound: true,
+  music: false,
+  combo: 0,
+  questionStats: {},
+  review: [],
+  started: false,
+  flowers: Array(10).fill(false),
+  monoliths: Array(40).fill(false),
+  zoneBadges: Array(5).fill(false),
+  parkTrees: Array(20).fill(false),
+  solvedProblems: {},
+  inventory: [],
+  equippedTrail: '',
+  charms: {}
+});
 const positive = (v: unknown, max = 10000000): number => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(max, Math.floor(v))) : 0;
 export function parseSave(raw: string | null): SaveState {
   const base = freshState();
@@ -99,6 +125,19 @@ export function parseSave(raw: string | null): SaveState {
       const z = typeof p.z === 'number' && Number.isFinite(p.z) ? Math.round(p.z * 100) / 100 : undefined;
       if (x !== undefined && z !== undefined) {
         base.position = { x, z };
+      }
+    }
+    if (Array.isArray(d.inventory)) {
+      base.inventory = [...new Set(d.inventory.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+    }
+    if (typeof d.equippedTrail === 'string') {
+      base.equippedTrail = d.equippedTrail;
+    }
+    if (d.charms && typeof d.charms === 'object') {
+      for (const [k, v] of Object.entries(d.charms as Record<string, unknown>)) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+          base.charms[k] = Math.floor(v);
+        }
       }
     }
     return base;

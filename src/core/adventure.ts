@@ -2,6 +2,7 @@ import { BRIDGE_PARTS, LEVEL_XP, SAVE_KEY, getLevel, type Table } from '../data/
 import type { AvatarId } from '../data/characters';
 import { ARCHIMEDES_MONOLITHS, getMonolithsByZone } from '../data/archimedesTrialMap';
 import { freshState, parseSave, type SaveState } from './state';
+import { getShopItem, type ShopItem } from '../data/shopCatalog';
 
 export interface StorageAdapter {
   getItem(key: string): string | null;
@@ -34,6 +35,7 @@ export interface QuizProgressDelta {
   combo: number;
   bridge: number;
   bridgeCompleted: boolean;
+  doubleXpApplied?: boolean;
 }
 
 export interface FlowerBloomDelta {
@@ -175,9 +177,16 @@ export class Adventure {
       this.state.questionStats[questionId] = stat;
     }
 
+    let doubleXpApplied = false;
     if (isCorrect) {
       this.state.combo++;
-      xpGained = 10;
+      let baseXP = 10;
+      if (this.state.charms && this.state.charms['charm_double_xp'] > 0) {
+        this.state.charms['charm_double_xp']--;
+        baseXP *= 2;
+        doubleXpApplied = true;
+      }
+      xpGained = baseXP;
       coinsGained = 5;
       this.state.xp += xpGained;
       this.state.coins += coinsGained;
@@ -213,7 +222,8 @@ export class Adventure {
       newLevel,
       combo: this.state.combo,
       bridge: this.state.bridge,
-      bridgeCompleted
+      bridgeCompleted,
+      doubleXpApplied
     };
   }
 
@@ -534,6 +544,71 @@ export class Adventure {
 
   getArchimedesSolvedCount(monolithProblems: { id: number | string }[] = []): number {
     return getArchimedesSolvedCount(this.state, monolithProblems);
+  }
+
+  buyShopItem(itemId: string): { success: boolean; message: string; item?: ShopItem; state: Readonly<SaveState> } {
+    const item = getShopItem(itemId);
+    if (!item) {
+      return { success: false, message: 'Vật phẩm không tồn tại!', state: this.state };
+    }
+
+    if (!this.state.inventory) this.state.inventory = [];
+    if (!this.state.charms) this.state.charms = {};
+
+    if (item.type === 'trail' && this.state.inventory.includes(item.id)) {
+      return { success: false, message: 'Bé đã sở hữu hiệu ứng bước chân này rồi!', state: this.state };
+    }
+
+    if (this.state.coins < item.price) {
+      return {
+        success: false,
+        message: `Bé cần thêm ${item.price - this.state.coins} xu để đổi lấy ${item.name}!`,
+        state: this.state
+      };
+    }
+
+    if (item.type === 'trail') {
+      this.state.coins -= item.price;
+      this.state.inventory.push(item.id);
+      if (!this.state.equippedTrail) {
+        this.state.equippedTrail = item.id;
+      }
+    } else if (item.type === 'charm') {
+      this.state.coins -= item.price;
+      this.state.charms[item.id] = (this.state.charms[item.id] || 0) + 1;
+    }
+
+    this.save();
+    return {
+      success: true,
+      message: `Bé đã đổi thành công ${item.name}!`,
+      item,
+      state: this.state
+    };
+  }
+
+  equipTrail(trailId: string): { success: boolean; message: string } {
+    if (!trailId) {
+      this.state.equippedTrail = '';
+      this.save();
+      return { success: true, message: 'Đã gỡ hiệu ứng bước chân.' };
+    }
+
+    if (!this.state.inventory || !this.state.inventory.includes(trailId)) {
+      return { success: false, message: 'Bé chưa sở hữu hiệu ứng này!' };
+    }
+
+    this.state.equippedTrail = trailId;
+    this.save();
+    return { success: true, message: 'Đã trang bị hiệu ứng bước chân!' };
+  }
+
+  getEquippedTrail(): string {
+    return this.state.equippedTrail || '';
+  }
+
+  getCharmCount(charmId: string): number {
+    return this.state.charms?.[charmId] || 0;
   }
 
   restoreState(newState: SaveState): void {

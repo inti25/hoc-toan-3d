@@ -32,6 +32,7 @@ import {
 import type { RemoteZoneConfig, RemoteProblem, RemotePlayerProgress } from './data/remoteTypes';
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
 import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
+import { ShopModal } from './ui/ShopModal';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -58,6 +59,7 @@ let nearFlower = -1;
 let nearPortal = false;
 let nearMonolith = -1;
 let nearParkTree = -1;
+let nearShop = false;
 let frameTick = 0;
 let deferredSpawnPosition: { x: number; z: number } | null = null;
 let lastSavedPos = { x: -6, z: 6 };
@@ -101,6 +103,16 @@ const challengeDialog = new ChallengeDialog({
   telemetry: {
     logRemoteProgress
   }
+});
+
+const shopModal = new ShopModal({
+  adventure,
+  world: () => world,
+  audio,
+  updateHUD: () => updateHUD(),
+  toast: (msg) => toast(msg),
+  openDialog: (title, body, kind) => openDialog(title, body, kind),
+  closeDialog: () => closeDialog()
 });
 
 function getThemeBadgeIcon(theme?: string): string {
@@ -226,7 +238,7 @@ app.innerHTML = `
           <small id="xp-text">0 / 100 XP</small>
         </div>
       </div>
-      <div class="wallet">${icon('coin')}<strong id="coins">0</strong><span>xu</span></div>
+      <div class="wallet interactive" id="wallet-btn" title="Chạm để mở Tiệm Tạp Hóa Vương Quốc 🛍️">${icon('coin')}<strong id="coins">0</strong><span>xu</span></div>
       <aside class="quest-card">
         <div class="eyebrow">${icon('flag')} CHUYẾN PHIÊU LƯU ĐẦU TIÊN</div>
         <h2 id="quest-title">Một cây cầu, ngàn niềm vui</h2>
@@ -256,8 +268,9 @@ app.innerHTML = `
       <div id="bridge-label" class="world-label landmark"><strong>Cây cầu tình bạn</strong><small id="bridge-count">0 / 6 đoạn cầu</small></div>
       <button id="portal-label" class="world-label" aria-label="Cổng dịch chuyển" hidden><span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small></button>
       <div class="bottom-bar">
-        <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
+        <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><kbd>B</kbd><span>Túi đồ</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
         <div class="toolbar">
+          <button id="inventory-btn" class="tool-button special-btn inventory-hud-btn" title="Túi Đồ Dũng Sĩ">🎒<span>Túi Đồ</span></button>
           <button id="archimedes-btn" class="tool-button special-btn">${icon('star')}<span>Bản Đồ</span></button>
           <button id="travel" class="tool-button">${icon('compass')}<span id="travel-text">Đến Vườn Hoa</span></button>
           <button id="learn" class="tool-button">${icon('book')}<span>Sổ cửu chương</span></button>
@@ -566,7 +579,9 @@ $('milo-label').onclick = talk;
 
 function interactAction() {
   if (!world || !world.active || world.paused) return;
-  if (nearParkTree !== -1) {
+  if (nearShop) {
+    shopModal.open('shop', 'full');
+  } else if (nearParkTree !== -1) {
     openParkTreeDialog(nearParkTree);
   } else if (nearMonolith !== -1) {
     openArchimedesMonolithDialog(nearMonolith, 0);
@@ -1656,6 +1671,7 @@ function settings() {
         world.setFlowersBloomed(fresh.flowers);
         world.setMonolithsActivated(fresh.monoliths);
         world.syncAwakenedParkTrees(fresh.parkTrees || []);
+        world.setEquippedTrail('');
         world.setInitialPosition(-6, 6);
         world.setAvatar(fresh.avatar);
         world.resetCamera();
@@ -1740,8 +1756,14 @@ $('help').onclick = () => help();
 
 document.addEventListener('keydown', e => {
   if (challengeDialog.handleKeyDown(e)) return;
-  if (e.repeat && ['e', ' ', 'Escape'].includes(e.key)) return;
-  if ($<HTMLDialogElement>('dialog').open) return;
+  if (e.repeat && ['e', 'b', ' ', 'Escape'].includes(e.key)) return;
+  if ($<HTMLDialogElement>('dialog').open) {
+    if (e.key.toLowerCase() === 'b' && currentDialog === 'inventory') {
+      e.preventDefault();
+      closeDialog();
+    }
+    return;
+  }
   if (!world?.active) return;
   const key = e.key.toLowerCase();
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(key)) {
@@ -1750,6 +1772,10 @@ document.addEventListener('keydown', e => {
   }
   if (key === ' ') world.jump();
   if (key === 'e') interactAction();
+  if (key === 'b') {
+    e.preventDefault();
+    shopModal.open('inventory', 'inventory');
+  }
   if (key === 'escape') {
     e.preventDefault();
     settings();
@@ -1877,6 +1903,9 @@ const handlePortalAction = () => {
     openArchimedesMapDialog();
   }
 };
+const invBtn = document.getElementById('inventory-btn') || document.getElementById('shop-btn');
+if (invBtn) invBtn.onclick = () => shopModal.open('inventory', 'inventory');
+$('wallet-btn').onclick = () => shopModal.open('shop', 'full');
 $('archimedes-btn').onclick = () => openArchimedesMapDialog();
 $('portal-label').onclick = handlePortalAction;
 
@@ -1887,7 +1916,8 @@ function onWorldFrame(
   nearFlowerIdx: number,
   isNearPortal: boolean,
   nearMonolithIdx: number,
-  nearParkTreeIdx: number
+  nearParkTreeIdx: number,
+  isNearShop = false
 ) {
   if (!world) return;
   near = isNear;
@@ -1895,6 +1925,7 @@ function onWorldFrame(
   nearPortal = isNearPortal;
   nearMonolith = nearMonolithIdx;
   nearParkTree = nearParkTreeIdx;
+  nearShop = isNearShop;
 
   if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
     queueSavePosition(world.player.position.x, world.player.position.z);
@@ -1937,7 +1968,10 @@ function onWorldFrame(
   let interactHtml = '';
   let interactHidden = true;
 
-  if (nearParkTree !== -1) {
+  if (nearShop) {
+    interactHtml = `🛍️ <b>Tiệm Tạp Hóa Vương Quốc</b> (Bấm E để vào tiệm) ${icon('arrow')}`;
+    interactHidden = world.paused;
+  } else if (nearParkTree !== -1) {
     const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
     const sheetName = parkZone?.sheetName || 'CongVienXanh';
     const parkQuestions = activeRemoteQuestions[sheetName] || [];
@@ -2041,6 +2075,7 @@ async function ensureWorld(): Promise<World> {
       );
     },
     parkTrees: init.parkTrees || [],
+    equippedTrail: init.equippedTrail || '',
     initialPosition: (init.started && init.position) ? init.position : null,
     onTeleport: (x, z) => queueSavePosition(x, z, true),
     onJump: () => audio.playCue('jump'),
@@ -2049,6 +2084,7 @@ async function ensureWorld(): Promise<World> {
     onMonolithClick: (idx) => openArchimedesMonolithDialog(idx, 0),
     onParkTreeClick: (idx) => openParkTreeDialog(idx),
     onPortalClick: handlePortalAction,
+    onShopClick: () => shopModal.open('shop', 'full'),
     onFrame: onWorldFrame
   });
 

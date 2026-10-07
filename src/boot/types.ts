@@ -15,6 +15,8 @@ export interface WorldLaunchOptions {
   onMonolithClick?: (idx: number) => void;
   onParkTreeClick?: (idx: number) => void;
   onPortalClick?: () => void;
+  onShopClick?: () => void;
+  equippedTrail?: string;
   onFrame?: (
     isNear: boolean,
     crossed: boolean,
@@ -22,7 +24,8 @@ export interface WorldLaunchOptions {
     nearFlowerIdx: number,
     isNearPortal: boolean,
     nearMonolithIdx: number,
-    nearParkTreeIdx: number
+    nearParkTreeIdx: number,
+    isNearShop: boolean
   ) => void;
 }
 

@@ -22,6 +22,14 @@ import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 export { type MonolithItem, ArchimedesZoneBuilder };
 
 interface Spark { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }
+interface TrailParticle {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  life: number;
+  maxLife: number;
+  floatSpeed: number;
+  rotSpeed: THREE.Vector3;
+}
 
 export interface FlowerItem {
   id: number;
@@ -82,15 +90,29 @@ export class World {
   active = false;
   paused = false;
   joystick = { x: 0, y: 0 };
-  onFrame?: (near: boolean, crossed: boolean, fps: number, nearFlower: number, nearPortal: boolean, nearMonolith: number, nearParkTree: number) => void;
+  onFrame?: (
+    near: boolean,
+    crossed: boolean,
+    fps: number,
+    nearFlower: number,
+    nearPortal: boolean,
+    nearMonolith: number,
+    nearParkTree: number,
+    nearShop: boolean
+  ) => void;
   onJump?: () => void;
   onSceneClick?: (near: boolean) => void;
   onFlowerClick?: (index: number) => void;
   onMonolithClick?: (index: number) => void;
   onParkTreeClick?: (index: number) => void;
   onPortalClick?: () => void;
+  onShopClick?: () => void;
   onTeleport?: (x: number, z: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
+  private shopBeacon?: THREE.Mesh;
+  private trailParticles: TrailParticle[] = [];
+  private trailTimer = 0;
+  equippedTrail = '';
   readonly parkTrees: ParkTreeEntity[] = [];
   readonly parkModels: Map<number, THREE.Group> = new Map();
   readonly lakeModels: Map<number, THREE.Group> = new Map();
@@ -331,7 +353,7 @@ export class World {
     this.scene.add(top);
   }
 
-  private house(x: number, z: number, color: number, size = 1, rotate = 0) {
+  private house(x: number, z: number, color: number, size = 1, rotate = 0, isShop = false) {
     const h = new THREE.Group(); h.position.set(x, 0, z); h.scale.setScalar(size); h.rotation.y = rotate;
     this.box(h, 0, 1.5, 0, 3.6, 3, 3, 0xfff0ce);
     const roof = this.cylinder(h, 0, 3.5, 0, 0, 3.1, 2, color, 4); roof.rotation.y = Math.PI / 4; roof.scale.z = .95;
@@ -343,6 +365,38 @@ export class World {
     this.box(h, 1, 1.02, 1.7, 1.1, .22, .4, 0x9e6a44);
     for (let i = 0; i < 4; i++) this.sphere(h, .63 + i * .25, 1.23, 1.7, .18, i % 2 ? 0xffce58 : 0xf18e81);
     this.box(h, 0, .12, 1.85, 2.3, .25, .8, 0xd6c4a1);
+
+    if (isShop) {
+      // 1. Mái hiên sọc đỏ - trắng phong cách hoạt hình (Striped Awning)
+      const awning = new THREE.Group();
+      awning.position.set(-.35, 2.05, 1.7);
+      awning.rotation.x = 0.25;
+      for (let s = 0; s < 5; s++) {
+        const stripeColor = s % 2 === 0 ? 0xe11d48 : 0xfffbeb;
+        this.box(awning, -0.6 + s * 0.3, 0, 0, 0.28, 0.08, 0.9, stripeColor);
+      }
+      h.add(awning);
+
+      // 2. Bảng hiệu gỗ treo "TIỆM TẠP HÓA" với viền mạ vàng
+      this.box(h, -.35, 2.45, 1.65, 1.5, 0.42, 0.1, 0x6b3f1f);
+      this.box(h, -.35, 2.45, 1.71, 1.4, 0.32, 0.05, 0xfbbf24);
+      this.sphere(h, -.35, 2.45, 1.76, 0.1, 0xd97706);
+
+      // 3. Đèn lồng cổng ấm áp
+      this.box(h, .25, 1.9, 1.65, .06, .45, .06, 0x334155);
+      const lantern = this.cylinder(h, .25, 1.75, 1.75, .11, .09, .22, 0xfde047);
+      lantern.castShadow = false;
+
+      // 4. Thảm chào mừng trước cửa tiệm
+      this.box(h, -.35, .13, 2.0, 1.35, .03, .65, 0xf59e0b);
+      this.box(h, -.35, .135, 2.0, 1.15, .035, .45, 0xd97706);
+
+      // 5. Cột mốc lơ lửng / Biểu tượng đồng xu vàng xoay trên nóc nhà
+      const shopBeacon = this.cylinder(h, 0, 4.8, 0, .4, .4, .1, 0xfbbf24, 16);
+      shopBeacon.rotation.x = Math.PI / 2;
+      this.shopBeacon = shopBeacon;
+    }
+
     this.scene.add(h); this.obstacles.push({ x, z, radius: 2.35 * size });
   }
 
@@ -360,7 +414,7 @@ export class World {
   }
 
   private village() {
-    this.house(-12, -6, 0xd88c55, 1.25); this.house(-17, 6, 0x528f91, .9, .25); this.house(-4, -11, 0xbd7063, 1);
+    this.house(-12, -6, 0xd88c55, 1.25, 0, true); this.house(-17, 6, 0x528f91, .9, .25); this.house(-4, -11, 0xbd7063, 1);
     const mill = new THREE.Group(); mill.position.set(-15, 0, -14);
     this.cylinder(mill, 0, 2, 0, 1.2, 1.6, 4, 0xf1dfb3); this.cylinder(mill, 0, 4.7, 0, 0, 1.8, 1.9, 0x53918d);
     this.windmill.position.set(0, 3.2, 1.65);
@@ -1324,17 +1378,85 @@ export class World {
           return;
         }
       }
+      if (hit.distanceTo(new THREE.Vector3(-12.4, 0, -3.5)) < 3.5 && this.spatial.isNearShop()) {
+        this.onShopClick?.();
+        return;
+      }
       // Direct Locomotion: Clicking empty ground or far away objects does NOT auto-walk.
     }
   }
 
   nearMilo() { return this.spatial.isNearMilo(); }
+  nearShop() { return this.spatial.isNearShop(); }
+
+  setEquippedTrail(trailId: string) {
+    this.equippedTrail = trailId;
+  }
+
+  private emitFootstepTrail(x: number, y: number, z: number, trailType: string) {
+    let colors: number[] = [];
+    let geoType: 'flower' | 'star' | 'frost' = 'flower';
+
+    if (trailType === 'trail_flower') {
+      colors = [0xff69b4, 0xffd166, 0x06d6a0, 0xf72585, 0x70e000];
+      geoType = 'flower';
+    } else if (trailType === 'trail_stardust') {
+      colors = [0xffd700, 0xffbe0b, 0xfff8e7, 0xfb5607, 0xffe600];
+      geoType = 'star';
+    } else if (trailType === 'trail_frost') {
+      colors = [0x00f5d4, 0x70d6ff, 0xe0fbfc, 0x00b4d8, 0x90e0ef];
+      geoType = 'frost';
+    } else {
+      return;
+    }
+
+    const count = geoType === 'star' ? 2 : 1;
+    for (let c = 0; c < count; c++) {
+      const col = colors[Math.floor(Math.random() * colors.length)];
+      const offsetX = (Math.random() - 0.5) * 0.45;
+      const offsetZ = (Math.random() - 0.5) * 0.45;
+      const py = y + 0.08 + Math.random() * 0.06;
+
+      let geom: THREE.BufferGeometry;
+      if (geoType === 'flower') {
+        geom = new THREE.IcosahedronGeometry(0.12, 0);
+      } else if (geoType === 'star') {
+        geom = new THREE.TetrahedronGeometry(0.11, 0);
+      } else {
+        geom = new THREE.OctahedronGeometry(0.12, 0);
+      }
+
+      const mat = new THREE.MeshBasicMaterial({ color: col });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(x + offsetX, py, z + offsetZ);
+      mesh.scale.setScalar(0.01);
+      this.scene.add(mesh);
+
+      const maxLife = 0.8 + Math.random() * 0.4;
+      this.trailParticles.push({
+        mesh,
+        velocity: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.4 + Math.random() * 0.3, (Math.random() - 0.5) * 0.3),
+        life: maxLife,
+        maxLife,
+        floatSpeed: 0.35 + Math.random() * 0.25,
+        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5)
+      });
+    }
+  }
 
   private movement(dt: number) {
     const pose = this.spatial.tick(dt, { keys: this.keys, joystick: this.joystick }, this.yaw);
     this.player.position.set(pose.x, pose.y, pose.z);
     this.player.rotation.y = pose.rotation;
     this.avatar.updateWalkAnimation(this.time, pose.moving);
+
+    if (pose.moving && this.equippedTrail) {
+      this.trailTimer += dt;
+      if (this.trailTimer >= 0.09) {
+        this.trailTimer = 0;
+        this.emitFootstepTrail(pose.x, pose.y, pose.z, this.equippedTrail);
+      }
+    }
   }
 
   burst(position: THREE.Vector3 | { x: number; y: number; z: number }) {
@@ -1417,6 +1539,28 @@ export class World {
       }
     });
 
+    if (this.shopBeacon) {
+      this.shopBeacon.rotation.z += rawDt * 1.5;
+    }
+
+    for (let i = this.trailParticles.length - 1; i >= 0; i--) {
+      const p = this.trailParticles[i];
+      p.life -= rawDt;
+      p.mesh.position.addScaledVector(p.velocity, rawDt);
+      p.mesh.rotation.x += p.rotSpeed.x * rawDt;
+      p.mesh.rotation.y += p.rotSpeed.y * rawDt;
+      p.mesh.rotation.z += p.rotSpeed.z * rawDt;
+      const progress = Math.max(0, p.life / p.maxLife);
+      const scale = Math.sin(progress * Math.PI);
+      p.mesh.scale.setScalar(Math.max(0.001, scale));
+      if (p.life <= 0) {
+        this.scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        if (p.mesh.material instanceof THREE.Material) p.mesh.material.dispose();
+        this.trailParticles.splice(i, 1);
+      }
+    }
+
     this.archimedes.updateAnimations(rawDt, this.time);
     for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= rawDt; s.velocity.y -= rawDt * 6; s.mesh.position.addScaledVector(s.velocity, rawDt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
     this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += rawDt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
@@ -1428,7 +1572,8 @@ export class World {
       this.spatial.nearFlowerIndex(),
       this.spatial.isNearPortal(),
       this.spatial.nearMonolithIndex(),
-      this.spatial.nearParkTreeIndex()
+      this.spatial.nearParkTreeIndex(),
+      this.spatial.isNearShop()
     );
   };
 

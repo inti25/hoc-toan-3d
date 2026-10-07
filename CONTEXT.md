@@ -240,3 +240,19 @@ _Avoid_: Tag model, Type linh tinh, Phân loại thủ công
 **Bản Mẫu Vùng Đất Tùy Biến (Custom Land Sanctuary / PROCEDURAL_SANCTUARY)**:
 Bản Mẫu Vùng Đất thế hệ mới cho phép kiến tạo các hòn đảo 3D động dựa trên cấu hình chủ đề (theme) và mật độ trang trí (decorDensity) từ Google Sheets, tự động lấy các Mảnh Ghép Mô Hình từ Bộ Khảo Sát để phối cảnh và cắm Bia Đá Tri Thức.
 _Avoid_: Map ngẫu nhiên, Đảo tự tạo, Procedural map
+
+**Tiệm Tạp Hóa Vương Quốc (Kingdom Emporium / Riverside Stall)**:
+Gian hàng đổi quà bằng Xu tại bờ sông Làng Khởi Đầu (kết hợp lối mở nhanh từ Nút Ví Xu), nơi học sinh dùng Xu tích lũy từ các bài toán để đổi lấy Hiệu Ứng Bước Chân, Nhân Vật Đồng Hành mới và Bùa Trợ Thủ.
+_Avoid_: Shop nạp thẻ, Cửa hàng tiền thật, Chợ đen
+
+**Túi Đồ Dũng Sĩ (Explorer Inventory)**:
+Tập hợp danh mục mã định danh các vật phẩm, trang phục, hiệu ứng và số lượng bùa trợ thủ học sinh đã sở hữu, mở nhanh bằng nút `🎒 Túi Đồ` trên HUD (hoặc phím `B`), được lưu trữ trong Tiến Trình Thám Hiểm và đồng bộ tự động lên đám mây Google Sheets.
+_Avoid_: Balo đồ, Rương đồ, Kho đồ
+
+**Bùa Trợ Thủ Toán Học (Math Helper Charm)**:
+Vật phẩm bổ trợ tiêu hao mua bằng Xu, cho phép học sinh kích hoạt trong Thử Thách để giảm bớt áp lực tâm lý khi gặp câu hỏi khó (ví dụ: Kính Lúp Soi Sáng gạch bỏ 1 phương án sai, Bùa Sao Băng nhân đôi XP).
+_Avoid_: Pay-to-win, Bùa hack, Nút giải hộ
+
+**Hiệu Ứng Bước Chân (Trail Footstep Effect)**:
+Hiệu ứng hạt ánh sáng thẩm mỹ xuất hiện bám theo từng bước chạy của nhân vật (ví dụ: hoa cỏ nở rộ, bong bóng nước lung linh, bụi sao băng lấp lánh), tạo niềm vui thị giác khi khám phá vương quốc 3D.
+_Avoid_: Particle linh tinh, Vết chân dơ

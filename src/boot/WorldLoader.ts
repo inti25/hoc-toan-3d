@@ -57,6 +57,7 @@ export class WorldLoader implements WorldLoaderSeam {
     world.setMonolithsActivated(options.monolithChecker);
     world.setAvatar(options.avatar);
     world.syncAwakenedParkTrees(options.parkTrees);
+    if (options.equippedTrail) world.setEquippedTrail(options.equippedTrail);
 
     // Callbacks
     if (options.onTeleport) world.onTeleport = options.onTeleport;
@@ -66,6 +67,7 @@ export class WorldLoader implements WorldLoaderSeam {
     if (options.onMonolithClick) world.onMonolithClick = options.onMonolithClick;
     if (options.onParkTreeClick) world.onParkTreeClick = options.onParkTreeClick;
     if (options.onPortalClick) world.onPortalClick = options.onPortalClick;
+    if (options.onShopClick) world.onShopClick = options.onShopClick;
     if (options.onFrame) world.onFrame = options.onFrame;
 
     // Initial position

@@ -1446,4 +1446,324 @@ dialog.image-lightbox::backdrop {
 .status-indicator-dot.error { background: #ef4444; }
 .status-indicator-dot.idle { background: #94a3b8; }
 
+/* ─── Kingdom Emporium & Hero Inventory ────────────────────────── */
+.shop-modal-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 580px;
+  margin: 0 auto;
+}
+
+.shop-balance-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fde68a 100%);
+  border: 2px solid #fcd34d;
+  border-radius: 16px;
+  padding: 12px 18px;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
+}
+
+.shop-balance-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shop-coin-emblem {
+  font-size: 32px;
+  filter: drop-shadow(0 2px 4px rgba(217, 119, 6, 0.3));
+}
+
+.shop-balance-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-balance-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #b45309;
+  letter-spacing: 0.5px;
+}
+
+.shop-balance-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: #92400e;
+  line-height: 1.1;
+}
+
+.shop-balance-val small {
+  font-size: 14px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.shop-balance-tip {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78350f;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px dashed #f59e0b;
+  max-width: 220px;
+  line-height: 1.3;
+}
+
+.shop-tab-nav {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 14px;
+  gap: 6px;
+}
+
+.shop-tab-btn {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.shop-tab-btn:hover {
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.shop-tab-btn.active {
+  background: #ffffff;
+  color: var(--green);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.shop-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.shop-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(25, 79, 66, 0.1);
+  border-color: #cbd5e1;
+}
+
+.shop-card.equipped {
+  border-color: #10b981;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.shop-card.charm-card {
+  border-color: #ddd6fe;
+  background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+}
+
+.shop-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.shop-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.shop-card-meta {
+  flex: 1;
+}
+
+.shop-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.shop-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+}
+
+.shop-badge.common { background: #dcfce7; color: #166534; }
+.shop-badge.rare { background: #fef3c7; color: #92400e; }
+.shop-badge.legendary { background: #e0f2fe; color: #0369a1; }
+.shop-badge.equipped { background: #10b981; color: #ffffff; }
+
+.shop-card-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  margin: 0 0 14px;
+  flex: 1;
+}
+
+.shop-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.shop-card-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 16px;
+  font-weight: 900;
+  color: #d97706;
+}
+
+.shop-card-price small {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.shop-card-owned-tag {
+  font-size: 12px;
+  font-weight: 800;
+  color: #059669;
+}
+
+.shop-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shop-btn.buy-btn {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.3);
+}
+
+.shop-btn.buy-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: scale(1.02);
+}
+
+.shop-btn.buy-btn:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.shop-btn.equip-btn {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.shop-btn.equip-btn:hover {
+  background: #059669;
+}
+
+.shop-btn.unequip-btn {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.shop-btn.unequip-btn:hover {
+  background: #e2e8f0;
+}
+
+.shop-empty-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: #64748b;
+}
+
+.shop-empty-icon {
+  font-size: 42px;
+  margin-bottom: 8px;
+}
+
+.shop-empty-text {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.shop-hud-btn {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+
+.inventory-hud-btn {
+  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%) !important;
+  border-color: #8b5cf6 !important;
+  color: #5b21b6 !important;
+}
+
+.inventory-hud-btn:hover {
+  background: linear-gradient(135deg, #ddd6fe 0%, #c4b5fd 100%) !important;
+  border-color: #7c3aed !important;
+  transform: translateY(-2px);
+}
+
+.wallet.interactive {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.wallet.interactive:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+}
+
+
 
