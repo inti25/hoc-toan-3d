@@ -2,7 +2,7 @@ import type { RemoteProblem, RemoteZoneConfig } from '../data/remoteTypes';
 import type { Adventure } from '../core/adventure';
 import type { World } from '../world/World';
 
-export type ChallengeType = 'multiplication' | 'flower' | 'park_tree' | 'archimedes';
+export type ChallengeType = 'multiplication' | 'flower' | 'park_tree' | 'archimedes' | 'farm_animal';
 
 export type ChallengeSpec =
   | {
@@ -28,6 +28,12 @@ export type ChallengeSpec =
       questionsBySheet?: Record<string, RemoteProblem[]>;
       zones?: RemoteZoneConfig[];
       monolithProblems?: RemoteProblem[];
+    }
+  | {
+      type: 'farm_animal';
+      animalId: string;
+      animalName: string;
+      problemData: any;
     };
 
 export interface ChallengeRewardSummary {

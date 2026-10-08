@@ -298,8 +298,9 @@ function generateMultiplicationRows(zoneId, count) {
  * Tạo vùng đất mới theo bản mẫu: ghi dòng CONFIG và sinh tab câu hỏi cửu chương
  */
 function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
-  const tpl = ZONE_TEMPLATES[templateKey] || ZONE_TEMPLATES.GRID_SANCTUARY;
-  const template = ZONE_TEMPLATES[templateKey] ? templateKey : 'GRID_SANCTUARY';
+  const normKey = String(templateKey || '').trim().toUpperCase();
+  const tpl = ZONE_TEMPLATES[normKey] || ZONE_TEMPLATES.GRID_SANCTUARY;
+  const template = ZONE_TEMPLATES[normKey] ? normKey : 'GRID_SANCTUARY';
   const count = Number(questionCount) > 0 ? Number(questionCount) : tpl.questionCount;
 
   const configSheet = ensureConfigSheet(ss);

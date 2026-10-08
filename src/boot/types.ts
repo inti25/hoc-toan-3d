@@ -17,6 +17,7 @@ export interface WorldLaunchOptions {
   onParkTreeClick?: (idx: number) => void;
   onPortalClick?: () => void;
   onShopClick?: () => void;
+  onFarmAnimalClick?: (animalId: string) => void;
   equippedTrail?: string;
   onFrame?: (
     isNear: boolean,

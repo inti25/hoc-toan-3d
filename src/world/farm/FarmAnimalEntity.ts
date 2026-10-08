@@ -63,6 +63,16 @@ export class FarmAnimalEntity {
       mesh.position.y = 0.25;
       this.root.add(mesh);
     }
+
+    // Invisible hit box for convenient raycasting & tapping
+    const hitbox = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.85, 0.85, 1.2, 8),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitbox.name = `hitbox_${id}`;
+    hitbox.position.y = 0.6;
+    hitbox.userData = { animalId: id, isAnimalHitbox: true };
+    this.root.add(hitbox);
   }
 
   private extractParts(node: THREE.Object3D) {

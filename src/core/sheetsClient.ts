@@ -310,12 +310,25 @@ export async function loadZonesAndQuestions(
 }
 
 /**
- * Cột Active: trống hoặc giá trị lạ = true (tương thích ngược); FALSE/0/NO = ẩn vùng
+ * Cột Active: trống hoặc giá trị lạ = true (tương thích ngược); FALSE/0/NO/ẨN/TẮT/OFF = ẩn vùng
  */
 function parseActiveFlag(val: unknown): boolean {
   if (val === false || val === 0) return false;
   const s = String(val ?? '').trim().toUpperCase();
-  return !(s === 'FALSE' || s === '0' || s === 'NO' || s === 'KHONG' || s === 'KHÔNG');
+  return !(
+    s === 'FALSE' ||
+    s === '0' ||
+    s === 'NO' ||
+    s === 'KHONG' ||
+    s === 'KHÔNG' ||
+    s === 'ẨN' ||
+    s === 'AN' ||
+    s === 'TẮT' ||
+    s === 'TAT' ||
+    s === 'OFF' ||
+    s === 'DISABLE' ||
+    s === 'DISABLED'
+  );
 }
 
 /**
@@ -366,14 +379,17 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       ? (rawDensity as any)
       : 'MEDIUM';
 
+    const rawTemplate = String(z.template ?? z.Template ?? '').trim().toUpperCase();
+    const validTemplate = (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY'].includes(rawTemplate)
+      ? rawTemplate
+      : 'GRID_SANCTUARY') as any;
+
     return {
       id: Number(z.id ?? z.ZoneId) || idx + 1,
       name: String(z.name || z.ZoneName || 'Vùng Đất Mới').trim(),
       title: String(z.title || z.Title || '').trim(),
       description: String(z.description || z.Description || '').trim(),
-      template: (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY'].includes(z.template)
-        ? z.template
-        : 'GRID_SANCTUARY') as any,
+      template: validTemplate,
       theme: validTheme,
       decorDensity: validDensity,
       sheetName: String(z.sheetName || z.SheetName || '').trim(),

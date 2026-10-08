@@ -31,6 +31,7 @@ export interface MonolithItem {
 export class ArchimedesZoneBuilder {
   readonly monoliths: MonolithItem[] = [];
   readonly portalGroups: THREE.Group[] = [];
+  readonly sanctuaryPortals: Map<number, { hubArch: THREE.Group; returnArch?: THREE.Group }> = new Map();
 
   constructor(
     private scene: THREE.Scene,
@@ -82,31 +83,45 @@ export class ArchimedesZoneBuilder {
     this.createPortalArch(52, 0, 0x22c55e, 0);
 
     // 3. Hub -> Zone 1 (Thung Lũng Tính Toán)
-    this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4);
+    const z1Hub = this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4);
 
     // 4. Hub -> Zone 2 (Suối Nguồn Dãy Số)
-    this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6);
+    const z2Hub = this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6);
 
     // 5. Hub -> Zone 3 (Đồi Thời Gian)
-    this.createPortalArch(70, 0, 0x8b5cf6, 0);
+    const z3Hub = this.createPortalArch(70, 0, 0x8b5cf6, 0);
 
     // 6. Hub -> Zone 4 (Rừng Hình Học)
-    this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6);
+    const z4Hub = this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6);
 
     // 7. Hub -> Zone 5 (Đỉnh Núi Tư Duy Sao)
-    this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
+    const z5Hub = this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
+
+    const hubArches = [z1Hub, z2Hub, z3Hub, z4Hub, z5Hub];
 
     // 8-12. Sanctuary Return Portals back to Hub (tọa độ trên vành bờ Địa Hình Hồ Yên Bình)
     const STATIC_SANCTUARIES = [
-      { x: 110, z: -60 },
-      { x: 150, z: -60 },
-      { x: 110, z: 60 },
-      { x: 150, z: 60 },
-      { x: 190, z: 0 }
+      { id: 1, x: 110, z: -60 },
+      { id: 2, x: 150, z: -60 },
+      { id: 3, x: 110, z: 60 },
+      { id: 4, x: 150, z: 60 },
+      { id: 5, x: 190, z: 0 }
     ];
-    STATIC_SANCTUARIES.forEach((c) => {
+    STATIC_SANCTUARIES.forEach((c, idx) => {
       const anchors = computeLakeAnchors(c);
-      this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
+      const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
+      this.sanctuaryPortals.set(c.id, {
+        hubArch: hubArches[idx],
+        returnArch: retArch
+      });
+    });
+  }
+
+  setSanctuaryPortalsVisible(activeZoneIds: Set<number>): void {
+    this.sanctuaryPortals.forEach((pair, id) => {
+      const visible = activeZoneIds.has(id);
+      pair.hubArch.visible = visible;
+      if (pair.returnArch) pair.returnArch.visible = visible;
     });
   }
 

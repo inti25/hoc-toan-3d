@@ -69,6 +69,7 @@ export class WorldLoader implements WorldLoaderSeam {
     if (options.onParkTreeClick) world.onParkTreeClick = options.onParkTreeClick;
     if (options.onPortalClick) world.onPortalClick = options.onPortalClick;
     if (options.onShopClick) world.onShopClick = options.onShopClick;
+    if (options.onFarmAnimalClick) world.onFarmAnimalClick = options.onFarmAnimalClick;
     if (options.onFrame) world.onFrame = options.onFrame;
 
     // Initial position

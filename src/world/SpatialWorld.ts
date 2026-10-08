@@ -83,6 +83,7 @@ export class SpatialWorld {
   private bridgeCount = 0;
   private portalCooldown = 0;
   private obstacles: Obstacle[] = [];
+  private activeZoneIds: Set<number> = new Set([1, 2, 3, 4, 5]);
   readonly miloPos = { x: -3, z: 1.5 };
   readonly shopPos = { x: -12.4, z: -3.5 };
 
@@ -182,6 +183,11 @@ export class SpatialWorld {
     customPortals?: PortalLink[],
     obstacles?: Obstacle[]
   ) {
+    this.activeZoneIds = new Set(
+      zones
+        .map((z, idx) => (typeof z.id === 'number' ? z.id : idx + 1))
+        .filter((id): id is number => typeof id === 'number')
+    );
     this.dynamicIslands = zones.map((z) => ({
       cx: z.center.x,
       cz: z.center.z,
@@ -216,20 +222,25 @@ export class SpatialWorld {
 
     // 5. 5 Ốc Đảo Chuyên Đề Archimedes (Địa Hình Hồ Yên Bình - Cozy Lake Terrain)
     const STATIC_LAKE_SANCTUARIES = [
-      { cx: 110, cz: -60 },
-      { cx: 150, cz: -60 },
-      { cx: 110, cz: 60 },
-      { cx: 150, cz: 60 },
-      { cx: 190, cz: 0 }
+      { id: 1, cx: 110, cz: -60 },
+      { id: 2, cx: 150, cz: -60 },
+      { id: 3, cx: 110, cz: 60 },
+      { id: 4, cx: 150, cz: 60 },
+      { id: 5, cx: 190, cz: 0 }
     ];
     for (const s of STATIC_LAKE_SANCTUARIES) {
-      const d = Math.hypot(x - s.cx, z - s.cz);
-      if (d <= LAKE_WALK_OUTER) return true;
+      if (this.activeZoneIds.has(s.id)) {
+        const d = Math.hypot(x - s.cx, z - s.cz);
+        if (d <= LAKE_WALK_OUTER) return true;
+      }
     }
 
     // 6. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
     for (const isl of this.dynamicIslands) {
-      if (usesLakeTerrain(isl.template)) {
+      if (isl.template === 'FARM_SANCTUARY') {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= Math.max(34, Math.max(isl.w, isl.d) / 2 + 18)) return true;
+      } else if (usesLakeTerrain(isl.template)) {
         const d = Math.hypot(x - isl.cx, z - isl.cz);
         if (d <= LAKE_WALK_OUTER) return true;
       } else {
@@ -257,13 +268,14 @@ export class SpatialWorld {
     }
 
     const STATIC_LAKE_SANCTUARIES = [
-      { cx: 110, cz: -60 },
-      { cx: 150, cz: -60 },
-      { cx: 110, cz: 60 },
-      { cx: 150, cz: 60 },
-      { cx: 190, cz: 0 }
+      { id: 1, cx: 110, cz: -60 },
+      { id: 2, cx: 150, cz: -60 },
+      { id: 3, cx: 110, cz: 60 },
+      { id: 4, cx: 150, cz: 60 },
+      { id: 5, cx: 190, cz: 0 }
     ];
     for (const s of STATIC_LAKE_SANCTUARIES) {
+      if (!this.activeZoneIds.has(s.id)) continue;
       const d = Math.hypot(x - s.cx, z - s.cz);
       if (d <= LAKE_WALK_OUTER + 2.0) {
         return computeLakeAnchors({ x: s.cx, z: s.cz }).arrival;
@@ -294,14 +306,14 @@ export class SpatialWorld {
 
     // 5 Ốc Đảo Archimedes
     const STATIC_SANCTUARIES = [
-      { cx: 110, cz: -60, name: 'Thung Lũng Tính Toán' },
-      { cx: 150, cz: -60, name: 'Suối Nguồn Dãy Số' },
-      { cx: 110, cz: 60, name: 'Đồi Thời Gian' },
-      { cx: 150, cz: 60, name: 'Rừng Hình Học' },
-      { cx: 190, cz: 0, name: 'Đỉnh Núi Tư Duy Sao' }
+      { id: 1, cx: 110, cz: -60, name: 'Thung Lũng Tính Toán' },
+      { id: 2, cx: 150, cz: -60, name: 'Suối Nguồn Dãy Số' },
+      { id: 3, cx: 110, cz: 60, name: 'Đồi Thời Gian' },
+      { id: 4, cx: 150, cz: 60, name: 'Rừng Hình Học' },
+      { id: 5, cx: 190, cz: 0, name: 'Đỉnh Núi Tư Duy Sao' }
     ];
     for (const s of STATIC_SANCTUARIES) {
-      if (Math.hypot(this.x - s.cx, this.z - s.cz) <= LAKE_WALK_OUTER + 1.5) {
+      if (this.activeZoneIds.has(s.id) && Math.hypot(this.x - s.cx, this.z - s.cz) <= LAKE_WALK_OUTER + 1.5) {
         return s.name;
       }
     }
@@ -397,13 +409,25 @@ export class SpatialWorld {
     return -1;
   }
 
+  getActivePortals(): PortalLink[] {
+    const staticPortals = PORTAL_LINKS.filter((p) => {
+      const match = p.id.match(/(?:hub_to_z|z)(\d+)(?:_to_hub)?/);
+      if (match) {
+        const zId = Number(match[1]);
+        return this.activeZoneIds.has(zId);
+      }
+      return true;
+    });
+    return [...staticPortals, ...this.dynamicPortals];
+  }
+
   checkPortalTransit(dt = 0): PortalLink | null {
     if (this.portalCooldown > 0) {
       this.portalCooldown = Math.max(0, this.portalCooldown - dt);
       if (this.portalCooldown > 0) return null;
     }
 
-    const allPortals = [...PORTAL_LINKS, ...this.dynamicPortals];
+    const allPortals = this.getActivePortals();
 
     for (const portal of allPortals) {
       const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
@@ -419,7 +443,7 @@ export class SpatialWorld {
   }
 
   getNearPortal(): PortalLink | null {
-    const allPortals = [...PORTAL_LINKS, ...this.dynamicPortals];
+    const allPortals = this.getActivePortals();
     return allPortals.find(p => Math.hypot(this.x - p.source.x, this.z - p.source.z) < 3.2) || null;
   }
 

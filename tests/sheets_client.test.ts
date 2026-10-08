@@ -88,15 +88,9 @@ test('sanitizeRemoteProblems cleanses whitespace, auto-repairs missing answers i
   assert.deepEqual(step.hints, ['Gợi ý 1', 'Gợi ý 2', 'Gợi ý 3']);
 });
 
-test('getBundledFallbackData provides complete fallback for 5 Archimedes zones + Flower Garden', () => {
+test('getBundledFallbackData returns empty state since zones are loaded dynamically from Google Sheets', () => {
   const fallback = getBundledFallbackData();
-  assert.ok(fallback.zones.length >= 6);
-
-  const flowerZone = fallback.zones.find((z) => z.id === 6);
-  assert.ok(flowerZone);
-  assert.equal(flowerZone.template, 'FLOWER_BEDS');
-
-  // Toàn bộ câu hỏi được nạp động từ Google Sheets (questionsBySheet ban đầu rỗng)
+  assert.deepEqual(fallback.zones, []);
   assert.deepEqual(fallback.questionsBySheet, {});
 });
 

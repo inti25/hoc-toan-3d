@@ -139,10 +139,11 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     const list = data.questionsBySheet[z.sheetName] || [];
     const resolved = resolveZoneProblemsWithPositions(z, list);
 
-    // Vườn Hoa Tri Thức và Công Viên Xanh tuyệt đối KHÔNG sinh bia đá (công viên gắn bài vào cây)
+    // Vườn Hoa Tri Thức, Công Viên Xanh và Nông Trại tuyệt đối KHÔNG sinh bia đá (công viên gắn bài vào cây, nông trại gắn vào thú cưng)
     if (
       z.template === 'FLOWER_BEDS' ||
       z.template === 'PARK_SANCTUARY' ||
+      z.template === 'FARM_SANCTUARY' ||
       z.id === 6 ||
       z.id === 7 ||
       z.sheetName === 'VuonHoa' ||
@@ -726,59 +727,60 @@ function openFlowerDialog(index: number) {
   });
 }
 
-function openFarmAnimalDialog(animalId: string) {
+function getAnimalVietnameseName(kind: string): string {
+  const map: Record<string, string> = {
+    cow: 'Bò Sữa',
+    calf: 'Bê Con',
+    pig: 'Heo Ủn Ỉn',
+    piglet: 'Heo Con',
+    chicken: 'Gà Mái',
+    chick: 'Gà Con',
+    duck: 'Vịt Trắng',
+    duckling: 'Vịt Con',
+    dog: 'Cún Cưng'
+  };
+  return map[kind] || 'Bé Thú';
+}
+
+async function openFarmAnimalDialog(animalId: string) {
   if (!world || !world.farmSanctuary) return;
+  const animal = world.farmSanctuary.animals.find(a => a.id === animalId);
+  const kind = animal?.kind || 'cow';
+  const animalName = getAnimalVietnameseName(kind);
+
   const trigger = world.farmSanctuary.getInteractTriggers().find(t => t.animalId === animalId);
-  if (!trigger || !trigger.isActive) return;
+  if (!trigger || !trigger.isActive || animal?.state === 'HOMEWARD' || animal?.state === 'RESTING') {
+    audio.playCue('correct');
+    toast(`💖 Bé ${animalName} đã được bạn cứu về chuồng an toàn rồi!`);
+    return;
+  }
 
   const pd = trigger.problemData;
-  openDialog(
-    'Bé Thú Bị Lạc',
-    `
-    <div class="dialog-eyebrow">GIÚP BÉ VỀ CHUỒNG</div>
-    <p class="dialog-copy" style="font-size:16px;">
-      <b>${pd.Problem}</b>
-    </p>
-    <div class="options-grid" style="margin-top:16px;">
-      ${pd.Options.split('\n').map((opt: string) => {
-        const letter = opt.substring(0, 1);
-        return `<button class="primary dialog-btn" data-answer="${letter}" style="font-size:16px;padding:12px;">${opt}</button>`;
-      }).join('')}
-    </div>
-    <p style="font-size:13px; color:#6b7280; margin-top:12px; text-align:center;">Gợi ý: ${pd.Hint}</p>
-    `,
-    'farmAnimal'
-  );
+  const questionId = pd?.id || animalId;
 
-  document.querySelectorAll<HTMLButtonElement>('.dialog-btn').forEach(btn => {
-    btn.onclick = () => {
-      if (btn.dataset.answer === pd.Answer) {
-        audio.playCue('correct');
-        world!.farmSanctuary!.onAnimalRescued(animalId);
-        adventure.setFarmRescued(animalId, true);
-        
-        // Random produce reward
-        const produces = ['produce_milk', 'produce_egg', 'produce_duck_egg', 'produce_bone'];
-        const randomProduce = produces[Math.floor(Math.random() * produces.length)];
-        adventure.addProduceToInventory(randomProduce, 1);
-        
-        toast('🎉 Trả lời đúng! Bé thú đang vui vẻ đi về chuồng. +1 Nông sản!');
-        closeDialog();
-        
-        // Effect
-        world!.burstPlayer(1.2);
-        
-        // Add XP/Coins manually
-        const delta = adventure.recordQuizResult({ isCorrect: true, questionId: pd.id });
-        updateHUD();
-      } else {
-        audio.playCue('hint');
-        btn.classList.add('shake');
-        setTimeout(() => btn.classList.remove('shake'), 400);
-        toast('❌ Sai rồi, thử lại nhé!');
-      }
-    };
+  const outcome = await challengeDialog.startChallenge({
+    type: 'farm_animal',
+    animalId,
+    animalName,
+    problemData: pd
   });
+
+  if (outcome.status === 'solved' && outcome.isCorrect) {
+    adventure.setFarmRescued(animalId, true);
+
+    // Produce reward according to kind
+    let rewardItem = 'produce_egg';
+    if (kind === 'cow' || kind === 'calf') rewardItem = 'produce_milk';
+    else if (kind === 'duck' || kind === 'duckling') rewardItem = 'produce_duck_egg';
+    else if (kind === 'pig' || kind === 'piglet' || kind === 'dog') rewardItem = 'produce_bone';
+    adventure.addProduceToInventory(rewardItem, 1);
+
+    toast(`🎉 Trả lời đúng! Bé ${animalName} đang vui vẻ chạy về chuồng. +1 Nông sản!`);
+    
+    world.burstPlayer(1.2);
+    adventure.recordQuizResult({ isCorrect: true, questionId });
+    updateHUD();
+  }
 }
 
 function openArchimedesMapDialog(selectedZoneId = 0) {
@@ -797,10 +799,18 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const qList = activeRemoteQuestions[z.sheetName] || [];
       const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
       const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-      const total = isParkZone ? qList.length : (qList.length || (isFlowerZone ? 10 : 0));
-      const done = qList.length > 0
-        ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
-        : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
+      const isFarmZone = z.template === 'FARM_SANCTUARY';
+      const farmRescuedCount = Object.values(state.farmRescued || {}).filter(Boolean).length;
+      const total = isParkZone
+        ? qList.length
+        : isFarmZone
+          ? (qList.length || (world?.farmSanctuary?.animals?.length ?? 10))
+          : (qList.length || (isFlowerZone ? 10 : 0));
+      const done = isFarmZone
+        ? farmRescuedCount
+        : qList.length > 0
+          ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
+          : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
       return `<button class="archimedes-zone-tab" data-zone="${z.id}" aria-pressed="${selectedZoneId === z.id}">${getThemeBadgeIcon(z.theme)} ${z.name} (${done}/${total})</button>`;
     })
   ].join('');
@@ -828,26 +838,38 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
         const qList = activeRemoteQuestions[z.sheetName] || [];
         const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
         const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-        const total = isParkZone ? qList.length : (qList.length || (isFlowerZone ? 10 : 0));
-        const done = qList.length > 0
-          ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
-          : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
+        const isFarmZone = z.template === 'FARM_SANCTUARY';
+        const farmRescuedCount = Object.values(state.farmRescued || {}).filter(Boolean).length;
+        const total = isParkZone
+          ? qList.length
+          : isFarmZone
+            ? (qList.length || (world?.farmSanctuary?.animals?.length ?? 10))
+            : (qList.length || (isFlowerZone ? 10 : 0));
+        const done = isFarmZone
+          ? farmRescuedCount
+          : qList.length > 0
+            ? qList.filter((p: any) => adventure.isProblemSolved(p.id)).length
+            : (isFlowerZone ? totalFlowerCompleted : (isParkZone ? (state.parkTrees ? state.parkTrees.filter(Boolean).length : 0) : 0));
         const questSummary = isFlowerZone
           ? `${done}/${total} Cây hoa nở`
           : isParkZone
             ? `${done}/${total} Cây đã thức tỉnh`
-            : `${done}/${total} Bia đá tri thức`;
+            : isFarmZone
+              ? `${done}/${total} Thú cưng về chuồng`
+              : `${done}/${total} Bia đá tri thức`;
+        const tpX = isFarmZone ? (z.center.x - 8) : (z.center.x - z.width / 2 + 4);
+        const tpZ = isFarmZone ? (z.center.z + 10) : z.center.z;
         return `
         <div class="zone-overview-card">
           <div>
             <div class="zone-card-title">${getThemeBadgeIcon(z.theme)} ${z.name}</div>
-            <div class="zone-card-meta">${z.badge} · Chủ đề ${z.theme || 'DI TÍCH'} · (${Math.round(z.center.x)}, ${Math.round(z.center.z)})</div>
+            <div class="zone-card-meta">${z.badge} · Chủ đề ${z.theme || 'NÔNG TRẠI'} · (${Math.round(z.center.x)}, ${Math.round(z.center.z)})</div>
             <p style="font-size:12px;color:#456755;margin:8px 0">
               Quy mô: ${z.width}m × ${z.depth}m · ${questSummary}
             </p>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button class="zone-teleport-btn zone-banner-teleport" data-x="${z.center.x - z.width / 2 + 4}" data-z="${z.center.z}" data-name="${z.name}">
+            <button class="zone-teleport-btn zone-banner-teleport" data-x="${tpX}" data-z="${tpZ}" data-name="${z.name}">
               🚀 Đến đảo này
             </button>
             <button class="archimedes-card-action kingdom-zone-inspect-btn" data-zone="${z.id}">
@@ -979,6 +1001,59 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       </div>
       <div class="archimedes-monolith-grid">
         ${treeCardsHtml}
+      </div>
+    `;
+  } else if (currentZone?.template === 'FARM_SANCTUARY') {
+    // 4b. Vùng đất Nông Trại Giải Cứu Thú Cưng (FARM_SANCTUARY)
+    const qList = currentZone ? activeRemoteQuestions[currentZone.sheetName] || [] : [];
+    const totalAnimals = Math.max(world?.farmSanctuary?.animals?.length || 0, qList.length, 10);
+    const availableKinds = ['cow', 'pig', 'chicken', 'duck', 'dog'];
+    const animalEmojis: Record<string, string> = {
+      cow: '🐮',
+      pig: '🐷',
+      chicken: '🐔',
+      duck: '🦆',
+      dog: '🐶'
+    };
+
+    const animalCardsHtml = Array.from({ length: totalAnimals }, (_, i) => {
+      const animalEntity = world?.farmSanctuary?.animals?.[i];
+      const qItem = qList[i] as any;
+      const kind = animalEntity?.kind || qItem?.kind || qItem?.animalKind || availableKinds[i % availableKinds.length];
+      const animalId = animalEntity?.id || `farm_${kind}_${i}`;
+      const isRescued = state.farmRescued?.[animalId] === true;
+      const aPos = animalEntity?.root?.position ?? { x: 0, z: 0 };
+      const name = `${getAnimalVietnameseName(kind)} #${i + 1}`;
+      const emoji = animalEmojis[kind] || '🐾';
+      return `
+        <div class="archimedes-monolith-card ${isRescued ? 'completed' : ''}">
+          <div class="archimedes-card-header">
+            <span class="archimedes-card-page">${emoji} Thú Cưng #${i + 1}</span>
+            <span class="archimedes-card-status">${isRescued ? '🎉 Đã về chuồng' : '🐾 Đang đi lạc'}</span>
+          </div>
+          <div class="archimedes-card-title">${name}</div>
+          <div class="archimedes-card-sub">${isRescued ? 'Bé đã giải cứu con vật về chuồng an toàn và nhận nông sản!' : 'Đang lang thang ngoài cánh đồng, hãy đến gần giải toán để đưa về chuồng!'}</div>
+          <div class="archimedes-card-actions">
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${currentZone.center.x + aPos.x}" data-z="${currentZone.center.z + aPos.z + 2}" data-name="${name}">
+              🚀 Đến chỗ thú cưng
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    contentHtml = `
+      <div class="zone-banner" style="background:linear-gradient(135deg,#3f6212,#65a30d)">
+        <div class="zone-banner-info">
+          <h4>🏡 ${currentZone.name}</h4>
+          <p>Nông trại giải cứu ${totalAnimals} thú cưng đi lạc · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${currentZone.center.x - 8}" data-z="${currentZone.center.z + 10}" data-name="${currentZone.name}">
+          🚀 Đến Cổng Nông Trại
+        </button>
+      </div>
+      <div class="archimedes-monolith-grid">
+        ${animalCardsHtml}
       </div>
     `;
   } else {
@@ -1974,7 +2049,8 @@ function onWorldFrame(
   isNearPortal: boolean,
   nearMonolithIdx: number,
   nearParkTreeIdx: number,
-  isNearShop = false
+  isNearShop = false,
+  nearFarmAnimal: string | null = null
 ) {
   if (!world) return;
   near = isNear;
@@ -1983,6 +2059,7 @@ function onWorldFrame(
   nearMonolith = nearMonolithIdx;
   nearParkTree = nearParkTreeIdx;
   nearShop = isNearShop;
+  nearFarmAnimalId = nearFarmAnimal;
 
   if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
     queueSavePosition(world.player.position.x, world.player.position.z);
@@ -2028,6 +2105,11 @@ function onWorldFrame(
   if (nearShop) {
     interactHtml = `🛍️ <b>Tiệm Tạp Hóa Vương Quốc</b> (Bấm E để vào tiệm) ${icon('arrow')}`;
     interactHidden = world.paused;
+  } else if (nearFarmAnimalId) {
+    const animal = world?.farmSanctuary?.animals.find(a => a.id === nearFarmAnimalId);
+    const animalName = animal ? getAnimalVietnameseName(animal.kind) : 'Bé Thú';
+    interactHtml = `🐾 <b>Bé ${animalName} Cần Giúp Đỡ</b> (Bấm E để trả lời câu hỏi) ${icon('arrow')}`;
+    interactHidden = world.paused;
   } else if (nearParkTree !== -1) {
     const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
     const sheetName = parkZone?.sheetName || 'CongVienXanh';
@@ -2045,12 +2127,13 @@ function onWorldFrame(
     interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearPortal) {
+    const isFarmPortal = nearPortalObj?.id.includes('farm');
     const isParkPortal = nearPortalObj?.id.includes('park') || nearPortalObj?.id.includes('village');
-    const iconStr = isParkPortal ? '🌀' : '🏛️';
+    const iconStr = isFarmPortal ? '🏡' : (isParkPortal ? '🌀' : '🏛️');
     const prompt = nearPortalObj?.requiresSelection
       ? 'Bấm E để chọn Công Viên'
-      : (isParkPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
-    const portalTitle = isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian');
+      : (isParkPortal || isFarmPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
+    const portalTitle = isFarmPortal ? (nearPortalObj?.name || 'Cổng Nông Trại') : (isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian'));
     interactHtml = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearFlower !== -1) {
@@ -2143,6 +2226,7 @@ async function ensureWorld(): Promise<World> {
     onParkTreeClick: (idx) => openParkTreeDialog(idx),
     onPortalClick: handlePortalAction,
     onShopClick: () => shopModal.open('shop', 'full'),
+    onFarmAnimalClick: (animalId) => openFarmAnimalDialog(animalId),
     onFrame: onWorldFrame
   });
 
