@@ -817,7 +817,8 @@ export class World {
             );
           });
         } else if (z.template === 'FARM_SANCTUARY') {
-          this.loadFarmMap(z);
+          const farmQuestions = questionsBySheet?.[z.sheetName];
+          this.loadFarmMap(z, farmQuestions);
           
           // Cổng kết nối từ Hub tới Nông Trại
           const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
@@ -1133,11 +1134,11 @@ export class World {
     this.lakeModels.set(zone.id, lakeGroup);
   }
 
-  private async loadFarmMap(zone: RemoteZoneConfig) {
+  private async loadFarmMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
     if (!this.farmSanctuary) {
       this.farmSanctuary = new FarmSanctuary();
     }
-    await this.farmSanctuary.load(this.farmRescued);
+    await this.farmSanctuary.load(this.farmRescued, questions);
     
     // Position farm at zone center
     this.farmSanctuary.group.position.set(zone.center.x, 0, zone.center.z);

@@ -1557,7 +1557,7 @@ function settings() {
       <p>Câu hỏi và bản đồ được nạp tự động từ Google Sheets của hệ thống.</p>
       <div class="sheets-action-row">
         <button id="refresh-sheets-btn" class="primary small" title="Tải lại câu hỏi mới nhất từ Google Sheets">${icon('reset')} Đồng bộ câu hỏi mới nhất</button>
-        <button id="seed-sheets-btn" class="secondary small" title="Khởi tạo lại 50 câu hỏi mẫu lên Google Sheets">${icon('star')} ⚡ Khởi tạo 50 câu mẫu</button>
+        <button id="seed-sheets-btn" class="secondary small" title="Khởi tạo lại Cấu hình & Vùng đất mẫu lên Google Sheets">${icon('star')} ⚡ Khởi tạo dữ liệu mẫu</button>
       </div>
     </div>
 
@@ -1618,7 +1618,7 @@ function settings() {
 
   $('seed-sheets-btn').onclick = () => {
     const url = getAppsScriptUrl();
-    toast('⏳ Đang khởi tạo toàn bộ 50 bài toán lên Google Sheets...');
+    toast('⏳ Đang khởi tạo Cấu hình & Vùng đất mẫu lên Google Sheets...');
     seedRemoteDatabase(url)
       .then((res) => {
         toast(`✨ ${res.message}`);

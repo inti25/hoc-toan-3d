@@ -1,5 +1,3 @@
-import { ARCHIMEDES_ZONES } from '../data/archimedesTrialMap';
-import seedData from '../data/seedData.json';
 import {
   computeProceduralEntityPositions,
   computeArchipelagoOrbitalPosition,
@@ -127,48 +125,14 @@ export function getAppsScriptUrl(): string {
 }
 
 /**
- * Sinh bộ dữ liệu mặc định (Bundled Fallback) từ mã nguồn hiện tại
+ * Không còn dữ liệu dự phòng đóng gói sẵn: vùng đất và câu hỏi (cửu chương tự sinh)
+ * đều đến từ Google Sheets. Khi chưa tải được Sheets, game chưa có vùng đất nào.
  */
 export function getBundledFallbackData(): {
   zones: RemoteZoneConfig[];
   questionsBySheet: Record<string, RemoteProblem[]>;
 } {
-  const defaultZones: RemoteZoneConfig[] = [
-    ...ARCHIMEDES_ZONES.map((z) => ({
-      id: z.id,
-      name: z.name,
-      title: z.title,
-      description: z.description,
-      template: (z.id === 3 || z.id === 5 ? 'CIRCLE_SANCTUARY' : 'GRID_SANCTUARY') as any,
-      theme: (z.id === 2 || z.id === 4 ? 'FOREST' : (z.id === 3 ? 'CRYSTAL' : 'RUINS')) as any,
-      decorDensity: (z.id === 2 || z.id === 4 ? 'HIGH' : 'MEDIUM') as any,
-      sheetName: `Zone_${z.id}_Archimedes`,
-      center: { ...z.center },
-      width: z.id === 4 ? 28 : (z.id === 5 ? 22 : 24),
-      depth: z.id === 4 ? 34 : (z.id === 5 ? 24 : 32),
-      color: z.color,
-      colorHex: `#${z.color.toString(16).padStart(6, '0')}`,
-      badge: z.badge
-    })),
-    {
-      id: 6,
-      name: 'Vườn Hoa Tri Thức',
-      title: 'Vườn Hoa Rực Rỡ',
-      description: 'Đánh thức 10 đóa hoa tri thức bằng các bài toán ứng dụng',
-      template: 'FLOWER_BEDS',
-      theme: 'GARDEN',
-      decorDensity: 'HIGH',
-      sheetName: 'VuonHoa',
-      center: { x: 22, z: 0 },
-      width: 26,
-      depth: 20,
-      color: 0xec4899,
-      colorHex: '#ec4899',
-      badge: '🌸 Tinh Thể Vườn Hoa'
-    }
-  ];
-
-  return { zones: defaultZones, questionsBySheet: {} };
+  return { zones: [], questionsBySheet: {} };
 }
 
 /**
@@ -527,7 +491,9 @@ export function resolveZoneProblemsWithPositions(
 }
 
 /**
- * Gửi toàn bộ 50 câu hỏi mặc định lên Google Sheets qua Apps Script API
+ * Yêu cầu Apps Script khởi tạo các sổ nền (CONFIG, LOGS, PLAYERS).
+ * Không gửi câu hỏi: vùng đất do giáo viên tạo bằng menu trong Google Sheets,
+ * câu hỏi cửu chương được Apps Script tự sinh.
  */
 export async function seedRemoteDatabase(customUrl?: string): Promise<{ success: boolean; message: string }> {
   const url = (customUrl || getAppsScriptUrl()).trim();
@@ -535,16 +501,10 @@ export async function seedRemoteDatabase(customUrl?: string): Promise<{ success:
     throw new Error('Chưa cấu hình URL Google Apps Script');
   }
 
-  const payload = {
-    action: 'seedDatabase',
-    zones: seedData.zones,
-    questionsBySheet: seedData.questionsBySheet
-  };
-
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ action: 'seedDatabase' })
   });
 
   if (!response.ok) {
@@ -553,14 +513,9 @@ export async function seedRemoteDatabase(customUrl?: string): Promise<{ success:
 
   const result = await response.json();
   if (result.status === 'success') {
-    // Cập nhật lại cache cục bộ với dữ liệu vừa seed
-    try {
-      saveRemoteDataToCache(seedData as any);
-    } catch (_) {}
     return { success: true, message: result.message || 'Khởi tạo thành công!' };
-  } else {
-    throw new Error(result.message || 'Lỗi từ Apps Script khi seed database');
   }
+  throw new Error(result.message || 'Lỗi từ Apps Script khi khởi tạo Sheets');
 }
 
 /**

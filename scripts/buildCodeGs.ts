@@ -2,9 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 function buildAppsScriptCode() {
-  const seedPath = path.resolve(process.cwd(), 'src/data/seedData.json');
-  const bundle = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
-
   // Tạo mã nguồn JavaScript của Google Apps Script
   const code = `/**
  * ============================================================================
@@ -15,14 +12,15 @@ function buildAppsScriptCode() {
  * 1. doGet: Lấy danh sách vùng đất (getZones), câu hỏi theo vùng (getQuestions),
  *    hoặc toàn bộ dữ liệu (getAll).
  * 2. doPost: Ghi nhận nhật ký làm bài của học sinh vào tab LOGS, hoặc seedDatabase.
- * 3. seedFullKingdomDatabase: Hàm 1-CLICK tự động tạo 7 tab với 50 bài toán mẫu.
+ * 3. seedFullKingdomDatabase: Khởi tạo sổ CONFIG, LOGS, PLAYERS (không sinh câu hỏi).
+ * 4. menuCreateNewZone: Tạo vùng đất theo 6 bản mẫu với câu hỏi cửu chương TỰ SINH.
  */
 
 // Tiêu đề các cột cho sheet CONFIG
 const CONFIG_HEADERS = [
   'ZoneId', 'Name', 'Title', 'Description', 'Template', 'Theme', 'DecorDensity',
   'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge',
-  'Active', 'StartAt'
+  'Active', 'StartAt', 'QuestionCount'
 ];
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
@@ -151,106 +149,54 @@ function doPost(e) {
 }
 
 /**
- * Khởi tạo hoặc ghi đè toàn bộ dữ liệu các vùng đất và câu hỏi lên Google Sheets
+ * Bản mẫu vùng đất (Template) được hỗ trợ khi tạo vùng mới.
+ * questionCount = số câu mặc định sinh ra cho bản mẫu (có thể ghi đè bằng cột QuestionCount).
+ */
+const ZONE_TEMPLATES = {
+  GRID_SANCTUARY: { label: 'Đảo bia đá xếp lưới', theme: 'RUINS', questionCount: 8, width: 24, depth: 32, colorHex: '#38bdf8' },
+  CIRCLE_SANCTUARY: { label: 'Đảo tròn bia đá vòng cung', theme: 'CRYSTAL', questionCount: 8, width: 22, depth: 24, colorHex: '#a855f7' },
+  FLOWER_BEDS: { label: 'Vườn hoa luống dọc lối đi', theme: 'GARDEN', questionCount: 10, width: 26, depth: 20, colorHex: '#ec4899' },
+  PARK_SANCTUARY: { label: 'Công viên cây tri thức', theme: 'FOREST', questionCount: 20, width: 30, depth: 30, colorHex: '#10b981' },
+  PROCEDURAL_SANCTUARY: { label: 'Vùng đất cảnh quan tự dựng', theme: 'FOREST', questionCount: 8, width: 28, depth: 28, colorHex: '#f59e0b' },
+  FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 32, depth: 32, colorHex: '#84cc16' }
+};
+const ZONE_TEMPLATE_ORDER = [
+  'GRID_SANCTUARY', 'CIRCLE_SANCTUARY', 'FLOWER_BEDS',
+  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY'
+];
+
+/**
+ * Đảm bảo sheet CONFIG tồn tại và có đủ các cột chuẩn (KHÔNG xóa vùng đất đã khai báo)
+ */
+function ensureConfigSheet(ss) {
+  let sheet = ss.getSheetByName('CONFIG');
+  if (!sheet) {
+    sheet = ss.insertSheet('CONFIG');
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(CONFIG_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, CONFIG_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
+    return sheet;
+  }
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
+    .map(function(h) { return String(h).trim(); });
+  CONFIG_HEADERS.forEach(function(h) {
+    if (headers.indexOf(h) === -1) {
+      sheet.getRange(1, headers.length + 1).setValue(h);
+      headers.push(h);
+    }
+  });
+  return sheet;
+}
+
+/**
+ * Khởi tạo các sổ nền (CONFIG, LOGS, PLAYERS) nếu chưa có. KHÔNG sinh câu hỏi và
+ * KHÔNG ghi đè dữ liệu đã có. Vùng đất do giáo viên tạo bằng menu "Tạo Vùng Đất Mới".
  */
 function handleSeedDatabase(ss, payload) {
-  const zones = (payload && payload.zones && payload.zones.length) ? payload.zones : SEED_DATA.zones;
-  const questionsBySheet = (payload && payload.questionsBySheet && Object.keys(payload.questionsBySheet).length)
-    ? payload.questionsBySheet
-    : SEED_DATA.questionsBySheet;
+  ensureConfigSheet(ss);
 
-  // 1. Tạo hoặc làm mới sheet CONFIG (Sổ Đăng Ký Vùng Đất)
-  let configSheet = ss.getSheetByName('CONFIG');
-  if (!configSheet) {
-    configSheet = ss.insertSheet('CONFIG');
-  } else {
-    configSheet.clear();
-  }
-  configSheet.appendRow(CONFIG_HEADERS);
-
-  const configRows = zones.map(function(z) {
-    return [
-      z.id,
-      z.name || '',
-      z.title || '',
-      z.description || '',
-      z.template || 'GRID_SANCTUARY',
-      z.theme || (z.template === 'FLOWER_BEDS' ? 'GARDEN' : 'RUINS'),
-      z.decorDensity || 'MEDIUM',
-      z.sheetName || '',
-      z.center ? z.center.x : 0,
-      z.center ? z.center.z : 0,
-      z.width || 24,
-      z.depth || 32,
-      z.colorHex || '#38bdf8',
-      z.badge || '',
-      z.active === false ? 'FALSE' : 'TRUE',
-      z.startAt || ''
-    ];
-  });
-
-  if (configRows.length > 0) {
-    const configRange = configSheet.getRange(2, 1, configRows.length, CONFIG_HEADERS.length);
-    configRange.setNumberFormat('@');
-    configRange.setValues(configRows);
-  }
-  configSheet.setFrozenRows(1);
-
-  // 2. Tạo hoặc làm mới từng sheet câu hỏi (Bảng Thử Thách)
-  const sheetNames = Object.keys(questionsBySheet);
-  sheetNames.forEach(function(sName) {
-    let sheet = ss.getSheetByName(sName);
-    if (!sheet) {
-      sheet = ss.insertSheet(sName);
-    } else {
-      sheet.clear();
-    }
-    sheet.appendRow(QUEST_HEADERS);
-
-    const problems = questionsBySheet[sName] || [];
-    const rowsToAppend = [];
-
-    problems.forEach(function(prob) {
-      const steps = prob.steps || [];
-      steps.forEach(function(step, sIdx) {
-        const optA = (step.options && step.options[0]) ? (step.options[0].value || step.options[0].label || '') : '';
-        const optB = (step.options && step.options[1]) ? (step.options[1].value || step.options[1].label || '') : '';
-        const optC = (step.options && step.options[2]) ? (step.options[2].value || step.options[2].label || '') : '';
-        const optD = (step.options && step.options[3]) ? (step.options[3].value || step.options[3].label || '') : '';
-        const hints = Array.isArray(step.hints) ? step.hints.join(' | ') : (step.hints || '');
-        const posX = (prob.position && typeof prob.position.x === 'number') ? prob.position.x : '';
-        const posZ = (prob.position && typeof prob.position.z === 'number') ? prob.position.z : '';
-
-        rowsToAppend.push([
-          prob.id,
-          step.stepId || (prob.id + '_' + (sIdx + 1)),
-          prob.title || '',
-          prob.subtitle || '',
-          escapeSheetsText(step.prompt || ''),
-          escapeSheetsText(step.imageUrl || ''),
-          escapeSheetsText(optA),
-          escapeSheetsText(optB),
-          escapeSheetsText(optC),
-          escapeSheetsText(optD),
-          escapeSheetsText(step.answer || ''),
-          escapeSheetsText(hints),
-          escapeSheetsText(step.explanation || ''),
-          escapeSheetsText(step.explanationImageUrl || ''),
-          posX,
-          posZ
-        ]);
-      });
-    });
-
-    if (rowsToAppend.length > 0) {
-      const range = sheet.getRange(2, 1, rowsToAppend.length, QUEST_HEADERS.length);
-      range.setNumberFormat('@');
-      range.setValues(rowsToAppend);
-    }
-    sheet.setFrozenRows(1);
-  });
-
-  // 3. Đảm bảo sheet LOGS tồn tại mà KHÔNG xóa nhật ký đã có
   let logSheet = ss.getSheetByName('LOGS');
   if (!logSheet) {
     logSheet = ss.insertSheet('LOGS');
@@ -258,19 +204,154 @@ function handleSeedDatabase(ss, payload) {
     logSheet.setFrozenRows(1);
   }
 
-  // 4. Đảm bảo sheet PLAYERS tồn tại mà KHÔNG xóa danh sách người chơi đã có
-  let playersSheet = ss.getSheetByName('PLAYERS');
-  if (!playersSheet) {
-    playersSheet = ss.insertSheet('PLAYERS');
-    playersSheet.appendRow(PLAYER_HEADERS);
-    playersSheet.setFrozenRows(1);
-    playersSheet.getRange(1, 1, 1, PLAYER_HEADERS.length).setFontWeight('bold').setBackground('#e0f2fe');
-  }
+  getOrCreatePlayersSheet(ss);
 
   return {
     status: 'success',
-    message: 'Khởi tạo thành công ' + zones.length + ' vùng đất, ' + sheetNames.length + ' bảng câu hỏi và sổ PLAYERS!'
+    message: 'Đã khởi tạo sổ CONFIG, LOGS và PLAYERS. Hãy dùng menu "Tạo Vùng Đất Mới" để thêm vùng đất.'
   };
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffleCopy(arr) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
+/**
+ * Sinh 4 đáp án (1 đúng + 3 nhiễu hợp lý) cho phép nhân a x b
+ */
+function buildMultiplicationOptions(a, b) {
+  const answer = a * b;
+  const picked = [answer];
+  const candidates = [answer + a, answer - a, answer + b, answer - b, (a + 1) * b, (a - 1) * b, a * (b + 1), a * (b - 1), answer + 10, answer - 10];
+  shuffleCopy(candidates).forEach(function(c) {
+    if (picked.length < 4 && c > 0 && picked.indexOf(c) === -1) picked.push(c);
+  });
+  let guard = answer + 1;
+  while (picked.length < 4) {
+    if (picked.indexOf(guard) === -1) picked.push(guard);
+    guard++;
+  }
+  return shuffleCopy(picked);
+}
+
+/**
+ * Sinh các dòng câu hỏi cửu chương (tất cả các bảng 2-10, thừa số 1-10, không trùng phép tính)
+ * theo đúng thứ tự cột QUEST_HEADERS.
+ */
+function generateMultiplicationRows(zoneId, count) {
+  const rows = [];
+  const used = {};
+  const total = Math.max(1, Math.min(Number(count) || 1, 90));
+  while (rows.length < total) {
+    const a = randomInt(2, 10);
+    const b = randomInt(1, 10);
+    const key = a + 'x' + b;
+    if (used[key]) continue;
+    used[key] = true;
+
+    const index = rows.length + 1;
+    const problemId = 'mul_' + zoneId + '_' + index;
+    const answer = a * b;
+    const options = buildMultiplicationOptions(a, b);
+    const sums = [];
+    for (let k = 0; k < b; k++) sums.push(a);
+    const hints = [
+      a + ' × ' + b + ' nghĩa là ' + b + ' nhóm, mỗi nhóm có ' + a,
+      sums.join(' + '),
+      'Nhẩm bảng cửu chương ' + a + ' nhé!'
+    ].join(' | ');
+
+    rows.push([
+      problemId,
+      problemId + '_1',
+      'Bài ' + index,
+      'Bảng cửu chương ' + a,
+      escapeSheetsText(a + ' × ' + b + ' = ?'),
+      '',
+      escapeSheetsText(options[0]),
+      escapeSheetsText(options[1]),
+      escapeSheetsText(options[2]),
+      escapeSheetsText(options[3]),
+      escapeSheetsText(answer),
+      escapeSheetsText(hints),
+      escapeSheetsText(a + ' × ' + b + ' = ' + answer),
+      '',
+      '',
+      ''
+    ]);
+  }
+  return rows;
+}
+
+/**
+ * Tạo vùng đất mới theo bản mẫu: ghi dòng CONFIG và sinh tab câu hỏi cửu chương
+ */
+function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
+  const tpl = ZONE_TEMPLATES[templateKey] || ZONE_TEMPLATES.GRID_SANCTUARY;
+  const template = ZONE_TEMPLATES[templateKey] ? templateKey : 'GRID_SANCTUARY';
+  const count = Number(questionCount) > 0 ? Number(questionCount) : tpl.questionCount;
+
+  const configSheet = ensureConfigSheet(ss);
+  const lastRow = configSheet.getLastRow();
+  let maxId = 0;
+  if (lastRow >= 2) {
+    configSheet.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function(row) {
+      const num = Number(row[0]);
+      if (!isNaN(num) && num > maxId) maxId = num;
+    });
+  }
+  const nextId = maxId + 1;
+  const safeName = zoneName.replace(/[^a-zA-Z0-9]/g, '');
+  const sheetName = 'Zone_' + nextId + '_' + (safeName || 'Moi');
+
+  const values = {
+    ZoneId: nextId,
+    Name: zoneName,
+    Title: 'Khám Phá ' + zoneName,
+    Description: 'Khu vực thử thách cửu chương (' + tpl.label + ')',
+    Template: template,
+    Theme: tpl.theme,
+    DecorDensity: 'MEDIUM',
+    SheetName: sheetName,
+    CenterX: 0,
+    CenterZ: 0,
+    Width: tpl.width,
+    Depth: tpl.depth,
+    ColorHex: tpl.colorHex,
+    Badge: '🌟 Huy Hiệu ' + zoneName,
+    Active: 'TRUE',
+    StartAt: '',
+    QuestionCount: count
+  };
+  const headers = configSheet.getRange(1, 1, 1, configSheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h).trim(); });
+  configSheet.appendRow(headers.map(function(h) { return values[h] !== undefined ? values[h] : ''; }));
+
+  let questSheet = ss.getSheetByName(sheetName);
+  if (!questSheet) {
+    questSheet = ss.insertSheet(sheetName);
+  } else {
+    questSheet.clear();
+  }
+  questSheet.appendRow(QUEST_HEADERS);
+  const rows = generateMultiplicationRows(nextId, count);
+  const range = questSheet.getRange(2, 1, rows.length, QUEST_HEADERS.length);
+  range.setNumberFormat('@');
+  range.setValues(rows);
+  questSheet.setFrozenRows(1);
+
+  return { zoneId: nextId, sheetName: sheetName, count: rows.length, template: template };
 }
 
 /**
@@ -438,17 +519,18 @@ function onOpen() {
       .createMenu('🎮 Vương Quốc 3D')
       .addItem('➕ Tạo Vùng Đất Mới...', 'menuCreateNewZone')
       .addSeparator()
-      .addItem('⚡ Khởi tạo lại 50 câu hỏi gốc', 'seedFullKingdomDatabase')
+      .addItem('⚡ Khởi tạo sổ CONFIG / LOGS / PLAYERS', 'seedFullKingdomDatabase')
       .addToUi();
   } catch (_) {}
 }
 
 /**
- * Hộp thoại tương tác cho giáo viên tạo vùng đất mới
+ * Hộp thoại tương tác cho giáo viên tạo vùng đất mới theo bản mẫu.
+ * Câu hỏi được TỰ ĐỘNG SINH theo bảng cửu chương, không có câu hỏi cứng.
  */
 function menuCreateNewZone() {
   const ui = SpreadsheetApp.getUi();
-  const nameResp = ui.prompt('Tạo Vùng Đất Mới (Bước 1/2)', 'Nhập tên vùng đất mới (VD: Rừng Phép Thuật, Mỏ Pha Lê):', ui.ButtonSet.OK_CANCEL);
+  const nameResp = ui.prompt('Tạo Vùng Đất Mới (Bước 1/3)', 'Nhập tên vùng đất mới (VD: Nông Trại Vui Vẻ, Mỏ Pha Lê):', ui.ButtonSet.OK_CANCEL);
   if (nameResp.getSelectedButton() !== ui.Button.OK) return;
   const zoneName = nameResp.getResponseText().trim();
   if (!zoneName) {
@@ -456,85 +538,45 @@ function menuCreateNewZone() {
     return;
   }
 
-  const themeResp = ui.prompt(
-    'Chọn Chủ Đề Cảnh Quan (Bước 2/2)',
-    'Nhập một trong các chủ đề sau:\\n- FOREST (Rừng thông, nấm ma thuật)\\n- RUINS (Di tích cổ Hy Lạp, cột đá)\\n- GARDEN (Đồi hoa rực rỡ, đài phun nước)\\n- CRYSTAL (Mỏ pha lê, thạch anh phát sáng)\\n- VILLAGE (Làng quê, nhà gỗ mini)',
+  const menuLines = ZONE_TEMPLATE_ORDER.map(function(key, idx) {
+    return (idx + 1) + '. ' + ZONE_TEMPLATES[key].label + ' (' + key + ', mặc định ' + ZONE_TEMPLATES[key].questionCount + ' câu)';
+  }).join('\\n');
+  const tplResp = ui.prompt(
+    'Chọn Bản Mẫu Vùng Đất (Bước 2/3)',
+    'Nhập số thứ tự bản mẫu:\\n' + menuLines,
     ui.ButtonSet.OK_CANCEL
   );
-  if (themeResp.getSelectedButton() !== ui.Button.OK) return;
-  let theme = themeResp.getResponseText().trim().toUpperCase();
-  if (!['FOREST', 'RUINS', 'GARDEN', 'CRYSTAL', 'VILLAGE'].includes(theme)) {
-    theme = 'FOREST';
+  if (tplResp.getSelectedButton() !== ui.Button.OK) return;
+  const tplIndex = Number(tplResp.getResponseText().trim()) - 1;
+  const templateKey = ZONE_TEMPLATE_ORDER[tplIndex];
+  if (!templateKey) {
+    ui.alert('⚠️ Số thứ tự bản mẫu không hợp lệ. Vui lòng chạy lại và nhập từ 1 đến ' + ZONE_TEMPLATE_ORDER.length + '.');
+    return;
+  }
+
+  const countResp = ui.prompt(
+    'Số Câu Hỏi Cửu Chương (Bước 3/3)',
+    'Nhập số câu hỏi muốn sinh (để trống = mặc định ' + ZONE_TEMPLATES[templateKey].questionCount + ' câu):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (countResp.getSelectedButton() !== ui.Button.OK) return;
+  const countText = countResp.getResponseText().trim();
+  const questionCount = countText ? Number(countText) : 0;
+  if (countText && (isNaN(questionCount) || questionCount < 1)) {
+    ui.alert('⚠️ Số câu hỏi phải là số nguyên dương.');
+    return;
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let configSheet = ss.getSheetByName('CONFIG');
-  if (!configSheet) {
-    seedFullKingdomDatabase();
-    configSheet = ss.getSheetByName('CONFIG');
-  }
+  const res = createZoneFromTemplate(ss, zoneName, templateKey, questionCount);
 
-  // Lấy ZoneId tiếp theo
-  const lastRow = configSheet.getLastRow();
-  let maxId = 0;
-  if (lastRow >= 2) {
-    const ids = configSheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    ids.forEach(function(row) {
-      const num = Number(row[0]);
-      if (!isNaN(num) && num > maxId) maxId = num;
-    });
-  }
-  const nextId = maxId + 1;
-  const safeName = zoneName.replace(/[^a-zA-Z0-9]/g, '');
-  const sheetName = 'Zone_' + nextId + '_' + (safeName || 'Moi');
-
-  configSheet.appendRow([
-    nextId,
-    zoneName,
-    'Khám Phá ' + zoneName,
-    'Khu vực thử thách mới với chủ đề ' + theme,
-    theme === 'GARDEN' ? 'FLOWER_BEDS' : 'GRID_SANCTUARY',
-    theme,
-    'MEDIUM',
-    sheetName,
-    0, // CenterX = 0 -> Game tự tính vị trí quanh biển
-    0, // CenterZ = 0
-    26,
-    32,
-    theme === 'CRYSTAL' ? '#a855f7' : (theme === 'GARDEN' ? '#ec4899' : (theme === 'FOREST' ? '#22c55e' : '#38bdf8')),
-    '🌟 Huy Hiệu ' + zoneName,
-    'TRUE',
-    ''
-  ]);
-
-  let questSheet = ss.getSheetByName(sheetName);
-  if (!questSheet) {
-    questSheet = ss.insertSheet(sheetName);
-    questSheet.appendRow(QUEST_HEADERS);
-    questSheet.appendRow([
-      1, 'step_1', zoneName + ' - Bài 1', 'Thử Thách Khởi Động',
-      'Tính nhẩm: 25 + 35 = ?',
-      '50', '60', '70', '55', '60',
-      'Cộng hàng đơn vị 5 + 5 = 10, nhớ 1 sang hàng chục',
-      '25 + 35 = 60', '', ''
-    ]);
-    questSheet.appendRow([
-      2, 'step_1', zoneName + ' - Bài 2', 'Thử Thách Tiếp Theo',
-      'Tính: 8 x 5 = ?',
-      '35', '40', '45', '48', '40',
-      'Nhớ lại bảng cửu chương 8: 8 x 5 = 40',
-      '8 nhân 5 bằng 40', '', ''
-    ]);
-    questSheet.setFrozenRows(1);
-  }
-
-  ui.alert('🎉 Đã tạo thành công vùng đất "' + zoneName + '" (ZoneId: ' + nextId + ') và tab câu hỏi "' + sheetName + '"!\\nBạn có thể vào tab đó để soạn câu hỏi và mở game để phiêu lưu ngay.');
+  ui.alert('🎉 Đã tạo vùng đất "' + zoneName + '" (ZoneId: ' + res.zoneId + ', bản mẫu ' + res.template + ') với ' + res.count + ' câu cửu chương tự sinh trong tab "' + res.sheetName + '".\\nBạn có thể sửa từng câu trong tab đó và mở game để phiêu lưu ngay.');
 }
 
 /**
- * HÀM 1-CLICK DÀNH CHO GIÁO VIÊN / ADMIN CHẠY TRỰC TIẾP TRONG APPS SCRIPT:
- * Chọn hàm "seedFullKingdomDatabase" từ menu thả xuống và bấm [Chạy] (Run)
- * để tự động khởi tạo 7 tab với 50 bài toán vào Google Sheets.
+ * HÀM DÀNH CHO GIÁO VIÊN / ADMIN CHẠY TRỰC TIẾP TRONG APPS SCRIPT:
+ * Chọn hàm "seedFullKingdomDatabase" và bấm [Chạy] (Run) để khởi tạo
+ * sổ CONFIG, LOGS và PLAYERS (không ghi đè dữ liệu đã có).
  */
 function seedFullKingdomDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -747,25 +789,11 @@ function parseColorHex(hexStr) {
   return isNaN(parsed) ? 0x38bdf8 : parsed;
 }
 
-/**
- * ============================================================================
- * HÀM 1-CLICK TỰ ĐỘNG KHỞI TẠO 50 BÀI TOÁN TOÀN DIỆN LÊN GOOGLE SHEETS
- * Chạy hàm này một lần trong Apps Script Editor để sinh đủ 7 tab với 50 câu hỏi.
- * ============================================================================
- */
-function seedFullKingdomDatabase() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const res = handleSeedDatabase(ss, SEED_DATA);
-  SpreadsheetApp.getUi().alert(res.message);
-}
-
-// BỘ DỮ LIỆU GỐC ĐẦY ĐỦ (50 BÀI TOÁN & 6 VÙNG ĐẤT)
-const SEED_DATA = ${JSON.stringify(bundle, null, 2)};
 `;
 
   const outputPath = path.resolve(process.cwd(), 'apps-script/Code.gs');
   fs.writeFileSync(outputPath, code, 'utf-8');
-  console.log(`✅ Đã sinh thành công apps-script/Code.gs với đầy đủ 50 bài toán (${(code.length / 1024).toFixed(1)} KB)`);
+  console.log(`✅ Đã sinh thành công apps-script/Code.gs với câu hỏi cửu chương tự sinh (${(code.length / 1024).toFixed(1)} KB)`);
 }
 
 buildAppsScriptCode();

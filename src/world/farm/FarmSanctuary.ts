@@ -23,7 +23,7 @@ export class FarmSanctuary {
 
   constructor() {}
 
-  public async load(farmRescued: Record<string, boolean>) {
+  public async load(farmRescued: Record<string, boolean>, questions?: any[]) {
     // Load farm.glb
     const gltf = await this.modelLoader.loadAsync('/3dmodel/maps/farm.glb');
     this.mapGroup = gltf.scene;
@@ -82,7 +82,7 @@ export class FarmSanctuary {
         entity.targetPos = this.getRandomRoamPos();
 
         // Create trigger for problem
-        const problemData = generateFarmMultiplicationProblem(i, kind);
+        const problemData = (questions && questions[i]) ? questions[i] : generateFarmMultiplicationProblem(i, kind);
         this.interactTriggers.push({
           position: entity.root.position,
           radius: 3,
