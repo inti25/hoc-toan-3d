@@ -4,7 +4,7 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AvatarId } from '../data/characters';
 import { GeometryBuilder } from './geom';
 
-export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa';
+export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa' | 'baochau';
 
 interface ElsaArmRig {
   leftUpperArm: THREE.Bone;
@@ -15,6 +15,14 @@ interface ElsaArmRig {
   rightUpperBaseZ: number;
   leftForeBaseZ: number;
   rightForeBaseZ: number;
+}
+
+interface BaoChauRig {
+  armL: THREE.Object3D;
+  armR: THREE.Object3D;
+  legL: THREE.Object3D;
+  legR: THREE.Object3D;
+  head?: THREE.Object3D;
 }
 
 export interface PlayerAvatarOptions {
@@ -38,6 +46,7 @@ export class PlayerAvatar {
   private legs: THREE.Mesh[] = [];
   private proceduralArms: THREE.Mesh[] = [];
   private elsaArmRig?: ElsaArmRig;
+  private baoChauRig?: BaoChauRig;
   private gltfLoader = new GLTFLoader();
   private gltfCache = new Map<Avatar3DId, THREE.Group>();
   private gltfActiveModel?: THREE.Group;
@@ -69,6 +78,7 @@ export class PlayerAvatar {
       case 'mymelody': this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh()); break;
       case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh()); break;
       case 'elsa': this.applyOrLoadGLTF('elsa', () => this.buildElsaMesh()); break;
+      case 'baochau': this.applyOrLoadGLTF('baochau', () => this.buildBaoChauMesh()); break;
     }
   }
 
@@ -105,6 +115,19 @@ export class PlayerAvatar {
           this.elsaArmRig.rightForearm.rotation.z = this.elsaArmRig.rightForeBaseZ - elbowFlex;
         }
       }
+      if (this.baoChauRig) {
+        const legSwing = Math.sin(time * 12) * 0.55;
+        this.baoChauRig.legL.rotation.x = legSwing;
+        this.baoChauRig.legR.rotation.x = -legSwing;
+
+        const armSwing = Math.sin(time * 10) * 0.45;
+        this.baoChauRig.armL.rotation.x = -armSwing;
+        this.baoChauRig.armR.rotation.x = armSwing;
+
+        if (this.baoChauRig.head) {
+          this.baoChauRig.head.rotation.y = Math.sin(time * 4) * 0.04;
+        }
+      }
     } else {
       this.legs.forEach(leg => {
         leg.rotation.x *= 0.8;
@@ -127,6 +150,15 @@ export class PlayerAvatar {
           this.elsaArmRig.rightForearm.rotation.z += (this.elsaArmRig.rightForeBaseZ - this.elsaArmRig.rightForearm.rotation.z) * 0.2;
         }
       }
+      if (this.baoChauRig) {
+        this.baoChauRig.legL.rotation.x *= 0.8;
+        this.baoChauRig.legR.rotation.x *= 0.8;
+        this.baoChauRig.armL.rotation.x *= 0.8;
+        this.baoChauRig.armR.rotation.x *= 0.8;
+        if (this.baoChauRig.head) {
+          this.baoChauRig.head.rotation.y *= 0.8;
+        }
+      }
     }
   }
 
@@ -144,6 +176,7 @@ export class PlayerAvatar {
     this.loadGLTF('mymelody');
     this.loadGLTF('cinnamoroll');
     this.loadGLTF('elsa');
+    this.loadGLTF('baochau');
   }
 
   private applyOrLoadGLTF(avatarId: Avatar3DId, fallback: () => void): void {
@@ -164,7 +197,9 @@ export class PlayerAvatar {
     if (typeof window === 'undefined') return;
     if (this.gltfCache.has(avatarId)) return;
     const baseUrl = import.meta.env?.BASE_URL ?? '/';
-    const url = `${baseUrl}3dmodel/${avatarId}/scene.gltf`;
+    const url = avatarId === 'baochau'
+      ? `${baseUrl}3dmodel/characters/baochau.glb`
+      : `${baseUrl}3dmodel/${avatarId}/scene.gltf`;
 
     this.gltfLoader.load(
       url,
@@ -309,6 +344,7 @@ export class PlayerAvatar {
     this.proceduralArms = [];
     this.gltfActiveModel = undefined;
     this.elsaArmRig = undefined;
+    this.baoChauRig = undefined;
   }
 
   private attachArmRig(clone: THREE.Group, avatarId: Avatar3DId): void {
@@ -336,6 +372,24 @@ export class PlayerAvatar {
           leftForeBaseZ: leftFore ? leftFore.rotation.z : 0,
           rightForeBaseZ: rightFore ? rightFore.rotation.z : 0,
         };
+      }
+    } else if (avatarId === 'baochau') {
+      let armL: THREE.Object3D | undefined;
+      let armR: THREE.Object3D | undefined;
+      let legL: THREE.Object3D | undefined;
+      let legR: THREE.Object3D | undefined;
+      let head: THREE.Object3D | undefined;
+
+      clone.traverse(c => {
+        if (c.name === 'Arm_L') armL = c;
+        if (c.name === 'Arm_R') armR = c;
+        if (c.name === 'Leg_L') legL = c;
+        if (c.name === 'Leg_R') legR = c;
+        if (c.name === 'Head') head = c;
+      });
+
+      if (armL && armR && legL && legR) {
+        this.baoChauRig = { armL, armR, legL, legR, head };
       }
     }
   }
@@ -375,6 +429,47 @@ export class PlayerAvatar {
     this.box(root, 0.48, 0.94, 0, 0.2, 0.65, 0.23, 0xffd5ae);
     this.box(root, 0, 1.0, -0.36, 0.52, 0.65, 0.3, 0x9774b8);
     this.box(root, 0, 1.0, -0.54, 0.32, 0.25, 0.1, 0xf0cd76);
+  }
+
+  private buildBaoChauMesh(): void {
+    const root = this.group;
+    // Torso (áo polo hồng kẻ sọc)
+    this.box(root, 0, 0.93, 0, 0.68, 0.76, 0.46, 0xf2a5b0);
+    // Skirt (chân váy hồng xòe)
+    this.cylinder(root, 0, 0.52, 0, 0.35, 0.52, 0.44, 0xeb8a95, 12);
+    // Head (khuôn mặt)
+    this.sphere(root, 0, 1.67, 0, 0.44, 0xe5b08c);
+    // Hair (tóc đen)
+    const hair = this.sphere(root, 0, 1.90, -0.04, 0.45, 0x1a1412);
+    hair.scale.set(0.96, 0.85, 0.98);
+    // Tóc dài phía sau
+    this.box(root, 0, 1.30, -0.22, 0.58, 0.90, 0.16, 0x1a1412);
+    // Mái bằng
+    this.box(root, 0, 1.88, 0.36, 0.60, 0.22, 0.12, 0x1a1412);
+    // Kính gọng hồng (+Z forward)
+    this.box(root, -0.16, 1.68, 0.42, 0.22, 0.14, 0.04, 0xf3a9cc);
+    this.box(root, 0.16, 1.68, 0.42, 0.22, 0.14, 0.04, 0xf3a9cc);
+    this.box(root, 0, 1.68, 0.42, 0.10, 0.03, 0.03, 0xf3a9cc);
+    // Mắt
+    this.sphere(root, -0.16, 1.68, 0.44, 0.045, 0x2a1b14);
+    this.sphere(root, 0.16, 1.68, 0.44, 0.045, 0x2a1b14);
+    // Má hồng
+    this.sphere(root, -0.26, 1.56, 0.38, 0.07, 0xe8a693);
+    this.sphere(root, 0.26, 1.56, 0.38, 0.07, 0xe8a693);
+    // Chân trần
+    for (const x of [-0.15, 0.15]) {
+      const leg = this.box(root, x, 0.28, 0, 0.22, 0.56, 0.24, 0xe5b08c);
+      this.box(leg, 0, -0.22, 0.05, 0.24, 0.12, 0.34, 0xe5b08c);
+      this.legs.push(leg);
+    }
+    // Cánh tay & ống tay áo
+    const leftArm = this.box(root, -0.46, 0.94, 0, 0.18, 0.62, 0.20, 0xe5b08c);
+    this.box(leftArm, 0, 0.18, 0, 0.22, 0.26, 0.22, 0xf2a5b0);
+    const rightArm = this.box(root, 0.46, 0.94, 0, 0.18, 0.62, 0.20, 0xe5b08c);
+    this.box(rightArm, 0, 0.18, 0, 0.22, 0.26, 0.22, 0xf2a5b0);
+    // Vòng tay phải
+    this.box(rightArm, 0, -0.18, 0, 0.22, 0.04, 0.24, 0xe0b44c);
+    this.proceduralArms.push(leftArm, rightArm);
   }
 
   private buildKuromiMesh(): void {
