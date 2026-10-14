@@ -4,7 +4,8 @@
  *
  * Đặc điểm theo ảnh: tóc đen dài ngang lưng có mái bằng, kính gọng hồng trong suốt,
  * áo polo hồng kẻ sọc trắng (cổ + viền tay hồng đậm, 2 cúc trắng), chân váy xòe hồng
- * có 2 sọc trắng gần gấu, đi chân trần, vòng tay vàng + chỉ đỏ ở cổ tay phải, khuyên tai bạc.
+ * có 2 sọc trắng gần gấu, tất trắng cổ ngắn, giày sneaker hồng đế cao su trắng quai dán,
+ * vòng tay vàng + chỉ đỏ ở cổ tay phải, khuyên tai bạc.
  *
  * Quy ước: Y hướng lên, mặt nhân vật hướng +Z, chân chạm Y = 0, đơn vị mét (~1.29 m).
  * Các node có pivot để làm animation: Head, Arm_L, Arm_R, Leg_L, Leg_R.
@@ -43,7 +44,8 @@ const C = {
 
 type MatKey =
   | 'skin' | 'hair' | 'shirt' | 'collar' | 'skirt' | 'shorts' | 'eyeWhite' | 'iris' | 'highlight'
-  | 'lips' | 'blush' | 'frame' | 'lens' | 'button' | 'gold' | 'red' | 'silver';
+  | 'lips' | 'blush' | 'frame' | 'lens' | 'button' | 'gold' | 'red' | 'silver'
+  | 'shoePink' | 'white';
 
 interface MatSpec {
   color: number;
@@ -73,6 +75,8 @@ const MATERIALS: Record<MatKey, MatSpec> = {
   gold: { color: C.gold, roughness: 0.3, metallic: 0.9 },
   red: { color: C.red, roughness: 0.6 },
   silver: { color: C.silver, roughness: 0.25, metallic: 0.9 },
+  shoePink: { color: C.skirtPink, roughness: 0.65 },
+  white: { color: C.white, roughness: 0.5 },
 };
 
 // ─── Hàm tiện ích hình học ──────────────────────────────────────────────────
@@ -331,14 +335,37 @@ function buildBody(body: THREE.Object3D) {
   ellipsoid(body, 'shorts', [0, 0.635, 0], [0.13, 0.085, 0.1], [0, 0, 0], 20);
 }
 
-function buildLeg(leg: THREE.Object3D) {
+function buildLeg(leg: THREE.Object3D, side: 1 | -1) {
+  // Chân da (từ đùi xuống trên mắt cá chân)
   addMesh(leg, lathe([
-    [0, -0.565], [0.026, -0.56], [0.031, -0.535], [0.033, -0.5], [0.042, -0.42], [0.049, -0.36],
+    [0, -0.49], [0.033, -0.49], [0.035, -0.46], [0.042, -0.42], [0.049, -0.36],
     [0.046, -0.31], [0.043, -0.28], [0.05, -0.22], [0.058, -0.12], [0.062, -0.04], [0.055, 0], [0, 0.02],
   ], 18), 'skin');
-  // Bàn chân trần
-  ellipsoid(leg, 'skin', [0, -0.592, 0.028], [0.036, 0.026, 0.076]);
-  ellipsoid(leg, 'skin', [0, -0.6, 0.088], [0.035, 0.02, 0.032]);
+
+  // Cổ tất trắng ngắn có gờ viền
+  addMesh(leg, lathe([
+    [0, -0.56], [0.035, -0.56], [0.034, -0.53], [0.037, -0.49], [0.034, -0.485], [0, -0.485],
+  ], 18), 'white');
+
+  // Thân giày sneaker màu hồng (skirtPink)
+  ellipsoid(leg, 'shoePink', [0, -0.582, 0.025], [0.038, 0.026, 0.075]);
+  ellipsoid(leg, 'shoePink', [0, -0.588, 0.082], [0.037, 0.022, 0.032]);
+  ellipsoid(leg, 'shoePink', [0, -0.582, -0.028], [0.036, 0.025, 0.032]);
+  // Cổ giày ôm chân
+  addMesh(leg, lathe([[0.034, -0.57], [0.040, -0.57], [0.038, -0.552], [0.033, -0.552]], 18), 'shoePink');
+
+  // Đế giày cao su trắng dày (tiếp đất Y = 0 tại y = -0.62)
+  addMesh(leg, new THREE.BoxGeometry(0.076, 0.02, 0.125), 'white', [0, -0.61, 0.028]);
+  ellipsoid(leg, 'white', [0, -0.605, 0.088], [0.038, 0.015, 0.03]);
+  ellipsoid(leg, 'white', [0, -0.605, -0.028], [0.037, 0.015, 0.03]);
+  // Mũi giày cao su trắng
+  ellipsoid(leg, 'white', [0, -0.592, 0.096], [0.035, 0.016, 0.02], [0.2, 0, 0], 12);
+
+  // Quai dán Velcro trắng ngang mu bàn chân
+  addMesh(leg, new THREE.BoxGeometry(0.074, 0.012, 0.022), 'white', [0, -0.565, 0.046], [-0.35, 0, 0]);
+  // Tab cài dán velcro bên phía ngoài chân (side = 1 là chân trái -> +X; side = -1 là chân phải -> -X)
+  addMesh(leg, new THREE.BoxGeometry(0.01, 0.014, 0.024), 'shoePink', [side * 0.038, -0.565, 0.046], [-0.35, 0, 0]);
+  ellipsoid(leg, 'button', [side * 0.042, -0.565, 0.046], [0.003, 0.005, 0.005], [0, 0, 0], 8);
 }
 
 function buildArm(arm: THREE.Object3D, side: 1 | -1) {
@@ -486,7 +513,7 @@ function buildCharacter(): THREE.Group {
     leg.name = name;
     leg.position.set(side * 0.065, 0.62, 0);
     root.add(leg);
-    buildLeg(leg);
+    buildLeg(leg, side);
   }
   return root;
 }

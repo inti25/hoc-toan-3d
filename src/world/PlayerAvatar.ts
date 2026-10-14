@@ -456,10 +456,22 @@ export class PlayerAvatar {
     // Má hồng
     this.sphere(root, -0.26, 1.56, 0.38, 0.07, 0xe8a693);
     this.sphere(root, 0.26, 1.56, 0.38, 0.07, 0xe8a693);
-    // Chân trần
-    for (const x of [-0.15, 0.15]) {
-      const leg = this.box(root, x, 0.28, 0, 0.22, 0.56, 0.24, 0xe5b08c);
-      this.box(leg, 0, -0.22, 0.05, 0.24, 0.12, 0.34, 0xe5b08c);
+    // Đôi chân mang tất trắng & giày sneaker hồng (đồng bộ với mô hình 3D)
+    for (const [x, side] of [[-0.15, 1], [0.15, -1]] as const) {
+      // Bắp chân (màu da)
+      const leg = this.box(root, x, 0.28, 0, 0.20, 0.52, 0.22, 0xe5b08c);
+      // Cổ tất trắng ngắn
+      this.box(leg, 0, -0.10, 0, 0.22, 0.08, 0.24, 0xfbf7f5);
+      // Thân giày thể thao hồng (skirtPink: 0xeb8a95)
+      this.box(leg, 0, -0.18, 0.05, 0.25, 0.14, 0.34, 0xeb8a95);
+      // Mũi giày cao su trắng
+      this.box(leg, 0, -0.21, 0.17, 0.24, 0.08, 0.10, 0xfbf7f5);
+      // Đế giày cao su trắng (chạm đất Y = 0)
+      this.box(leg, 0, -0.25, 0.05, 0.27, 0.06, 0.38, 0xfbf7f5);
+      // Quai dán Velcro trắng ngang mu bàn chân
+      this.box(leg, 0, -0.14, 0.08, 0.26, 0.04, 0.10, 0xfbf7f5);
+      // Nút quai dán hồng phía ngoài
+      this.box(leg, side * 0.13, -0.14, 0.08, 0.04, 0.05, 0.08, 0xeb8a95);
       this.legs.push(leg);
     }
     // Cánh tay & ống tay áo
