@@ -1,7 +1,7 @@
 export const CHARACTERS = [
   { id: 'boy', emoji: '👦', label: 'Nhà thám hiểm', title: 'Nhà thám hiểm' },
   { id: 'girl', emoji: '👧', label: 'Nhà khám phá', title: 'Nhà khám phá' },
-  { id: 'baochau', emoji: '👓', label: 'Bảo Châu', title: 'Bảo Châu' },
+  { id: 'baochau', emoji: '💗', label: 'Bảo Châu', title: 'Bảo Châu' },
   { id: 'kuromi', emoji: '🖤', label: 'Kuromi', title: 'Kuromi' },
   { id: 'hellokitty', emoji: '🎀', label: 'Hello Kitty', title: 'Hello Kitty' },
   { id: 'mymelody', emoji: '🌸', label: 'My Melody', title: 'My Melody' },
