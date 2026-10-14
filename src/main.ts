@@ -677,8 +677,11 @@ function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
   });
 }
 
-function openParkTreeDialog(index: number) {
-  const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+function openParkTreeDialog(index: number, stepIndex = 0) {
+  const locName = world?.spatial?.getCurrentLocationName();
+  const parkZone =
+    activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY' && locName === z.name) ||
+    activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
   const sheetName = parkZone?.sheetName || 'CongVienXanh';
   let parkQuestions = activeRemoteQuestions[sheetName];
   if (!parkQuestions || parkQuestions.length === 0) {
@@ -700,12 +703,13 @@ function openParkTreeDialog(index: number) {
   return challengeDialog.startChallenge({
     type: 'park_tree',
     index,
+    stepIndex,
     questions: parkQuestions,
     zone: parkZone
   });
 }
 
-function openFlowerDialog(index: number) {
+function openFlowerDialog(index: number, stepIndex = 0) {
   let remoteFlowers = activeRemoteQuestions['VuonHoa'];
   if (!remoteFlowers || remoteFlowers.length === 0) {
     try {
@@ -723,6 +727,7 @@ function openFlowerDialog(index: number) {
   return challengeDialog.startChallenge({
     type: 'flower',
     index,
+    stepIndex,
     remoteFlowers
   });
 }

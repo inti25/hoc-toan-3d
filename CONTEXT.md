@@ -58,6 +58,19 @@ _Avoid_: Game save, Dữ liệu người dùng, Profile
 
 **Thử Thách (Challenge Session)**:
 Một phiên giải quyết bài toán tương tác (cửu chương hoặc đố hoa) tự quản lý số lần thử, các cấp độ gợi ý tiến triển và xác thực kết quả.
+_Avoid_: Session kiểm tra, Lượt chơi
+
+**Bài Toán Nhiều Bước (Multi-step Problem)**:
+Bài toán có cấu trúc phân rã thành nhiều bước giải tuần tự (`steps`), yêu cầu học sinh chinh phục từng bước trước khi hoàn thành toàn bộ thử thách của thực thể (Cây Tri Thức, Bia Đá Archimedes, Hoa Tri Thức hoặc Thú Cưng Nông Trại).
+_Avoid_: Bài tập ghép, Bộ câu hỏi con, Quiz chuỗi
+
+**Bước Giải (Challenge Step)**:
+Một chặng độc lập trong bài toán nhiều bước, sở hữu đầy đủ câu hỏi (`prompt`), hình minh họa (`imageUrl`), các lựa chọn đáp án (`options`), đáp án đúng (`answer`), gợi ý (`hints`) và lời giải chi tiết (`explanation`).
+_Avoid_: Sub-question, Phần a/b, Câu hỏi phụ
+
+**Thức Tỉnh Nhiều Bước (Multi-step Awakening & Completion)**:
+Quy tắc hoàn thành thực thể học tập: khi học sinh giải đúng các bước trung gian, hệ thống chúc mừng và mở nút chuyển tiếp sang bước kế tiếp; chỉ khi hoàn thành bước cuối cùng (`isLastStep`), thực thể trong thế giới 3D mới chính thức chuyển trạng thái thức tỉnh (cây hóa xanh, hoa nở rộ, thú cưng được giải cứu hoặc bia đá phát sáng), đồng thời kích hoạt hiệu ứng pháo hoa hạt sáng và cộng thưởng trọn vẹn.
+_Avoid_: Nở hoa từng phần, Thức tỉnh từng bước
 _Avoid_: Đề bài, Vòng lặp quiz
 
 **Vùng Đất Luyện Tập Archimedes (Archimedes Trial Grounds)**:

@@ -13,11 +13,13 @@ export type ChallengeSpec =
   | {
       type: 'flower';
       index: number;
+      stepIndex?: number;
       remoteFlowers?: RemoteProblem[];
     }
   | {
       type: 'park_tree';
       index: number;
+      stepIndex?: number;
       questions?: RemoteProblem[];
       zone?: RemoteZoneConfig;
     }
@@ -34,6 +36,7 @@ export type ChallengeSpec =
       animalId: string;
       animalName: string;
       problemData: any;
+      stepIndex?: number;
     };
 
 export interface ChallengeRewardSummary {
