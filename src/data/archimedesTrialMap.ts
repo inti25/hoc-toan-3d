@@ -11,7 +11,7 @@ export interface ArchimedesStep {
 }
 
 export interface ArchimedesMonolith {
-  id: number;
+  id: number | string;
   zoneId: 1 | 2 | 3 | 4 | 5;
   zoneName: string;
   page: number;

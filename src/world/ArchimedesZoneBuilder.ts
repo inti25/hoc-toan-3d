@@ -10,7 +10,7 @@ export interface Obstacle {
 }
 
 export interface MonolithItem {
-  id: number;
+  id: number | string;
   position: THREE.Vector3;
   group: THREE.Group;
   pedestal: THREE.Mesh;
@@ -174,9 +174,9 @@ export class ArchimedesZoneBuilder {
     this.scene.add(group);
     this.obstacles.push({ x, z, radius: 1.35 });
 
-    const numId = typeof id === 'number' ? id : parseInt(String(id), 10) || (306 + this.monoliths.length);
+    const finalId = id !== undefined && id !== null ? id : (306 + this.monoliths.length);
     const monolithItem: MonolithItem = {
-      id: numId,
+      id: finalId,
       position: new THREE.Vector3(x, 0, z),
       group,
       pedestal,
@@ -208,9 +208,10 @@ export class ArchimedesZoneBuilder {
   }
 
   activateMonolith(ref: number | string, burstFn?: (pos: THREE.Vector3) => void): void {
-    const numRef = typeof ref === 'number' ? ref : parseInt(String(ref), 10);
+    const strRef = String(ref);
+    const numRef = typeof ref === 'number' ? ref : (isNaN(Number(ref)) ? NaN : Number(ref));
     const m =
-      this.monoliths.find((item) => item.id === numRef || String(item.id) === String(ref)) ||
+      this.monoliths.find((item) => String(item.id) === strRef || (typeof item.id === 'number' && item.id === numRef)) ||
       (!isNaN(numRef) && numRef >= 0 && numRef < this.monoliths.length ? this.monoliths[numRef] : undefined);
     if (!m) return;
     m.activated = true;
@@ -225,7 +226,7 @@ export class ArchimedesZoneBuilder {
   setMonolithsActivated(
     checker:
       | boolean[]
-      | ((id: number, index: number) => boolean)
+      | ((id: number | string, index: number) => boolean)
       | { monoliths?: boolean[]; solvedProblems?: Record<string, boolean> }
   ): void {
     this.monoliths.forEach((m, i) => {
@@ -234,14 +235,13 @@ export class ArchimedesZoneBuilder {
         active = checker(m.id, i);
       } else if (Array.isArray(checker)) {
         active =
-          checker[i] === true ||
-          (typeof m.id === 'number' && m.id >= 306 && checker[m.id - 306] === true);
+          typeof m.id === 'number' && m.id >= 306 && m.id < 306 + checker.length && checker[m.id - 306] === true;
       } else if (checker && typeof checker === 'object') {
         const solved = checker.solvedProblems;
         const moList = checker.monoliths;
         active =
-          (solved && (solved[String(m.id)] === true || solved[String(i)] === true)) ||
-          (moList && (moList[i] === true || (typeof m.id === 'number' && m.id >= 306 && moList[m.id - 306] === true))) ||
+          (solved && solved[String(m.id)] === true) ||
+          (moList && typeof m.id === 'number' && m.id >= 306 && m.id < 306 + moList.length && moList[m.id - 306] === true) ||
           false;
       }
       m.activated = active;
@@ -262,9 +262,10 @@ export class ArchimedesZoneBuilder {
 
   updateAnimations(dt: number, time: number): void {
     this.monoliths.forEach((m) => {
+      const phase = typeof m.id === 'number' ? m.id : (m.id.charCodeAt(0) || 0);
       if (m.activated) {
         m.crystal.rotation.y += dt * 2.8;
-        m.crystal.position.y = 2.45 + Math.sin(time * 3 + m.id) * 0.12;
+        m.crystal.position.y = 2.45 + Math.sin(time * 3 + phase) * 0.12;
         if (m.beam) {
           m.beam.rotation.y += dt * 0.4;
         }

@@ -107,7 +107,7 @@ export class World {
   onJump?: () => void;
   onSceneClick?: (near: boolean) => void;
   onFlowerClick?: (index: number) => void;
-  onMonolithClick?: (index: number) => void;
+  onMonolithClick?: (index: number, id?: number | string) => void;
   onParkTreeClick?: (index: number) => void;
   onPortalClick?: () => void;
   onShopClick?: () => void;
@@ -1089,14 +1089,13 @@ export class World {
     this.archimedes.removeGardenMonoliths();
 
     // 3. Dựng các bia đá mới nếu có
-    const existingIds = new Set(this.monoliths.map((m) => m.id));
+    const existingIds = new Set(this.monoliths.map((m) => String(m.id)));
     positionedMonoliths.forEach((pm) => {
-      const numId = typeof pm.id === 'number' ? pm.id : parseInt(String(pm.id), 10);
-      if (isNaN(numId) || numId <= 10 || !pm.position) return;
-
-      if (!existingIds.has(numId)) {
-        this.createMonolithEntity(numId, pm.position.x, pm.position.z, pm.color || 0x38bdf8, pm.title);
-        existingIds.add(numId);
+      if (!pm.position || pm.id === undefined || pm.id === null) return;
+      const strId = String(pm.id);
+      if (!existingIds.has(strId)) {
+        this.createMonolithEntity(pm.id, pm.position.x, pm.position.z, pm.color || 0x38bdf8, pm.title);
+        existingIds.add(strId);
       }
     });
 
@@ -1136,7 +1135,7 @@ export class World {
   setMonolithsActivated(
     checker:
       | boolean[]
-      | ((id: number, index: number) => boolean)
+      | ((id: number | string, index: number) => boolean)
       | { monoliths?: boolean[]; solvedProblems?: Record<string, boolean> }
   ) {
     this.archimedes.setMonolithsActivated(checker);
@@ -1619,12 +1618,12 @@ export class World {
       }
       const nearMonolithIdx = this.nearMonolith();
       if (nearMonolithIdx !== -1 && hit.distanceTo(this.monoliths[nearMonolithIdx].position) < 3.2) {
-        this.onMonolithClick?.(nearMonolithIdx);
+        this.onMonolithClick?.(nearMonolithIdx, this.monoliths[nearMonolithIdx].id);
         return;
       }
       for (let i = 0; i < this.monoliths.length; i++) {
         if (hit.distanceTo(this.monoliths[i].position) < 2.8 && this.nearMonolith() === i) {
-          this.onMonolithClick?.(i);
+          this.onMonolithClick?.(i, this.monoliths[i].id);
           return;
         }
       }

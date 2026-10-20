@@ -114,7 +114,7 @@ export interface FlowerChallenge extends BaseChallenge {
 
 export interface ArchimedesChallenge extends BaseChallenge {
   kind: 'archimedes';
-  monolithId: number;
+  monolithId: number | string;
   monolithIndex: number;
   stepIndex: number;
   totalSteps: number;
@@ -214,24 +214,25 @@ export function createFlowerChallenge(target: number | FlowerQuestion | Archimed
 }
 
 export function createArchimedesChallenge(
-  target: number | ArchimedesMonolith,
+  target: number | string | ArchimedesMonolith,
   stepIndex = 0
 ): ArchimedesChallenge {
   const m: ArchimedesMonolith = typeof target === 'object'
     ? target
-    : (ARCHIMEDES_MONOLITHS[target] || {
-        id: 306 + target,
+    : (ARCHIMEDES_MONOLITHS.find((item) => String(item.id) === String(target)) ||
+       (typeof target === 'number' && ARCHIMEDES_MONOLITHS[target]) || {
+        id: target,
         zoneId: 1,
         zoneName: 'Thung Lũng Tính Toán & Đại Lượng',
         page: 128,
-        title: `Bia Đá ${306 + target}`,
+        title: `Bia Đá ${target}`,
         subtitle: 'Thử thách tri thức',
         position: { x: 0, z: 0 },
         color: 0x38bdf8,
         badge: '🏆 Bia Đá Tri Thức',
         steps: [
           {
-            stepId: `${306 + target}_1`,
+            stepId: `${target}_1`,
             prompt: 'Đang kết nối thư viện tri thức từ Google Sheets...',
             options: [{ label: '...', value: '...' }],
             answer: '...',

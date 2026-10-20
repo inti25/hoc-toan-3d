@@ -13,7 +13,7 @@ export interface WorldLaunchOptions {
   onJump?: () => void;
   onSceneClick?: () => void;
   onFlowerClick?: (idx: number) => void;
-  onMonolithClick?: (idx: number) => void;
+  onMonolithClick?: (idx: number, id?: number | string) => void;
   onParkTreeClick?: (idx: number) => void;
   onPortalClick?: () => void;
   onShopClick?: () => void;

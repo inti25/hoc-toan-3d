@@ -176,8 +176,7 @@ function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet:
     world.setMonolithsActivated((id, index) => {
       return (
         adventure.isProblemSolved(id) ||
-        (typeof id === 'number' && id >= 306 && currentState.monoliths[id - 306] === true) ||
-        currentState.monoliths[index] === true
+        (typeof id === 'number' && id >= 306 && id < 306 + currentState.monoliths.length && currentState.monoliths[id - 306] === true)
       );
     });
 
@@ -1424,8 +1423,7 @@ function applyRestoredPlayer(player: RemotePlayerProgress) {
     world.setMonolithsActivated((id, index) => {
       return (
         adventure.isProblemSolved(id) ||
-        (typeof id === 'number' && id >= 306 && parsedState.monoliths[id - 306] === true) ||
-        parsedState.monoliths[index] === true
+        (typeof id === 'number' && id >= 306 && id < 306 + parsedState.monoliths.length && parsedState.monoliths[id - 306] === true)
       );
     });
     if (parsedState.parkTrees && world.syncAwakenedParkTrees) {
@@ -2121,9 +2119,9 @@ function onWorldFrame(
     interactHidden = world.paused;
   } else if (nearMonolith !== -1) {
     const dynamicProb = activeMonolithProblems[nearMonolith];
-    const mId = dynamicProb?.id ? Number(dynamicProb.id) : (306 + nearMonolith);
+    const mId = dynamicProb?.id !== undefined ? dynamicProb.id : (306 + nearMonolith);
     const mTitle = dynamicProb?.title || `Bia Đá ${mId}`;
-    const done = adventure.isProblemSolved(mId) || adventure.getState().monoliths[nearMonolith];
+    const done = adventure.isProblemSolved(mId) || (typeof mId === 'number' && mId >= 306 && mId < 306 + adventure.getState().monoliths.length && adventure.getState().monoliths[mId - 306]);
     interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearPortal) {
@@ -2210,8 +2208,7 @@ async function ensureWorld(): Promise<World> {
     monolithChecker: (id, index) => {
       return (
         adventure.isProblemSolved(id) ||
-        (typeof id === 'number' && id >= 306 && init.monoliths[id - 306] === true) ||
-        init.monoliths[index] === true
+        (typeof id === 'number' && id >= 306 && id < 306 + init.monoliths.length && init.monoliths[id - 306] === true)
       );
     },
     parkTrees: init.parkTrees || [],
@@ -2222,7 +2219,7 @@ async function ensureWorld(): Promise<World> {
     onJump: () => audio.playCue('jump'),
     onSceneClick: () => interactAction(),
     onFlowerClick: (idx) => openFlowerDialog(idx),
-    onMonolithClick: (idx) => openArchimedesMonolithDialog(idx, 0),
+    onMonolithClick: (idx, id) => openArchimedesMonolithDialog(id !== undefined ? id : idx, 0),
     onParkTreeClick: (idx) => openParkTreeDialog(idx),
     onPortalClick: handlePortalAction,
     onShopClick: () => shopModal.open('shop', 'full'),

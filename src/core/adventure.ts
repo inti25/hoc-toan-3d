@@ -382,17 +382,20 @@ export class Adventure {
     const monolith = ARCHIMEDES_MONOLITHS[index];
     const zoneId = zoneIdInput || (monolith ? monolith.zoneId : 1);
 
-    const alreadyActivated = (index >= 0 && index < this.state.monoliths.length && this.state.monoliths[index]) ||
+    const isLegacyArchimedes = typeof problemId === 'number' && problemId >= 306 && problemId <= 345;
+    const legacyIndex = isLegacyArchimedes ? (problemId as number) - 306 : (problemId === undefined ? index : -1);
+
+    const alreadyActivated = (legacyIndex >= 0 && legacyIndex < this.state.monoliths.length && this.state.monoliths[legacyIndex]) ||
       this.state.solvedProblems[idKey] === true;
 
     if (alreadyActivated) {
       let stateChanged = false;
-      if (index >= 0 && index < this.state.monoliths.length && !this.state.monoliths[index]) {
-        this.state.monoliths[index] = true;
+      if (legacyIndex >= 0 && legacyIndex < this.state.monoliths.length && !this.state.monoliths[legacyIndex]) {
+        this.state.monoliths[legacyIndex] = true;
         stateChanged = true;
       }
       const numId = Number(problemId);
-      if (!isNaN(numId) && numId >= 306) {
+      if (!isNaN(numId) && numId >= 306 && numId <= 345) {
         const mIdx = numId - 306;
         if (mIdx >= 0) {
           while (this.state.monoliths.length <= mIdx) {
@@ -426,11 +429,13 @@ export class Adventure {
     }
 
     const oldLevel = getLevel(this.state.xp);
-    if (index >= 0 && index < this.state.monoliths.length) {
-      this.state.monoliths[index] = true;
+    if (isLegacyArchimedes || problemId === undefined) {
+      if (legacyIndex >= 0 && legacyIndex < this.state.monoliths.length) {
+        this.state.monoliths[legacyIndex] = true;
+      }
     }
     const numId = Number(problemId);
-    if (!isNaN(numId) && numId >= 306) {
+    if (!isNaN(numId) && numId >= 306 && numId <= 345) {
       const mIdx = numId - 306;
       if (mIdx >= 0) {
         while (this.state.monoliths.length <= mIdx) {
@@ -454,7 +459,7 @@ export class Adventure {
       );
     } else if (hasStaticZoneMonoliths) {
       zoneCompletedNow = zoneMonoliths.every(
-        (m) => this.isProblemSolved(m.id) || this.state.monoliths[m.id - 306]
+        (m) => this.isProblemSolved(m.id) || (typeof m.id === 'number' && m.id >= 306 && this.state.monoliths[m.id - 306])
       );
     }
 
@@ -500,14 +505,10 @@ export class Adventure {
     let changed = false;
     for (const [sheet, questions] of Object.entries(questionsBySheet || {})) {
       if (Array.isArray(questions)) {
-        questions.forEach((q, idx) => {
+        questions.forEach((q) => {
           if (this.isProblemSolved(q.id)) {
-            if (idx >= 0 && idx < this.state.monoliths.length && !this.state.monoliths[idx]) {
-              this.state.monoliths[idx] = true;
-              changed = true;
-            }
             const num = Number(q.id);
-            if (!isNaN(num) && num >= 306) {
+            if (!isNaN(num) && num >= 306 && num <= 345) {
               const mIdx = num - 306;
               while (this.state.monoliths.length <= mIdx) {
                 this.state.monoliths.push(false);

@@ -1349,42 +1349,45 @@ export class ChallengeDialog implements ChallengeSessionPort {
     activeMonolithProblems: RemoteProblem[] = []
   ): void {
     let challenge: ArchimedesChallenge;
-    let monolithId = 0;
+    let monolithId: number | string = 0;
+    let remoteProblem: RemoteProblem | undefined;
 
     if (typeof monolithRef === 'number') {
       if (monolithRef >= 300) {
         monolithId = monolithRef;
       } else if (monolithRef >= 0 && activeMonolithProblems[monolithRef]) {
-        monolithId = Number(activeMonolithProblems[monolithRef].id);
+        remoteProblem = activeMonolithProblems[monolithRef];
+        monolithId = remoteProblem.id;
       } else {
         monolithId = 306 + monolithRef;
       }
     } else {
-      monolithId = Number(monolithRef);
+      monolithId = monolithRef;
     }
 
-    let remoteProblem: RemoteProblem | undefined;
-    for (const sheetKey of Object.keys(activeRemoteQuestions)) {
-      if (sheetKey === 'VuonHoa') continue;
-      const list = activeRemoteQuestions[sheetKey];
-      const found = list?.find((p) => Number(p.id) === monolithId);
-      if (found) {
-        remoteProblem = found;
-        break;
+    if (!remoteProblem) {
+      for (const sheetKey of Object.keys(activeRemoteQuestions)) {
+        if (sheetKey === 'VuonHoa') continue;
+        const list = activeRemoteQuestions[sheetKey];
+        const found = list?.find((p) => String(p.id) === String(monolithId) || p.id === monolithId);
+        if (found) {
+          remoteProblem = found;
+          break;
+        }
       }
     }
     if (!remoteProblem && typeof monolithRef === 'number' && activeMonolithProblems[monolithRef]) {
       remoteProblem = activeMonolithProblems[monolithRef];
-      monolithId = Number(remoteProblem.id);
+      monolithId = remoteProblem.id;
     }
 
-    const probIdx = activeMonolithProblems.findIndex((p) => Number(p.id) === monolithId);
+    const probIdx = activeMonolithProblems.findIndex((p) => String(p.id) === String(monolithId) || p.id === monolithId);
     const monolithIndex =
       probIdx !== -1
         ? probIdx
         : typeof monolithRef === 'number' && monolithRef < 300
         ? monolithRef
-        : monolithId >= 306
+        : typeof monolithId === 'number' && monolithId >= 306
         ? monolithId - 306
         : 0;
 
@@ -1392,9 +1395,9 @@ export class ChallengeDialog implements ChallengeSessionPort {
       const rStep = remoteProblem.steps[Math.min(stepIndex, remoteProblem.steps.length - 1)] || remoteProblem.steps[0];
       const parentZone = activeRemoteZones.find((z) => {
         const list = activeRemoteQuestions[z.sheetName];
-        return list?.some((p) => Number(p.id) === Number(remoteProblem?.id));
+        return list?.some((p) => String(p.id) === String(remoteProblem?.id) || p.id === remoteProblem?.id);
       });
-      const pId = Number(remoteProblem.id) || monolithId;
+      const pId = remoteProblem.id !== undefined ? remoteProblem.id : monolithId;
       const validZoneId = (parentZone?.id && parentZone.id <= 5 ? parentZone.id : 1) as 1 | 2 | 3 | 4 | 5;
       challenge = {
         id: `arch_${pId}_${stepIndex}`,
@@ -1440,7 +1443,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     const step = challenge.step;
     const isDone =
       this.host.adventure.isProblemSolved(monolithId) ||
-      (monolithIndex >= 0 && this.host.adventure.getState().monoliths[monolithIndex] === true);
+      (typeof monolithId === 'number' && monolithId >= 306 && this.host.adventure.getState().monoliths[monolithId - 306] === true);
     const parsed = parseAnswer(challenge.answer);
 
     const renderArchimedesHint = (hintText: string, explanation?: string) => {
