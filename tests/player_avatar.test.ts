@@ -71,3 +71,26 @@ test('PlayerAvatar builds avatar mesh when Elsa is selected', () => {
   const forwardCount = zPositions.filter(z => z > 0.2).length;
   assert.ok(forwardCount >= 3, 'Elsa procedural face features must be oriented towards +Z');
 });
+
+test('PlayerAvatar builds avatar mesh when Bao Chau is selected', () => {
+  const avatar = new PlayerAvatar();
+  avatar.setAvatar('baochau');
+  assert.equal(avatar.activeAvatar, 'baochau');
+  assert.ok(avatar.group.children.length > 0, 'Bao Chau avatar mesh must be created upon selection');
+
+  // Verify forward features (glasses, eyes, bangs) face +Z
+  const zPositions: number[] = [];
+  avatar.group.traverse(child => {
+    if ((child as THREE.Mesh).isMesh) {
+      zPositions.push(child.position.z);
+    }
+  });
+
+  const forwardCount = zPositions.filter(z => z > 0.2).length;
+  assert.ok(forwardCount >= 3, 'Bao Chau procedural face features must be oriented towards +Z');
+
+  // Verify walk animation runs smoothly
+  avatar.updateWalkAnimation(0.5, true);
+  avatar.updateWalkAnimation(1.0, false);
+});
+

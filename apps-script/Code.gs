@@ -686,17 +686,22 @@ function fetchQuestionsFromSheet(ss, sheetName) {
     return str;
   }
 
+  let lastProbId = '';
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
-    if (!row[0] && row[0] !== 0) continue;
 
     const rowObj = {};
     headers.forEach(function(h, colIdx) {
       rowObj[h] = row[colIdx];
     });
 
-    const probId = String(rowObj.ProblemId).trim();
+    let probId = rowObj.ProblemId !== undefined && rowObj.ProblemId !== null ? String(rowObj.ProblemId).trim() : '';
+    // Tự động kế thừa ProblemId từ dòng trước nếu ô bị để trống trên bảng tính
+    if (!probId && lastProbId && (rowObj.Prompt || rowObj.StepId || rowObj.Answer)) {
+      probId = lastProbId;
+    }
     if (!probId) continue;
+    lastProbId = probId;
 
     const cleanAnswer = cleanSheetText(rowObj.Answer);
 

@@ -110,6 +110,8 @@ export interface FlowerChallenge extends BaseChallenge {
   explanationImageUrl?: string;
   diagramSvg?: string;
   flowerQuestion: FlowerQuestion;
+  stepIndex?: number;
+  totalSteps?: number;
 }
 
 export interface ArchimedesChallenge extends BaseChallenge {
@@ -160,11 +162,16 @@ export function createMultiplicationChallenge(
   };
 }
 
-export function createFlowerChallenge(target: number | FlowerQuestion | ArchimedesMonolith | any): FlowerChallenge {
+export function createFlowerChallenge(target: number | FlowerQuestion | ArchimedesMonolith | any, stepIndex = 0): FlowerChallenge {
   let q: FlowerQuestion;
+  let totalSteps = 1;
+  let currentStepIndex = stepIndex;
+
   if (typeof target === 'object' && target !== null) {
-    if (target.steps && target.steps[0]) {
-      const step = target.steps[0];
+    if (target.steps && Array.isArray(target.steps) && target.steps.length > 0) {
+      totalSteps = target.steps.length;
+      currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
+      const step = target.steps[currentStepIndex] || target.steps[0];
       q = {
         id: target.id,
         title: target.subtitle || target.title || `Hoa Thử Thách #${target.id}`,
@@ -199,6 +206,8 @@ export function createFlowerChallenge(target: number | FlowerQuestion | Archimed
     id: `flower_${index}`,
     kind: 'flower',
     index,
+    stepIndex: currentStepIndex,
+    totalSteps,
     title: q.title,
     badge: q.badge,
     color: q.color,

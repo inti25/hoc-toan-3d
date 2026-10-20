@@ -198,10 +198,10 @@ export class ChallengeDialog implements ChallengeSessionPort {
           this.openMultiplication(spec.mode, spec.lastId);
           break;
         case 'flower':
-          this.openFlower(spec.index, spec.remoteFlowers);
+          this.openFlower(spec.index, spec.remoteFlowers, spec.stepIndex ?? 0);
           break;
         case 'park_tree':
-          this.openParkTree(spec.index, spec.questions, spec.zone);
+          this.openParkTree(spec.index, spec.questions, spec.zone, spec.stepIndex ?? 0);
           break;
         case 'archimedes':
           this.openArchimedes(
@@ -213,7 +213,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
           );
           break;
         case 'farm_animal':
-          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData);
+          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0);
           break;
       }
     });
@@ -554,19 +554,29 @@ export class ChallengeDialog implements ChallengeSessionPort {
   // -------------------------------------------------------------
   // Flower Trial Dialog
   // -------------------------------------------------------------
-  openFlower(index: number, remoteFlowers?: RemoteProblem[]): void {
+  openFlower(index: number, remoteFlowers?: RemoteProblem[], stepIndex = 0): void {
     const targetId = index + 1;
     const remoteQ =
       remoteFlowers &&
-      (remoteFlowers.find((p) => Number(p.id) === targetId) || remoteFlowers[index]);
+      (remoteFlowers.find((p) => Number(p.id) === targetId) ||
+       remoteFlowers.find((p) => String(p.id) === String(targetId)) ||
+       remoteFlowers[index]);
+
+    const steps = (remoteQ && remoteQ.steps && Array.isArray(remoteQ.steps) && remoteQ.steps.length > 0)
+      ? remoteQ.steps
+      : null;
+    const totalSteps = steps ? steps.length : 1;
+    const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
 
     let challenge: FlowerChallenge;
-    if (remoteQ && remoteQ.steps && remoteQ.steps[0]) {
-      const step = remoteQ.steps[0];
+    if (remoteQ && steps) {
+      const step = steps[currentStepIndex] || steps[0];
       challenge = {
-        id: `flower_${index}`,
+        id: `flower_${index}_${currentStepIndex}`,
         kind: 'flower',
         index,
+        stepIndex: currentStepIndex,
+        totalSteps,
         title: remoteQ.subtitle || remoteQ.title || `Hoa Thử Thách #${index + 1}`,
         badge: remoteQ.badge || `🌸 Hoa Tri Thức #${index + 1}`,
         color: remoteQ.color || 0xec4899,
@@ -592,7 +602,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         }
       };
     } else {
-      challenge = createFlowerChallenge(index);
+      challenge = createFlowerChallenge(index, currentStepIndex);
     }
 
     this.currentSession = new ChallengeSession(challenge);
@@ -640,69 +650,92 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
         const feedback = document.getElementById('flower-feedback');
         if (feedback) feedback.className = 'feedback success';
-        const delta = this.host.adventure.bloomFlower(index);
 
-        if (!delta.alreadyBloomed) {
-          this.host.getWorld().bloomFlower(index);
-          this.host.playCue('celebrate');
-          if (feedback) feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
-          this.host.updateHUD();
-
-          this.host.logRemoteProgress({
-            zoneId: 6,
-            problemId: challenge.flowerQuestion?.id || index + 1,
-            stepId: `flower_${challenge.flowerQuestion?.id || index + 1}`,
-            isCorrect: true,
-            score: 15
-          });
-
-          if (delta.allFlowersCompleted) {
-            setTimeout(() => {
-              this.host.openDialog(
-                '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
-                `
-                <div class="completion-medal">${icon('crown')}</div>
-                <p class="dialog-copy centered">
-                  Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
-                  <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
-                </p>
-                <div class="completion-rewards">
-                  <span>★ +100 XP</span><span>◉ +30 xu</span>
-                </div>
-                <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
-                `,
-                'complete'
-              );
-              this.host.updateHUD();
-              const grandBtn = document.getElementById('close-grand');
-              if (grandBtn) grandBtn.onclick = this.host.closeDialog;
-            }, 1200);
-          }
-        } else {
-          this.host.playCue('correct');
-          if (feedback) feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
-        }
-
-        this.resolveActiveChallenge({
-          spec: this.activeChallenge?.spec ?? { type: 'flower', index },
-          status: 'solved',
+        const isLastStep = currentStepIndex + 1 >= totalSteps;
+        this.host.logRemoteProgress({
+          zoneId: 6,
+          problemId: challenge.flowerQuestion?.id || index + 1,
+          stepId: steps?.[currentStepIndex]?.stepId || `flower_${challenge.flowerQuestion?.id || index + 1}_${currentStepIndex + 1}`,
           isCorrect: true,
-          attempts: res.attempts,
-          durationMs: this.currentSession.getDurationMs(),
-          rewards: {
-            xp: delta.alreadyBloomed ? 0 : 15,
-            coins: delta.alreadyBloomed ? 0 : 5,
-            bloomedIndex: index
-          }
+          score: isLastStep ? 15 : 10
         });
 
-        const hintBtn = document.getElementById('flower-hint');
-        if (hintBtn) hintBtn.hidden = true;
-        const closeBtn = document.getElementById('flower-close-btn') as HTMLButtonElement | null;
-        if (closeBtn) {
-          closeBtn.hidden = false;
-          closeBtn.onclick = this.host.closeDialog;
-          closeBtn.focus();
+        if (!isLastStep) {
+          this.host.playCue('correct');
+          if (feedback) {
+            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} hoàn thành xuất sắc! +10 XP`;
+          }
+          const hintBtn = document.getElementById('flower-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const nextStepBtn = document.getElementById('flower-next-step') as HTMLButtonElement | null;
+          if (nextStepBtn) {
+            nextStepBtn.hidden = false;
+            nextStepBtn.onclick = () => {
+              this.openFlower(index, remoteFlowers, currentStepIndex + 1);
+            };
+            nextStepBtn.focus();
+          }
+        } else {
+          const delta = this.host.adventure.bloomFlower(index);
+
+          if (!delta.alreadyBloomed) {
+            this.host.getWorld().bloomFlower(index);
+            this.host.playCue('celebrate');
+            if (feedback) {
+              feedback.textContent = totalSteps > 1
+                ? `✓ Xuất sắc! Hoàn thành cả ${totalSteps} bước! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`
+                : `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
+            }
+            this.host.updateHUD();
+
+            if (delta.allFlowersCompleted) {
+              setTimeout(() => {
+                this.host.openDialog(
+                  '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
+                  `
+                  <div class="completion-medal">${icon('crown')}</div>
+                  <p class="dialog-copy centered">
+                    Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
+                    <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
+                  </p>
+                  <div class="completion-rewards">
+                    <span>★ +100 XP</span><span>◉ +30 xu</span>
+                  </div>
+                  <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
+                  `,
+                  'complete'
+                );
+                this.host.updateHUD();
+                const grandBtn = document.getElementById('close-grand');
+                if (grandBtn) grandBtn.onclick = this.host.closeDialog;
+              }, 1200);
+            }
+          } else {
+            this.host.playCue('correct');
+            if (feedback) feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
+          }
+
+          this.resolveActiveChallenge({
+            spec: this.activeChallenge?.spec ?? { type: 'flower', index, stepIndex: currentStepIndex },
+            status: 'solved',
+            isCorrect: true,
+            attempts: res.attempts,
+            durationMs: this.currentSession.getDurationMs(),
+            rewards: {
+              xp: delta.alreadyBloomed ? 0 : 15,
+              coins: delta.alreadyBloomed ? 0 : 5,
+              bloomedIndex: index
+            }
+          });
+
+          const hintBtn = document.getElementById('flower-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const closeBtn = document.getElementById('flower-close-btn') as HTMLButtonElement | null;
+          if (closeBtn) {
+            closeBtn.hidden = false;
+            closeBtn.onclick = this.host.closeDialog;
+            closeBtn.focus();
+          }
         }
       } else {
         if (inputBox) {
@@ -772,7 +805,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     this.host.openDialog(
       `Cây Hoa Số ${index + 1}: ${q.badge}`,
       `
-      <div class="dialog-eyebrow">VƯỜN HOA TRI THỨC · BÀI ${index + 1} / 10</div>
+      <div class="dialog-eyebrow">VƯỜN HOA TRI THỨC · BÀI ${index + 1} / 10${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
       <div class="flower-status-banner ${isBloomed ? 'bloomed' : 'bud'}">
         ${isBloomed ? '🌸 Cây hoa này đã bung nở rực rỡ! Bạn có thể xem lại hoặc thử sức lại.' : '🌱 Búp hoa đang ấp nụ. Hãy giải đúng câu hỏi dưới đây để đánh thức hoa nở nhé!'}
       </div>
@@ -788,6 +821,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         <button id="flower-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
         <span>${this.host.adventure.getState().flowers.filter(Boolean).length} / 10 cây hoa đã nở</span>
       </div>
+      <button id="flower-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
       <button id="flower-close-btn" class="primary wide" hidden>Ngắm hoa nở ${icon('arrow')}</button>
       `,
       'flowerQuiz'
@@ -820,13 +854,20 @@ export class ChallengeDialog implements ChallengeSessionPort {
   // -------------------------------------------------------------
   // Thử thách Cây Tri Thức (Công Viên Xanh - PARK_SANCTUARY)
   // -------------------------------------------------------------
-  openParkTree(index: number, remoteParkProblems?: RemoteProblem[], zoneConfig?: RemoteZoneConfig): void {
+  openParkTree(
+    index: number,
+    remoteParkProblems?: RemoteProblem[],
+    zoneConfig?: RemoteZoneConfig,
+    stepIndex = 0
+  ): void {
     if (!remoteParkProblems || index < 0 || index >= remoteParkProblems.length) {
       return;
     }
     const targetId = index + 1;
     const remoteQ =
-      remoteParkProblems.find((p) => Number(p.id) === targetId) || remoteParkProblems[index];
+      remoteParkProblems.find((p) => Number(p.id) === targetId) ||
+      remoteParkProblems.find((p) => String(p.id) === String(targetId)) ||
+      remoteParkProblems[index];
     if (!remoteQ) return;
 
     const zoneName = zoneConfig?.name || 'Công Viên Xanh';
@@ -841,17 +882,22 @@ export class ChallengeDialog implements ChallengeSessionPort {
       explanation: 'Lời giải chi tiết.'
     };
 
-    if (remoteQ && remoteQ.steps && remoteQ.steps[0]) {
-      step = remoteQ.steps[0];
-    }
+    const steps = (remoteQ && remoteQ.steps && Array.isArray(remoteQ.steps) && remoteQ.steps.length > 0)
+      ? remoteQ.steps
+      : [step];
+    const totalSteps = steps.length;
+    const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
+    step = steps[currentStepIndex] || step;
 
     const title = remoteQ?.subtitle || remoteQ?.title || `Cây Tri Thức #${targetId}`;
     const badge = remoteQ?.badge || `🌳 Cây Tri Thức #${targetId}`;
 
     const challenge: FlowerChallenge = {
-      id: `park_tree_${index}`,
+      id: `park_tree_${index}_${currentStepIndex}`,
       kind: 'flower',
       index,
+      stepIndex: currentStepIndex,
+      totalSteps,
       title,
       badge,
       color: remoteQ?.color || 0x10b981,
@@ -922,68 +968,91 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
         const feedback = document.getElementById('park-tree-feedback');
         if (feedback) feedback.className = 'feedback success';
-        const delta = this.host.adventure.wakeParkTree(index, remoteQ?.id);
 
-        if (!delta.alreadyAwakened) {
-          this.host.getWorld().wakeParkTree(index);
-          this.host.playCue('celebrate');
-          if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`;
-          this.host.updateHUD();
-
-          this.host.logRemoteProgress({
-            zoneId,
-            problemId: remoteQ?.id || index + 1,
-            stepId: `tree_${remoteQ?.id || index + 1}`,
-            isCorrect: true,
-            score: 20
-          });
-
-          if (delta.allTreesCompleted) {
-            setTimeout(() => {
-              this.host.openDialog(
-                `🌳 ĐẠI THÀNH CÔNG: ${zoneName.toUpperCase()} THỨC TỈNH! 🌳`,
-                `
-                <div class="completion-medal">${icon('crown')}</div>
-                <p class="dialog-copy centered">
-                  Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong ${zoneName}!<br>
-                  Không gian nơi đây giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
-                </p>
-                <div class="completion-rewards">
-                  <span>★ +150 XP</span><span>◉ +50 xu</span>
-                </div>
-                <button id="close-park-completion" class="primary wide">Tự do dạo chơi ${zoneName} ${icon('arrow')}</button>
-                `,
-                'complete'
-              );
-              this.host.updateHUD();
-              const grandBtn = document.getElementById('close-park-completion');
-              if (grandBtn) grandBtn.onclick = this.host.closeDialog;
-            }, 1200);
-          }
-        } else {
-          this.host.playCue('correct');
-          if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`;
-        }
-
-        this.resolveActiveChallenge({
-          spec: this.activeChallenge?.spec ?? { type: 'park_tree', index },
-          status: 'solved',
+        const isLastStep = currentStepIndex + 1 >= totalSteps;
+        this.host.logRemoteProgress({
+          zoneId,
+          problemId: remoteQ?.id || index + 1,
+          stepId: step.stepId || `tree_${remoteQ?.id || index + 1}_${currentStepIndex + 1}`,
           isCorrect: true,
-          attempts: res.attempts,
-          durationMs: this.currentSession.getDurationMs(),
-          rewards: {
-            xp: delta.alreadyAwakened ? 0 : 20,
-            coins: delta.alreadyAwakened ? 0 : 5
-          }
+          score: isLastStep ? 20 : 10
         });
 
-        const hintBtn = document.getElementById('park-tree-hint');
-        if (hintBtn) hintBtn.hidden = true;
-        const closeBtn = document.getElementById('park-tree-close-btn') as HTMLButtonElement | null;
-        if (closeBtn) {
-          closeBtn.hidden = false;
-          closeBtn.onclick = this.host.closeDialog;
-          closeBtn.focus();
+        if (!isLastStep) {
+          this.host.playCue('correct');
+          if (feedback) {
+            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} hoàn thành xuất sắc! +10 XP`;
+          }
+          const hintBtn = document.getElementById('park-tree-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const nextStepBtn = document.getElementById('park-tree-next-step') as HTMLButtonElement | null;
+          if (nextStepBtn) {
+            nextStepBtn.hidden = false;
+            nextStepBtn.onclick = () => {
+              this.openParkTree(index, remoteParkProblems, zoneConfig, currentStepIndex + 1);
+            };
+            nextStepBtn.focus();
+          }
+        } else {
+          const delta = this.host.adventure.wakeParkTree(index, remoteQ?.id);
+
+          if (!delta.alreadyAwakened) {
+            this.host.getWorld().wakeParkTree(index);
+            this.host.playCue('celebrate');
+            if (feedback) {
+              feedback.textContent = totalSteps > 1
+                ? `✓ Xuất sắc! Hoàn thành cả ${totalSteps} bước! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`
+                : `✓ Chính xác! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`;
+            }
+            this.host.updateHUD();
+
+            if (delta.allTreesCompleted) {
+              setTimeout(() => {
+                this.host.openDialog(
+                  `🌳 ĐẠI THÀNH CÔNG: ${zoneName.toUpperCase()} THỨC TỈNH! 🌳`,
+                  `
+                  <div class="completion-medal">${icon('crown')}</div>
+                  <p class="dialog-copy centered">
+                    Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong ${zoneName}!<br>
+                    Không gian nơi đây giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
+                  </p>
+                  <div class="completion-rewards">
+                    <span>★ +150 XP</span><span>◉ +50 xu</span>
+                  </div>
+                  <button id="close-park-completion" class="primary wide">Tự do dạo chơi ${zoneName} ${icon('arrow')}</button>
+                  `,
+                  'complete'
+                );
+                this.host.updateHUD();
+                const grandBtn = document.getElementById('close-park-completion');
+                if (grandBtn) grandBtn.onclick = this.host.closeDialog;
+              }, 1200);
+            }
+          } else {
+            this.host.playCue('correct');
+            if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`;
+          }
+
+          this.resolveActiveChallenge({
+            spec: this.activeChallenge?.spec ?? { type: 'park_tree', index, stepIndex: currentStepIndex },
+            status: 'solved',
+            isCorrect: true,
+            attempts: res.attempts,
+            durationMs: this.currentSession.getDurationMs(),
+            rewards: {
+              xp: delta.alreadyAwakened ? 0 : 20,
+              coins: delta.alreadyAwakened ? 0 : 5
+            }
+          });
+
+          const hintBtn = document.getElementById('park-tree-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const closeBtn = document.getElementById('park-tree-close-btn') as HTMLButtonElement | null;
+          if (closeBtn) {
+            closeBtn.hidden = false;
+            closeBtn.onclick = this.host.closeDialog;
+            closeBtn.focus();
+          }
         }
       } else {
         if (inputBox) {
@@ -1051,7 +1120,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     this.host.openDialog(
       `Cây Tri Thức #${targetId}: ${badge}`,
       `
-      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / ${totalCount}</div>
+      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / ${totalCount}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
       <div class="flower-status-banner ${isAwakened ? 'bloomed' : 'bud'}">
         ${isAwakened ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.' : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!'}
       </div>
@@ -1067,6 +1136,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         <button id="park-tree-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
         <span>${awakenedCount} / 20 cây đã thức tỉnh</span>
       </div>
+      <button id="park-tree-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
       <button id="park-tree-close-btn" class="primary wide" hidden>Ngắm cây xanh ${icon('arrow')}</button>
       `,
       'flowerQuiz'
@@ -1099,8 +1169,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
   // -------------------------------------------------------------
   // Farm Animal Rescue Dialog
   // -------------------------------------------------------------
-  openFarmAnimal(animalId: string, animalName: string, pd: any): void {
-    let step: RemoteStep = {
+  openFarmAnimal(animalId: string, animalName: string, pd: any, stepIndex = 0): void {
+    let fallbackStep: RemoteStep = {
       stepId: `farm_${animalId}`,
       prompt: `Cứu bé ${animalName}: Tính giá trị của phép tính`,
       options: [{ label: '10', value: '10' }, { label: '20', value: '20' }],
@@ -1109,18 +1179,15 @@ export class ChallengeDialog implements ChallengeSessionPort {
       explanation: 'Lời giải chi tiết.'
     };
 
-    if (pd?.steps && Array.isArray(pd.steps) && pd.steps.length > 0) {
-      step = pd.steps[0];
-    } else if (pd?.Problem) {
+    if (pd?.Problem) {
       // Legacy or different format
       const rawOpts: string[] = typeof pd.Options === 'string'
         ? pd.Options.split('\n')
         : (Array.isArray(pd.Options) ? pd.Options : []);
-      step = {
+      fallbackStep = {
         stepId: `farm_${animalId}`,
         prompt: pd.Problem,
         options: rawOpts.map((opt: string, idx: number) => {
-          const letter = String.fromCharCode(65 + idx);
           return { label: opt, value: opt };
         }),
         answer: pd.Answer,
@@ -1129,13 +1196,22 @@ export class ChallengeDialog implements ChallengeSessionPort {
       };
     }
 
+    const steps: RemoteStep[] = (pd?.steps && Array.isArray(pd.steps) && pd.steps.length > 0)
+      ? pd.steps
+      : [fallbackStep];
+    const totalSteps = steps.length;
+    const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
+    const step = steps[currentStepIndex] || fallbackStep;
+
     const title = `Cứu Bé ${animalName}`;
     const badge = `🐾 Giải Cứu Thú Cưng`;
 
     const challenge: FlowerChallenge = {
-      id: `farm_animal_${animalId}`,
+      id: `farm_animal_${animalId}_${currentStepIndex}`,
       kind: 'flower',
       index: 0,
+      stepIndex: currentStepIndex,
+      totalSteps,
       title,
       badge,
       color: 0xf59e0b,
@@ -1206,31 +1282,61 @@ export class ChallengeDialog implements ChallengeSessionPort {
         const feedback = document.getElementById('farm-feedback');
         if (feedback) feedback.className = 'feedback success';
         
-        this.host.playCue('celebrate');
-        if (feedback) feedback.textContent = `✓ Chính xác! Bạn đã giúp bé ${animalName} trở về chuồng an toàn!`;
-        this.host.updateHUD();
-        
-        // Let the world handle animation/trigger clearing immediately
-        const world = this.host.getWorld();
-        if ((world as any).farmSanctuary) {
-          (world as any).farmSanctuary.onAnimalRescued(animalId);
-        }
-
-        this.resolveActiveChallenge({
-          spec: this.activeChallenge?.spec ?? { type: 'farm_animal', animalId, animalName, problemData: pd },
-          status: 'solved',
+        const isLastStep = currentStepIndex + 1 >= totalSteps;
+        this.host.logRemoteProgress({
+          zoneId: 8,
+          problemId: pd?.id || animalId,
+          stepId: step.stepId || `farm_${animalId}_${currentStepIndex + 1}`,
           isCorrect: true,
-          attempts: res.attempts,
-          durationMs: this.currentSession.getDurationMs()
+          score: isLastStep ? 20 : 10
         });
 
-        const hintBtn = document.getElementById('farm-hint');
-        if (hintBtn) hintBtn.hidden = true;
-        const closeBtn = document.getElementById('farm-close-btn') as HTMLButtonElement | null;
-        if (closeBtn) {
-          closeBtn.hidden = false;
-          closeBtn.onclick = this.host.closeDialog;
-          closeBtn.focus();
+        if (!isLastStep) {
+          this.host.playCue('correct');
+          if (feedback) {
+            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} thành công! Tiếp tục giải cứu bé ${animalName} nhé!`;
+          }
+          const hintBtn = document.getElementById('farm-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const nextStepBtn = document.getElementById('farm-next-step') as HTMLButtonElement | null;
+          if (nextStepBtn) {
+            nextStepBtn.hidden = false;
+            nextStepBtn.onclick = () => {
+              this.openFarmAnimal(animalId, animalName, pd, currentStepIndex + 1);
+            };
+            nextStepBtn.focus();
+          }
+        } else {
+          this.host.playCue('celebrate');
+          if (feedback) {
+            feedback.textContent = totalSteps > 1
+              ? `✓ Xuất sắc! Vượt qua cả ${totalSteps} bước! Bạn đã giúp bé ${animalName} trở về chuồng an toàn!`
+              : `✓ Chính xác! Bạn đã giúp bé ${animalName} trở về chuồng an toàn!`;
+          }
+          this.host.updateHUD();
+          
+          // Let the world handle animation/trigger clearing immediately
+          const world = this.host.getWorld();
+          if ((world as any).farmSanctuary) {
+            (world as any).farmSanctuary.onAnimalRescued(animalId);
+          }
+
+          this.resolveActiveChallenge({
+            spec: this.activeChallenge?.spec ?? { type: 'farm_animal', animalId, animalName, problemData: pd, stepIndex: currentStepIndex },
+            status: 'solved',
+            isCorrect: true,
+            attempts: res.attempts,
+            durationMs: this.currentSession.getDurationMs()
+          });
+
+          const hintBtn = document.getElementById('farm-hint');
+          if (hintBtn) hintBtn.hidden = true;
+          const closeBtn = document.getElementById('farm-close-btn') as HTMLButtonElement | null;
+          if (closeBtn) {
+            closeBtn.hidden = false;
+            closeBtn.onclick = this.host.closeDialog;
+            closeBtn.focus();
+          }
         }
       } else {
         if (inputBox) {
@@ -1294,7 +1400,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     this.host.openDialog(
       `Cứu Bé ${animalName}`,
       `
-      <div class="dialog-eyebrow">NÔNG TRẠI VUI VẺ · BẮT THÚ VỀ CHUỒNG</div>
+      <div class="dialog-eyebrow">NÔNG TRẠI VUI VẺ · BẮT THÚ VỀ CHUỒNG${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
       <div class="flower-status-banner bud">
         🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!
       </div>
@@ -1309,6 +1415,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       <div class="quiz-footer">
         <button id="farm-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
       </div>
+      <button id="farm-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
       <button id="farm-close-btn" class="primary wide" hidden>Tiếp tục dạo chơi ${icon('arrow')}</button>
       `,
       'farmAnimal'
