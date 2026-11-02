@@ -570,10 +570,16 @@ export class FarmSanctuary {
         entity.targetPos = this.getRandomRoamPos(entity.root.position);
 
         // Create interaction trigger for math challenge
-        const problemData =
+        const rawProblem =
           questions && questions[i]
             ? questions[i]
             : generateFarmMultiplicationProblem(i, kind);
+
+        const problemData = {
+          ...rawProblem,
+          title: rawProblem.title || rawProblem.Title || `Bài ${i + 1}`,
+          subtitle: rawProblem.subtitle || rawProblem.Subtitle || ''
+        };
 
         this.interactTriggers.push({
           position: entity.root.position.clone(),

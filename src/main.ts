@@ -1029,16 +1029,25 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const aPos = animalEntity?.root?.position ?? { x: 0, z: 0 };
       const name = `${getAnimalVietnameseName(kind)} #${i + 1}`;
       const emoji = animalEmojis[kind] || '🐾';
+      const cardTitle = (qItem?.title && qItem?.subtitle && qItem.title !== qItem.subtitle)
+        ? `${qItem.title}: ${qItem.subtitle}`
+        : (qItem?.subtitle || qItem?.title || name);
+      const cardSub = isRescued
+        ? 'Bé đã giải cứu con vật về chuồng an toàn và nhận nông sản!'
+        : ((qItem?.steps && qItem.steps[0] ? qItem.steps[0].prompt : qItem?.subtitle) || 'Đang lang thang ngoài cánh đồng, hãy đến gần giải toán để đưa về chuồng!');
       return `
         <div class="archimedes-monolith-card ${isRescued ? 'completed' : ''}">
           <div class="archimedes-card-header">
-            <span class="archimedes-card-page">${emoji} Thú Cưng #${i + 1}</span>
+            <span class="archimedes-card-page">${emoji} ${name}</span>
             <span class="archimedes-card-status">${isRescued ? '🎉 Đã về chuồng' : '🐾 Đang đi lạc'}</span>
           </div>
-          <div class="archimedes-card-title">${name}</div>
-          <div class="archimedes-card-sub">${isRescued ? 'Bé đã giải cứu con vật về chuồng an toàn và nhận nông sản!' : 'Đang lang thang ngoài cánh đồng, hãy đến gần giải toán để đưa về chuồng!'}</div>
+          <div class="archimedes-card-title">${cardTitle}</div>
+          <div class="archimedes-card-sub">${cardSub}</div>
           <div class="archimedes-card-actions">
-            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${currentZone.center.x + aPos.x}" data-z="${currentZone.center.z + aPos.z + 2}" data-name="${name}">
+            <button class="archimedes-card-action farm-animal-open-btn" data-id="${animalId}">
+              ${isRescued ? `${icon('check')} Xem lại` : `🐾 Giải cứu`}
+            </button>
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${currentZone.center.x + aPos.x}" data-z="${currentZone.center.z + aPos.z + 2}" data-name="${cardTitle}">
               🚀 Đến chỗ thú cưng
             </button>
           </div>
@@ -1205,6 +1214,14 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       e.stopPropagation();
       const tIdx = Number(btn.dataset.index ?? '0');
       openParkTreeDialog(tIdx);
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.farm-animal-open-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const aId = btn.dataset.id ?? '';
+      openFarmAnimalDialog(aId);
     };
   });
 }
@@ -2111,7 +2128,13 @@ function onWorldFrame(
   } else if (nearFarmAnimalId) {
     const animal = world?.farmSanctuary?.animals.find(a => a.id === nearFarmAnimalId);
     const animalName = animal ? getAnimalVietnameseName(animal.kind) : 'Bé Thú';
-    interactHtml = `🐾 <b>Bé ${animalName} Cần Giúp Đỡ</b> (Bấm E để trả lời câu hỏi) ${icon('arrow')}`;
+    const trigger = world?.farmSanctuary?.getInteractTriggers().find(t => t.animalId === nearFarmAnimalId);
+    const pd = trigger?.problemData;
+    const probTitle = (pd?.title && pd?.subtitle && pd.title !== pd.subtitle)
+      ? `${pd.title}: ${pd.subtitle}`
+      : (pd?.subtitle || pd?.title || `Bé ${animalName} Cần Giúp Đỡ`);
+    const isRescued = adventure.getState().farmRescued?.[nearFarmAnimalId] === true;
+    interactHtml = `🐾 <b>${probTitle}</b> ${isRescued ? '(Đã về chuồng - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearParkTree !== -1) {
     const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');

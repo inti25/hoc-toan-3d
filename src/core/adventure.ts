@@ -686,7 +686,7 @@ export function generateFarmMultiplicationProblem(
     dog: 'cún'
   };
   const animalName = names[species] || 'bạn thú';
-  
+
   const isWordProblem = Math.random() > 0.5;
 
   let prompt = '';
@@ -711,6 +711,8 @@ export function generateFarmMultiplicationProblem(
 
   return {
     id: `farm_${species}_${animalIndex}`,
+    title: `Bài ${animalIndex + 1}:`,
+    subtitle: `Phép tính nhân cứu bé ${animalName}`,
     ZoneName: 'Nông Trại Vui Vẻ',
     Problem: prompt,
     Hint: `Nhẩm bảng nhân ${table} xem sao! (${table} × ${multiplier})`,

@@ -1203,8 +1203,10 @@ export class ChallengeDialog implements ChallengeSessionPort {
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
     const step = steps[currentStepIndex] || fallbackStep;
 
-    const title = `Cứu Bé ${animalName}`;
-    const badge = `🐾 Giải Cứu Thú Cưng`;
+    const problemTitle = (pd?.title && pd?.subtitle && pd.title !== pd.subtitle)
+      ? `${pd.title} · ${pd.subtitle}`
+      : (pd?.subtitle || pd?.title || pd?.Title || pd?.Subtitle || `Thử thách: Cứu Bé ${animalName}`);
+    const badge = pd?.badge || `🐾 Giải Cứu Thú Cưng`;
 
     const challenge: FlowerChallenge = {
       id: `farm_animal_${animalId}_${currentStepIndex}`,
@@ -1212,9 +1214,9 @@ export class ChallengeDialog implements ChallengeSessionPort {
       index: 0,
       stepIndex: currentStepIndex,
       totalSteps,
-      title,
+      title: problemTitle,
       badge,
-      color: 0xf59e0b,
+      color: pd?.color || 0xf59e0b,
       prompt: step.prompt,
       imageUrl: step.imageUrl || pd?.imageUrl,
       options: step.options.map((o: { label: string; value: string }) => ({ value: o.value, label: o.label })),
@@ -1225,7 +1227,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       diagramSvg: step.diagramSvg,
       flowerQuestion: {
         id: pd?.id || animalId,
-        title,
+        title: problemTitle,
         question: step.prompt,
         imageUrl: step.imageUrl || pd?.imageUrl,
         options: step.options,
@@ -1234,7 +1236,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         explanation: step.explanation,
         explanationImageUrl: step.explanationImageUrl,
         badge,
-        color: 0xf59e0b
+        color: pd?.color || 0xf59e0b
       }
     };
 
@@ -1405,9 +1407,9 @@ export class ChallengeDialog implements ChallengeSessionPort {
         🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!
       </div>
       <div class="flower-question-box">
-        <div class="flower-question-title">${title}</div>
+        <div class="flower-question-title">${problemTitle}</div>
         <div class="flower-question-prompt">${step.prompt}</div>
-        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
+        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, problemTitle)}
       </div>
       ${bodyControls}
       <div id="farm-feedback" class="feedback" aria-live="polite"></div>
