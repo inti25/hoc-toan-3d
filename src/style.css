@@ -11,7 +11,8 @@
 .flower-status-banner.bud{background:#eef6e8;color:#2e6332;border:1px solid #c7e3bc}
 .flower-status-banner.bloomed{background:#fdf0f4;color:#a02956;border:1px solid #f6cad8}
 .flower-question-box{background:#fbfbf4;border:2px solid #e7ebd8;border-radius:16px;padding:18px;margin-bottom:18px;text-align:center}
-.flower-question-title{font-size:13px;letter-spacing:1px;color:#85754f;text-transform:uppercase;margin:0 0 8px}
+.flower-question-title{font-size:13px;font-weight:800;letter-spacing:0.8px;color:#85754f;text-transform:uppercase;margin:0 0 4px;white-space:pre-line;line-height:1.4}
+.flower-question-subtitle{font-size:14px;font-weight:600;color:#285740;margin:0 0 10px;line-height:1.5;white-space:pre-line;word-break:break-word;text-transform:none}
 .flower-question-prompt{font-size:20px;font-weight:900;color:var(--green);margin:0;line-height:1.45}
 .flower-answers .answer{min-height:75px}
 .flower-answers .answer>span{font-size:20px;font-weight:800;white-space:normal;word-break:break-word}
@@ -48,7 +49,9 @@
 .archimedes-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .archimedes-card-page{font-size:10px;font-weight:bold;padding:2px 7px;border-radius:6px;background:#e5f0dc;color:#356c42}
 .archimedes-card-status{font-size:12px}
-.archimedes-card-title{font-size:14px;font-weight:800;color:var(--green);margin:0 0 4px;line-height:1.35}
+.archimedes-card-title{font-size:14px;font-weight:800;color:var(--green);margin:0 0 4px;line-height:1.35;white-space:pre-line;word-break:break-word}
+.archimedes-card-sub{font-size:12px;font-weight:600;color:#3d614e;margin:0 0 6px;line-height:1.45;white-space:pre-line;word-break:break-word;text-transform:none}
+.archimedes-card-desc{font-size:11px;color:#64748b;margin:0 0 8px;line-height:1.4;white-space:pre-line;word-break:break-word}
 .archimedes-card-actions{display:flex;gap:6px;align-items:center;margin-top:auto}
 .archimedes-card-action{font-size:11px;font-weight:bold;padding:6px 12px;border-radius:8px;border:0;background:#e7efe0;color:#2c5b46;display:flex;align-items:center;gap:4px;cursor:pointer}
 .archimedes-card-teleport{font-size:11px;font-weight:bold;padding:6px 10px;border-radius:8px;border:1px solid #c8ddbf;background:#ffffff;color:#24583e;display:flex;align-items:center;gap:4px;cursor:pointer;transition:background .15s}

@@ -302,4 +302,9 @@ _Avoid_: Đồ loot, Drop rác, Vật phẩm rơi
 Cổng dịch chuyển kiến trúc gỗ mộc mạc đặt bên bờ sông Làng Khởi Đầu (gần cối xay gió), kết nối trực tiếp học sinh tới các vùng đất mang Bản Mẫu Nông Trại (`FARM_SANCTUARY`).
 _Avoid_: Cổng đá, Cổng Archimedes, Cửa chuồng
 
+**Nút Tương Tác (Interact Button)**:
+Nút điều khiển động nổi ở cạnh dưới HUD (`#interact`), tự động xuất hiện kèm phím tắt `E` và tiêu đề ngắn gọn của thử thách khi dũng sĩ tiến vào phạm vi kích hoạt của một thực thể trong thế giới 3D.
+_Avoid_: Nút interact, Button interact, Phím bấm E, Pop-up E
+
+
 

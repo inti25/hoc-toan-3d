@@ -571,13 +571,16 @@ export class ChallengeDialog implements ChallengeSessionPort {
     let challenge: FlowerChallenge;
     if (remoteQ && steps) {
       const step = steps[currentStepIndex] || steps[0];
+      const flowerTitle = remoteQ.title || `Hoa Thử Thách #${index + 1}`;
+      const flowerSubtitle = (remoteQ.subtitle && remoteQ.subtitle !== remoteQ.title) ? remoteQ.subtitle : '';
       challenge = {
         id: `flower_${index}_${currentStepIndex}`,
         kind: 'flower',
         index,
         stepIndex: currentStepIndex,
         totalSteps,
-        title: remoteQ.subtitle || remoteQ.title || `Hoa Thử Thách #${index + 1}`,
+        title: flowerTitle,
+        subtitle: flowerSubtitle,
         badge: remoteQ.badge || `🌸 Hoa Tri Thức #${index + 1}`,
         color: remoteQ.color || 0xec4899,
         prompt: step.prompt,
@@ -589,7 +592,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
         explanationImageUrl: step.explanationImageUrl,
         flowerQuestion: {
           id: typeof remoteQ.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ.id), 10) || index + 1),
-          title: remoteQ.subtitle || remoteQ.title,
+          title: flowerTitle,
+          subtitle: flowerSubtitle,
           question: step.prompt,
           imageUrl: step.imageUrl,
           options: step.options,
@@ -811,6 +815,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       </div>
       <div class="flower-question-box">
         <div class="flower-question-title">${q.title}</div>
+        ${q.subtitle ? `<div class="flower-question-subtitle">${q.subtitle}</div>` : ''}
         <div class="flower-question-prompt">${q.question}</div>
         ${renderQuestionImage(challenge.imageUrl || q.imageUrl, q.title)}
       </div>
@@ -889,7 +894,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
     step = steps[currentStepIndex] || step;
 
-    const title = remoteQ?.subtitle || remoteQ?.title || `Cây Tri Thức #${targetId}`;
+    const title = remoteQ?.title || `Cây Tri Thức #${targetId}`;
+    const subtitle = (remoteQ?.subtitle && remoteQ.subtitle !== title) ? remoteQ.subtitle : '';
     const badge = remoteQ?.badge || `🌳 Cây Tri Thức #${targetId}`;
 
     const challenge: FlowerChallenge = {
@@ -899,6 +905,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       stepIndex: currentStepIndex,
       totalSteps,
       title,
+      subtitle,
       badge,
       color: remoteQ?.color || 0x10b981,
       prompt: step.prompt,
@@ -1126,6 +1133,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       </div>
       <div class="flower-question-box">
         <div class="flower-question-title">${title}</div>
+        ${subtitle ? `<div class="flower-question-subtitle">${subtitle}</div>` : ''}
         <div class="flower-question-prompt">${step.prompt}</div>
         ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
       </div>
@@ -1203,9 +1211,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
     const step = steps[currentStepIndex] || fallbackStep;
 
-    const problemTitle = (pd?.title && pd?.subtitle && pd.title !== pd.subtitle)
-      ? `${pd.title} · ${pd.subtitle}`
-      : (pd?.subtitle || pd?.title || pd?.Title || pd?.Subtitle || `Thử thách: Cứu Bé ${animalName}`);
+    const title = pd?.title || pd?.Title || `Thử thách: Cứu Bé ${animalName}`;
+    const subtitle = (pd?.subtitle && pd.subtitle !== title) ? pd.subtitle : (pd?.Subtitle && pd.Subtitle !== title ? pd.Subtitle : '');
     const badge = pd?.badge || `🐾 Giải Cứu Thú Cưng`;
 
     const challenge: FlowerChallenge = {
@@ -1214,7 +1221,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
       index: 0,
       stepIndex: currentStepIndex,
       totalSteps,
-      title: problemTitle,
+      title,
+      subtitle,
       badge,
       color: pd?.color || 0xf59e0b,
       prompt: step.prompt,
@@ -1227,7 +1235,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
       diagramSvg: step.diagramSvg,
       flowerQuestion: {
         id: pd?.id || animalId,
-        title: problemTitle,
+        title,
+        subtitle,
         question: step.prompt,
         imageUrl: step.imageUrl || pd?.imageUrl,
         options: step.options,
@@ -1407,9 +1416,10 @@ export class ChallengeDialog implements ChallengeSessionPort {
         🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!
       </div>
       <div class="flower-question-box">
-        <div class="flower-question-title">${problemTitle}</div>
+        <div class="flower-question-title">${title}</div>
+        ${subtitle ? `<div class="flower-question-subtitle">${subtitle}</div>` : ''}
         <div class="flower-question-prompt">${step.prompt}</div>
-        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, problemTitle)}
+        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
       </div>
       ${bodyControls}
       <div id="farm-feedback" class="feedback" aria-live="polite"></div>
@@ -1759,6 +1769,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
         ${isDone ? '✨ Bia đá này đã được bạn thắp sáng! Có thể luyện tập lại để nhận thêm XP.' : '🔒 Bia đá đang đợi bạn giải câu đố để thắp sáng nguồn năng lượng cổ xưa.'}
       </div>
       <div class="flower-question-box">
+        <div class="flower-question-title">${m.title}</div>
+        ${m.subtitle && m.subtitle !== m.title ? `<div class="flower-question-subtitle">${m.subtitle}</div>` : ''}
         <div class="flower-question-prompt">${step.prompt}</div>
         ${step.diagramSvg ? `<div class="step-diagram-svg">${step.diagramSvg}</div>` : ''}
         ${renderQuestionImage(step.imageUrl || challenge.imageUrl, challenge.title)}

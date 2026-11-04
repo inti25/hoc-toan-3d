@@ -711,7 +711,7 @@ export function generateFarmMultiplicationProblem(
 
   return {
     id: `farm_${species}_${animalIndex}`,
-    title: `Bài ${animalIndex + 1}:`,
+    title: `Bài ${animalIndex + 1}: Cứu Bé ${animalName}`,
     subtitle: `Phép tính nhân cứu bé ${animalName}`,
     ZoneName: 'Nông Trại Vui Vẻ',
     Problem: prompt,

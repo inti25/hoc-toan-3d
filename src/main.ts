@@ -923,19 +923,23 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const flowerId = f.id ?? (i + 1);
       const bloomed = adventure.isProblemSolved(flowerId) || state.flowers[i];
       const flowerPos = world?.flowers[i]?.position ?? { x: 13 + (i % 5) * 3, z: -4 + Math.floor(i / 5) * 8 };
+      const flowerTitle = f.title || `Hoa Tri Thức Số ${i + 1}`;
+      const flowerSubtitle = (f.subtitle && f.subtitle !== f.title) ? f.subtitle : '';
+      const flowerPrompt = (f.steps && f.steps[0] ? f.steps[0].prompt : '') || 'Làm nở hoa bằng cách trả lời đúng câu hỏi';
       return `
         <div class="archimedes-monolith-card ${bloomed ? 'completed' : ''}">
           <div class="archimedes-card-header">
             <span class="archimedes-card-page">${f.badge || `Cây Hoa #${flowerId}`}</span>
             <span class="archimedes-card-status">${bloomed ? '🌸 Đã nở' : '🌱 Đang ấp nụ'}</span>
           </div>
-          <div class="archimedes-card-title">${f.subtitle || f.title || `Hoa Tri Thức Số ${i + 1}`}</div>
-          <div class="archimedes-card-sub">${(f.steps && f.steps[0] ? f.steps[0].prompt : f.subtitle) || 'Làm nở hoa bằng cách trả lời đúng câu hỏi'}</div>
+          <div class="archimedes-card-title">${flowerTitle}</div>
+          ${flowerSubtitle ? `<div class="archimedes-card-sub">${flowerSubtitle}</div>` : ''}
+          ${flowerPrompt && flowerPrompt !== flowerSubtitle ? `<div class="archimedes-card-desc">${flowerPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
             <button class="archimedes-card-action flower-open-btn" data-index="${i}">
               ${bloomed ? `${icon('check')} Xem lại` : `🌸 Làm nở hoa`}
             </button>
-            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${flowerPos.x - 1.5}" data-z="${flowerPos.z}" data-name="${f.title || `Cây Hoa ${i + 1}`}">
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${flowerPos.x - 1.5}" data-z="${flowerPos.z}" data-name="${flowerTitle}">
               🚀 Đến ngay
             </button>
           </div>
@@ -967,19 +971,23 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const treeId = t.id ?? (i + 1);
       const awakened = adventure.isParkTreeAwakened(i) || adventure.isProblemSolved(treeId);
       const treePos = world?.parkTrees[i]?.position ?? { x: currentZone.center.x, z: currentZone.center.z };
+      const treeTitle = t.title || `Cây Tri Thức Số ${i + 1}`;
+      const treeSubtitle = (t.subtitle && t.subtitle !== t.title) ? t.subtitle : '';
+      const treePrompt = (t.steps && t.steps[0] ? t.steps[0].prompt : '') || 'Đánh thức cây xanh bằng cách trả lời đúng';
       return `
         <div class="archimedes-monolith-card ${awakened ? 'completed' : ''}">
           <div class="archimedes-card-header">
             <span class="archimedes-card-page">${t.badge || `Cây #${treeId}`}</span>
             <span class="archimedes-card-status">${awakened ? '🌳 Đã thức tỉnh' : '🩶 Đang ngủ say'}</span>
           </div>
-          <div class="archimedes-card-title">${t.subtitle || t.title || `Cây Tri Thức Số ${i + 1}`}</div>
-          <div class="archimedes-card-sub">${(t.steps && t.steps[0] ? t.steps[0].prompt : t.subtitle) || 'Đánh thức cây xanh bằng cách trả lời đúng'}</div>
+          <div class="archimedes-card-title">${treeTitle}</div>
+          ${treeSubtitle ? `<div class="archimedes-card-sub">${treeSubtitle}</div>` : ''}
+          ${treePrompt && treePrompt !== treeSubtitle ? `<div class="archimedes-card-desc">${treePrompt}</div>` : ''}
           <div class="archimedes-card-actions">
             <button class="archimedes-card-action park-tree-open-btn" data-index="${i}">
               ${awakened ? `${icon('check')} Xem lại` : `🌳 Thức tỉnh cây`}
             </button>
-            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${treePos.x}" data-z="${treePos.z + 2}" data-name="${t.title || `Cây Tri Thức ${i + 1}`}">
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${treePos.x}" data-z="${treePos.z + 2}" data-name="${treeTitle}">
               🚀 Đến ngay
             </button>
           </div>
@@ -1029,12 +1037,11 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const aPos = animalEntity?.root?.position ?? { x: 0, z: 0 };
       const name = `${getAnimalVietnameseName(kind)} #${i + 1}`;
       const emoji = animalEmojis[kind] || '🐾';
-      const cardTitle = (qItem?.title && qItem?.subtitle && qItem.title !== qItem.subtitle)
-        ? `${qItem.title}: ${qItem.subtitle}`
-        : (qItem?.subtitle || qItem?.title || name);
-      const cardSub = isRescued
+      const cardTitle = qItem?.title || name;
+      const cardSubtitle = (qItem?.subtitle && qItem.subtitle !== qItem.title) ? qItem.subtitle : '';
+      const cardPrompt = (qItem?.steps && qItem.steps[0] ? qItem.steps[0].prompt : '') || (isRescued
         ? 'Bé đã giải cứu con vật về chuồng an toàn và nhận nông sản!'
-        : ((qItem?.steps && qItem.steps[0] ? qItem.steps[0].prompt : qItem?.subtitle) || 'Đang lang thang ngoài cánh đồng, hãy đến gần giải toán để đưa về chuồng!');
+        : 'Đang lang thang ngoài cánh đồng, hãy đến gần giải toán để đưa về chuồng!');
       return `
         <div class="archimedes-monolith-card ${isRescued ? 'completed' : ''}">
           <div class="archimedes-card-header">
@@ -1042,7 +1049,8 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
             <span class="archimedes-card-status">${isRescued ? '🎉 Đã về chuồng' : '🐾 Đang đi lạc'}</span>
           </div>
           <div class="archimedes-card-title">${cardTitle}</div>
-          <div class="archimedes-card-sub">${cardSub}</div>
+          ${cardSubtitle ? `<div class="archimedes-card-sub">${cardSubtitle}</div>` : ''}
+          ${cardPrompt && cardPrompt !== cardSubtitle ? `<div class="archimedes-card-desc">${cardPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
             <button class="archimedes-card-action farm-animal-open-btn" data-id="${animalId}">
               ${isRescued ? `${icon('check')} Xem lại` : `🐾 Giải cứu`}
@@ -1075,19 +1083,23 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     const monolithCardsHtml = qList.map((m) => {
       const isDone = adventure.isProblemSolved(m.id) || (typeof m.id === 'number' && m.id >= 306 && state.monoliths[m.id - 306]);
       const pPos = m.position || { x: currentZone?.center.x || 0, z: currentZone?.center.z || 0 };
+      const mTitle = m.title || `Bia Đá ${m.id}`;
+      const mSubtitle = (m.subtitle && m.subtitle !== m.title) ? m.subtitle : '';
+      const mPrompt = (m.steps && m.steps[0] ? m.steps[0].prompt : '');
       return `
         <div class="archimedes-monolith-card ${isDone ? 'completed' : ''}" data-id="${m.id}">
           <div class="archimedes-card-header">
             <span class="archimedes-card-page">${m.badge || `Bia Đá #${m.id}`}</span>
             <span class="archimedes-card-status">${isDone ? '🏆 Đã giải' : '✨ Thử thách'}</span>
           </div>
-          <div class="archimedes-card-title">${m.title || `Bia Đá ${m.id}`}</div>
-          <div class="archimedes-card-sub">${m.subtitle || (m.steps && m.steps[0] ? m.steps[0].prompt : '')}</div>
+          <div class="archimedes-card-title">${mTitle}</div>
+          ${mSubtitle ? `<div class="archimedes-card-sub">${mSubtitle}</div>` : ''}
+          ${mPrompt && mPrompt !== mSubtitle ? `<div class="archimedes-card-desc">${mPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
             <button class="archimedes-card-action monolith-open-btn" data-index="${m.id}">
               ${isDone ? `${icon('check')} Xem lại` : `${icon('star')} Giải bài`}
             </button>
-            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${pPos.x - 1.5}" data-z="${pPos.z}" data-name="${m.title || `Bia Đá ${m.id}`}">
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${pPos.x - 1.5}" data-z="${pPos.z}" data-name="${mTitle}">
               🚀 Đến ngay
             </button>
           </div>
@@ -2130,9 +2142,7 @@ function onWorldFrame(
     const animalName = animal ? getAnimalVietnameseName(animal.kind) : 'Bé Thú';
     const trigger = world?.farmSanctuary?.getInteractTriggers().find(t => t.animalId === nearFarmAnimalId);
     const pd = trigger?.problemData;
-    const probTitle = (pd?.title && pd?.subtitle && pd.title !== pd.subtitle)
-      ? `${pd.title}: ${pd.subtitle}`
-      : (pd?.subtitle || pd?.title || `Bé ${animalName} Cần Giúp Đỡ`);
+    const probTitle = pd?.title || pd?.subtitle || `Bé ${animalName} Cần Giúp Đỡ`;
     const isRescued = adventure.getState().farmRescued?.[nearFarmAnimalId] === true;
     interactHtml = `🐾 <b>${probTitle}</b> ${isRescued ? '(Đã về chuồng - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
@@ -2141,14 +2151,14 @@ function onWorldFrame(
     const sheetName = parkZone?.sheetName || 'CongVienXanh';
     const parkQuestions = activeRemoteQuestions[sheetName] || [];
     const prob = parkQuestions[nearParkTree];
-    const treeTitle = prob?.title || `Cây Tri Thức #${nearParkTree + 1}`;
+    const treeTitle = prob?.title || prob?.subtitle || `Cây Tri Thức #${nearParkTree + 1}`;
     const awakened = adventure.isParkTreeAwakened(nearParkTree) || (prob?.id ? adventure.isProblemSolved(prob.id) : false);
     interactHtml = `🌳 <b>${treeTitle}</b> ${awakened ? '(Đã thức tỉnh - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearMonolith !== -1) {
     const dynamicProb = activeMonolithProblems[nearMonolith];
     const mId = dynamicProb?.id !== undefined ? dynamicProb.id : (306 + nearMonolith);
-    const mTitle = dynamicProb?.title || `Bia Đá ${mId}`;
+    const mTitle = dynamicProb?.title || dynamicProb?.subtitle || `Bia Đá ${mId}`;
     const done = adventure.isProblemSolved(mId) || (typeof mId === 'number' && mId >= 306 && mId < 306 + adventure.getState().monoliths.length && adventure.getState().monoliths[mId - 306]);
     interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
@@ -2163,8 +2173,10 @@ function onWorldFrame(
     interactHtml = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearFlower !== -1) {
+    const flowerProb = activeRemoteQuestions['VuonHoa']?.[nearFlower];
+    const flowerTitle = flowerProb?.title || flowerProb?.subtitle || `Cây Hoa ${nearFlower + 1}`;
     const bloomed = adventure.getState().flowers[nearFlower];
-    interactHtml = `${icon('flower')} <b>Cây Hoa ${nearFlower + 1}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`;
+    interactHtml = `${icon('flower')} <b>${flowerTitle}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (isNear) {
     interactHtml = `<kbd>E</kbd> Nói chuyện với Milo ${icon('arrow')}`;

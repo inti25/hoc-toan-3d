@@ -101,6 +101,7 @@ export interface FlowerChallenge extends BaseChallenge {
   kind: 'flower';
   index: number;
   title: string;
+  subtitle?: string;
   badge: string;
   color: number;
   answer: string;
@@ -174,7 +175,8 @@ export function createFlowerChallenge(target: number | FlowerQuestion | Archimed
       const step = target.steps[currentStepIndex] || target.steps[0];
       q = {
         id: target.id,
-        title: target.subtitle || target.title || `Hoa Thử Thách #${target.id}`,
+        title: target.title || `Hoa Thử Thách #${target.id}`,
+        subtitle: (target.subtitle && target.subtitle !== target.title) ? target.subtitle : '',
         question: step.prompt,
         options: step.options,
         answer: step.answer,

@@ -6,6 +6,7 @@ export interface FlowerOption {
 export interface FlowerQuestion {
   id: number;
   title: string;
+  subtitle?: string;
   question: string;
   imageUrl?: string;
   options: FlowerOption[];
