@@ -300,8 +300,9 @@ export class SpatialWorld {
         return pz.name || 'Công Viên Xanh';
       }
     }
-    if (this.x <= 4) return 'Làng Khởi Đầu';
-    if (this.x <= 34) return 'Vườn Hoa Tri Thức';
+    if (this.x <= 4 && Math.abs(this.z) <= 18.8) return 'Làng Khởi Đầu';
+    if (this.x > 4 && this.x < 10 && Math.abs(this.z) <= 1.4) return 'Làng Khởi Đầu';
+    if (this.x <= 34 && Math.abs(this.z) <= 18.8) return 'Vườn Hoa Tri Thức';
     if (this.x >= 49 && this.x <= 71 && Math.abs(this.z) <= 11) return 'Đền Cổng Archimedes';
 
     // 5 Ốc Đảo Archimedes
@@ -319,7 +320,12 @@ export class SpatialWorld {
     }
 
     for (const isl of this.dynamicIslands) {
-      if (usesLakeTerrain(isl.template)) {
+      if (isl.template === 'FARM_SANCTUARY') {
+        const farmRadius = Math.max(34, Math.max(isl.w, isl.d) / 2 + 18) + 1.5;
+        if (Math.hypot(this.x - isl.cx, this.z - isl.cz) <= farmRadius) {
+          return isl.name || 'Nông Trại';
+        }
+      } else if (usesLakeTerrain(isl.template)) {
         if (Math.hypot(this.x - isl.cx, this.z - isl.cz) <= LAKE_WALK_OUTER + 1.5) {
           return isl.name || 'Vùng Đất Mới';
         }
@@ -456,7 +462,7 @@ export class SpatialWorld {
   }
 
   isInGarden(): boolean {
-    return this.x > 8 && this.x <= 35;
+    return this.x > 8 && this.x <= 35 && Math.abs(this.z) <= 18.8;
   }
 
   isInArchimedesRealm(): boolean {

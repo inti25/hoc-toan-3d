@@ -22,6 +22,45 @@ import { FarmSanctuary } from './farm/FarmSanctuary';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
+/**
+ * Builds portal links connecting Starter Village to dynamic FARM_SANCTUARY zones.
+ */
+export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[] {
+  if (farmZones.length === 0) return [];
+  const portals: PortalLink[] = [];
+
+  if (farmZones.length === 1) {
+    const fz = farmZones[0];
+    portals.push({
+      id: 'village_to_farm',
+      name: fz.name ? `Đến ${fz.name}` : 'Cổng Nông Trại',
+      source: { x: -8, z: 14 },
+      target: { x: fz.center.x - 8, z: fz.center.z + 10 },
+      triggerRadius: 1.5
+    });
+  } else {
+    portals.push({
+      id: 'village_to_multi_farm',
+      name: 'Cổng Nông Trại',
+      source: { x: -8, z: 14 },
+      target: { x: farmZones[0].center.x - 8, z: farmZones[0].center.z + 10 },
+      triggerRadius: 1.5
+    });
+  }
+
+  for (const z of farmZones) {
+    portals.push({
+      id: `z${z.id}_to_village_farm`,
+      name: 'Cổng dịch chuyển về Làng Khởi Đầu',
+      source: { x: z.center.x - 8, z: z.center.z + 14 },
+      target: { x: -8, z: 12 },
+      triggerRadius: 1.5
+    });
+  }
+
+  return portals;
+}
+
 interface Spark { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }
 interface TrailParticle {
   mesh: THREE.Mesh;
@@ -71,6 +110,7 @@ export class World {
   readonly archimedes: ArchimedesZoneBuilder;
   public farmSanctuary: FarmSanctuary | null = null;
   private farmRescued: Record<string, boolean> = {};
+  private latestFarmQuestions?: RemoteProblem[];
   readonly goal = new THREE.Vector3(16, 0, 0);
   readonly keys = new Set<string>();
   readonly spatial = new SpatialWorld(-6, 6);
@@ -872,27 +912,11 @@ export class World {
         );
       }
 
-      if (farmZones.length === 1) {
-        const fz = farmZones[0];
-        customPortals.push({
-          id: 'village_to_farm',
-          name: 'Cổng Nông Trại',
-          source: { x: -8, z: 14 },
-          target: { x: fz.center.x - 8, z: fz.center.z + 10 },
-          triggerRadius: 1.5
-        });
-      } else {
-        customPortals.push({
-          id: 'village_to_multi_farm',
-          name: 'Cổng Nông Trại',
-          source: { x: -8, z: 14 },
-          target: { x: farmZones[0].center.x - 8, z: farmZones[0].center.z + 10 },
-          triggerRadius: 1.5
-        });
-      }
+      customPortals.push(...buildFarmPortalLinks(farmZones));
 
       farmZones.forEach((z) => {
         const farmQuestions = questionsBySheet?.[z.sheetName];
+        this.latestFarmQuestions = farmQuestions;
         if (!this.dynamicIslandIds.has(z.id)) {
           this.dynamicIslandIds.add(z.id);
           this.loadFarmMap(z, farmQuestions);
@@ -901,17 +925,9 @@ export class World {
           const retX = z.center.x - 8;
           const retZ = z.center.z + 14;
           this.createPortalArch(retX, retZ, 0x38bdf8, 0);
+        } else if (this.farmSanctuary && farmQuestions && farmQuestions.length > 0) {
+          this.farmSanctuary.syncQuestions(farmQuestions);
         }
-
-        const retX = z.center.x - 8;
-        const retZ = z.center.z + 14;
-        customPortals.push({
-          id: `z${z.id}_to_village_farm`,
-          name: 'Cổng dịch chuyển về Làng Khởi Đầu',
-          source: { x: retX, z: retZ },
-          target: { x: -8, z: 12 },
-          triggerRadius: 1.5
-        });
       });
     }
 
@@ -1326,6 +1342,9 @@ export class World {
       }
 
       await this.farmSanctuary.load(this.farmRescued, questions);
+      if (this.latestFarmQuestions && this.latestFarmQuestions.length > 0 && this.latestFarmQuestions !== questions) {
+        this.farmSanctuary.syncQuestions(this.latestFarmQuestions);
+      }
 
       // Register fence & shelter physical obstacles so player cannot walk through fences
       const farmObs = this.farmSanctuary.getObstacles(zone.center);

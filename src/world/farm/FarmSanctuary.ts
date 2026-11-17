@@ -40,6 +40,7 @@ export class FarmSanctuary {
 
   private modelLoader = new GLTFLoader();
   private time = 0;
+  private lastFarmRescued: Record<string, boolean> = {};
 
   constructor() {
     this.sceneryGroup.name = 'farm_scenery';
@@ -90,6 +91,7 @@ export class FarmSanctuary {
     questions?: any[]
   ) {
     this.libraryScene = libraryScene;
+    this.lastFarmRescued = { ...farmRescued };
 
     // Reset groups
     this.sceneryGroup.clear();
@@ -570,16 +572,7 @@ export class FarmSanctuary {
         entity.targetPos = this.getRandomRoamPos(entity.root.position);
 
         // Create interaction trigger for math challenge
-        const rawProblem =
-          questions && questions[i]
-            ? questions[i]
-            : generateFarmMultiplicationProblem(i, kind);
-
-        const problemData = {
-          ...rawProblem,
-          title: rawProblem.title || rawProblem.Title || `Bài ${i + 1}`,
-          subtitle: rawProblem.subtitle || rawProblem.Subtitle || ''
-        };
+        const problemData = this.buildAnimalProblemData(questions?.[i], i, kind);
 
         this.interactTriggers.push({
           position: entity.root.position.clone(),
@@ -594,6 +587,38 @@ export class FarmSanctuary {
 
       this.animalsGroup.add(entity.root);
       this.animals.push(entity);
+    });
+  }
+
+  private buildAnimalProblemData(question: any, index: number, kind: AnimalKind) {
+    const rawProblem = question ?? generateFarmMultiplicationProblem(index, kind);
+    return {
+      ...rawProblem,
+      title: rawProblem.title || rawProblem.Title || `Bài ${index + 1}`,
+      subtitle: rawProblem.subtitle || rawProblem.Subtitle || ''
+    };
+  }
+
+  /**
+   * Synchronizes farm animal challenge data when Google Sheets questions refresh.
+   */
+  public syncQuestions(questions?: any[]) {
+    if (!this.libraryScene || !questions || questions.length === 0) return;
+
+    if (questions.length !== this.animals.length) {
+      this.animalsGroup.clear();
+      this.animals = [];
+      this.interactTriggers = [];
+      this.spawnAnimals(this.lastFarmRescued, questions);
+      return;
+    }
+
+    this.animals.forEach((animal, i) => {
+      const trigger = this.interactTriggers.find((t) => t.animalId === animal.id);
+      if (!trigger) return;
+      const problemData = this.buildAnimalProblemData(questions[i], i, animal.kind);
+      trigger.problemData = problemData;
+      trigger.id = problemData.id || animal.id;
     });
   }
 
