@@ -443,6 +443,43 @@ test('FarmSanctuary flora covers wide pasture and surrounds perimeter with Bush0
   );
 });
 
+test('FarmSanctuary.load fetches map:farm and flora prefabs through AssetRepository', async () => {
+  const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
+  const { AssetRepository } = await import('../src/world/assets/AssetRepository');
+  const THREE = await import('three');
+
+  const requestedUrls: string[] = [];
+  const repo = new AssetRepository({
+    baseUrl: '/',
+    transport: {
+      loadGLTF: async (url: string) => {
+        requestedUrls.push(url);
+        const g = new THREE.Group();
+        if (url.includes('farm.glb')) {
+          for (const name of ['chicken', 'cow', 'pen_fence', 'pen_gate', 'coop']) {
+            const node = new THREE.Group();
+            node.name = name;
+            g.add(node);
+          }
+        } else {
+          g.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial()));
+        }
+        return g;
+      }
+    }
+  });
+
+  const farm = new FarmSanctuary(repo);
+  await farm.load({});
+
+  assert.ok(requestedUrls.includes('/3dmodel/maps/farm.glb'));
+  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_grass002.glb'));
+  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_bush002.glb'));
+  assert.equal(farm.floraPrefabs.length, 4);
+  assert.ok(farm.bushPrefab);
+  assert.ok(farm.animals.length > 0);
+});
+
 
 
 

@@ -2,15 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProceduralLandBuilder } from '../src/world/procedural/ProceduralLandBuilder';
 import { AssetRepository } from '../src/world/assets/AssetRepository';
-import { prefabCatalog } from '../src/world/assets/PrefabCatalog';
 import type { RemoteZoneConfig } from '../src/data/remoteTypes';
 
 test('ProceduralLandBuilder builds island with base geometry and portal anchors', async () => {
   const catalogData = await import('../public/data/meshCatalog.json', { with: { type: 'json' } });
-  prefabCatalog.setCatalog(catalogData.default as any);
 
   const builder = new ProceduralLandBuilder();
-  const repo = new AssetRepository();
+  const repo = new AssetRepository({ catalog: catalogData.default as any });
 
   const mockZone: RemoteZoneConfig = {
     id: 101,
@@ -58,10 +56,9 @@ test('ProceduralLandBuilder builds island with base geometry and portal anchors'
 
 test('ProceduralLandBuilder respects decorDensity and themes deterministically', async () => {
   const catalogData = await import('../public/data/meshCatalog.json', { with: { type: 'json' } });
-  prefabCatalog.setCatalog(catalogData.default as any);
 
   const builder = new ProceduralLandBuilder();
-  const repo = new AssetRepository();
+  const repo = new AssetRepository({ catalog: catalogData.default as any });
 
   const baseZone: RemoteZoneConfig = {
     id: 102,

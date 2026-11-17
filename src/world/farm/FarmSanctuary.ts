@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { FarmAnimalEntity, AnimalKind } from './FarmAnimalEntity';
 import { generateFarmMultiplicationProblem } from '../../core/adventure';
 import type { Obstacle } from '../SpatialWorld';
+import { AssetRepository } from '../assets/AssetRepository';
+import type { AssetRepositorySeam } from '../assets/types';
 
 export interface FarmInteractTrigger {
   position: THREE.Vector3;
@@ -38,10 +39,11 @@ export class FarmSanctuary {
   // Triggers for answering math problems
   public interactTriggers: FarmInteractTrigger[] = [];
 
-  private modelLoader = new GLTFLoader();
+  private readonly assets: AssetRepositorySeam;
   private time = 0;
 
-  constructor() {
+  constructor(assets?: AssetRepositorySeam) {
+    this.assets = assets ?? new AssetRepository();
     this.sceneryGroup.name = 'farm_scenery';
     this.animalsGroup.name = 'farm_animals';
     this.group.add(this.sceneryGroup);
@@ -49,26 +51,18 @@ export class FarmSanctuary {
   }
 
   public async load(farmRescued: Record<string, boolean>, questions?: any[]) {
-    const baseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
-    const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-
-    const loadSafe = async (relPath: string): Promise<THREE.Group | null> => {
-      try {
-        const gltf = await this.modelLoader.loadAsync(`${cleanBase}${relPath}`);
-        return gltf.scene;
-      } catch (e) {
-        return null;
-      }
-    };
-    
-    const [farmGltf, grass02, grass03, flowers02, flowers03, bush02] = await Promise.all([
-      this.modelLoader.loadAsync(`${cleanBase}3dmodel/maps/farm.glb`),
-      loadSafe('3dmodel/prefabs/park_grass002.glb'),
-      loadSafe('3dmodel/prefabs/park_grass003.glb'),
-      loadSafe('3dmodel/prefabs/park_flowers002.glb'),
-      loadSafe('3dmodel/prefabs/park_flowers003.glb'),
-      loadSafe('3dmodel/prefabs/park_bush002.glb')
+    const [farmScene, grass02, grass03, flowers02, flowers03, bush02] = await Promise.all([
+      this.assets.instantiate('map:farm'),
+      this.assets.instantiate('prefab:park_grass002'),
+      this.assets.instantiate('prefab:park_grass003'),
+      this.assets.instantiate('prefab:park_flowers002'),
+      this.assets.instantiate('prefab:park_flowers003'),
+      this.assets.instantiate('prefab:park_bush002')
     ]);
+
+    if (!farmScene) {
+      throw new Error('Failed to load map:farm from AssetRepository');
+    }
 
     if (bush02) {
       this.bushPrefab = bush02;
@@ -78,7 +72,7 @@ export class FarmSanctuary {
       (m): m is THREE.Group => m !== null
     );
 
-    this.setupFromLibrary(farmGltf.scene, farmRescued, questions);
+    this.setupFromLibrary(farmScene, farmRescued, questions);
   }
 
 

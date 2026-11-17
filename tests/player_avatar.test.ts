@@ -94,3 +94,59 @@ test('PlayerAvatar builds avatar mesh when Bao Chau is selected', () => {
   avatar.updateWalkAnimation(1.0, false);
 });
 
+test('PlayerAvatar loads only the selected 3D companion on demand and ignores stale out-of-order loads', async () => {
+  const { AssetRepository } = await import('../src/world/assets/AssetRepository');
+  const requestedUrls: string[] = [];
+  const pendingResolvers = new Map<string, (g: THREE.Group) => void>();
+
+  const repo = new AssetRepository({
+    baseUrl: '/',
+    transport: {
+      loadGLTF: (url: string) => {
+        requestedUrls.push(url);
+        return new Promise<THREE.Group>((resolve) => {
+          pendingResolvers.set(url, resolve);
+        });
+      }
+    }
+  });
+
+  const loadedIds: string[] = [];
+  const avatar = new PlayerAvatar({
+    assets: repo,
+    onModelLoaded: (id) => loadedIds.push(id)
+  });
+
+  // Constructor must NOT preload all 6 3D avatars
+  assert.equal(requestedUrls.length, 0, 'Constructing PlayerAvatar must trigger zero eager GLTF downloads');
+
+  // Select Hello Kitty first (slow download)
+  avatar.setAvatar('hellokitty');
+  assert.deepEqual(requestedUrls, ['/3dmodel/prefabs/char_hellokitty.glb']);
+
+  // Quickly switch to Bao Chau before Hello Kitty finishes
+  avatar.setAvatar('baochau');
+  assert.deepEqual(requestedUrls, [
+    '/3dmodel/prefabs/char_hellokitty.glb',
+    '/3dmodel/prefabs/char_baochau.glb'
+  ]);
+
+  // Resolve Bao Chau first
+  const baoChauRaw = new THREE.Group();
+  baoChauRaw.add(new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshStandardMaterial()));
+  pendingResolvers.get('/3dmodel/prefabs/char_baochau.glb')!(baoChauRaw);
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.deepEqual(loadedIds, ['baochau']);
+  assert.equal(avatar.activeAvatar, 'baochau');
+
+  // Now stale Hello Kitty resolves late — must be ignored
+  const hkRaw = new THREE.Group();
+  hkRaw.add(new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshStandardMaterial()));
+  pendingResolvers.get('/3dmodel/prefabs/char_hellokitty.glb')!(hkRaw);
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.deepEqual(loadedIds, ['baochau'], 'Stale Hello Kitty resolution must not override active avatar');
+  assert.equal(avatar.activeAvatar, 'baochau');
+});
+

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AvatarId } from '../data/characters';
 import { GeometryBuilder } from './geom';
+import { AssetRepository } from './assets/AssetRepository';
+import type { AssetRepositorySeam } from './assets/types';
 
 export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa' | 'baochau';
 
@@ -26,6 +26,7 @@ interface BaoChauRig {
 }
 
 export interface PlayerAvatarOptions {
+  assets?: AssetRepositorySeam;
   onModelLoaded?: (avatarId: Avatar3DId) => void;
 }
 
@@ -33,28 +34,27 @@ export interface PlayerAvatarOptions {
  * Deep Module: PlayerAvatar
  *
  * Encapsulates:
- * - 3D GLTF model loading, caching, scaling, and bounding box normalization
- * - Instant procedural fallback mesh generation for all 7 characters
- * - Progressive loading upgrade with celebration callback
+ * - Instant procedural fallback mesh generation for all characters (Hiển Thị Đồng Hành Đệm)
+ * - On-demand 3D model upgrade via AssetRepository with race-condition token guard
  * - Locomotion animations (leg swing for primitive meshes, arm-swing/hop/wobble for 3D GLTF models)
  */
 export class PlayerAvatar {
   /** Root group added to the game world's player hierarchy */
   readonly group = new THREE.Group();
 
+  private readonly assets: AssetRepositorySeam;
   private geom = new GeometryBuilder();
   private legs: THREE.Mesh[] = [];
   private proceduralArms: THREE.Mesh[] = [];
   private elsaArmRig?: ElsaArmRig;
   private baoChauRig?: BaoChauRig;
-  private gltfLoader = new GLTFLoader();
-  private gltfCache = new Map<Avatar3DId, THREE.Group>();
   private gltfActiveModel?: THREE.Group;
   private currentAvatar: AvatarId = 'boy';
+  private avatarRequestToken = 0;
 
   constructor(private readonly options?: PlayerAvatarOptions) {
+    this.assets = options?.assets ?? new AssetRepository();
     this.buildBoyMesh();
-    this.preloadGLTFModels();
   }
 
   get activeAvatar(): AvatarId {
@@ -63,22 +63,22 @@ export class PlayerAvatar {
 
   /**
    * Switches the active character.
-   * If a 3D model is cached, it is applied immediately.
-   * Otherwise, renders an immediate procedural fallback and loads the 3D model in background.
+   * Renders an immediate procedural fallback and loads/instantiates the selected 3D model on demand.
    */
   setAvatar(avatarId: AvatarId): void {
+    const requestToken = ++this.avatarRequestToken;
     this.currentAvatar = avatarId;
     this.clearMesh();
 
     switch (avatarId) {
       case 'boy': this.buildBoyMesh(); break;
       case 'girl': this.buildGirlMesh(); break;
-      case 'kuromi': this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh()); break;
-      case 'hellokitty': this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh()); break;
-      case 'mymelody': this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh()); break;
-      case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh()); break;
-      case 'elsa': this.applyOrLoadGLTF('elsa', () => this.buildElsaMesh()); break;
-      case 'baochau': this.applyOrLoadGLTF('baochau', () => this.buildBaoChauMesh()); break;
+      case 'kuromi': this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh(), requestToken); break;
+      case 'hellokitty': this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh(), requestToken); break;
+      case 'mymelody': this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh(), requestToken); break;
+      case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh(), requestToken); break;
+      case 'elsa': this.applyOrLoadGLTF('elsa', () => this.buildElsaMesh(), requestToken); break;
+      case 'baochau': this.applyOrLoadGLTF('baochau', () => this.buildBaoChauMesh(), requestToken); break;
     }
   }
 
@@ -163,157 +163,35 @@ export class PlayerAvatar {
   }
 
   dispose(): void {
+    this.avatarRequestToken++;
     this.clearMesh();
     this.geom.dispose();
-    this.gltfCache.clear();
   }
 
-  // ─── Private: GLTF Model Pipeline ─────────────────────────────────────────
+  // ─── Private: On-Demand 3D Model Upgrade via AssetRepository ──────────────
 
-  private preloadGLTFModels(): void {
-    this.loadGLTF('kuromi');
-    this.loadGLTF('hellokitty');
-    this.loadGLTF('mymelody');
-    this.loadGLTF('cinnamoroll');
-    this.loadGLTF('elsa');
-    this.loadGLTF('baochau');
-  }
-
-  private applyOrLoadGLTF(avatarId: Avatar3DId, fallback: () => void): void {
-    const cached = this.gltfCache.get(avatarId);
-    if (cached) {
-      const clone = SkeletonUtils.clone(cached) as THREE.Group;
-      this.group.add(clone);
-      this.gltfActiveModel = clone;
-      this.attachArmRig(clone, avatarId);
-      return;
-    }
-
+  private applyOrLoadGLTF(
+    avatarId: Avatar3DId,
+    fallback: () => void,
+    requestToken: number
+  ): void {
     fallback();
-    this.loadGLTF(avatarId);
-  }
 
-  private loadGLTF(avatarId: Avatar3DId): void {
-    if (typeof window === 'undefined') return;
-    if (this.gltfCache.has(avatarId)) return;
-    const baseUrl = import.meta.env?.BASE_URL ?? '/';
-    const url = avatarId === 'baochau'
-      ? `${baseUrl}3dmodel/characters/baochau.glb`
-      : `${baseUrl}3dmodel/${avatarId}/scene.gltf`;
-
-    this.gltfLoader.load(
-      url,
-      gltf => {
-        const raw = gltf.scene;
-        raw.traverse(child => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            mesh.userData.isGLTF = true;
-          }
-        });
-
-        // Per-model orientation calibration: align authored forward facing to +Z
-        const MODEL_ROTATION_Y: Partial<Record<Avatar3DId, number>> = {
-          mymelody: -Math.PI / 2
-        };
-        const rotY = MODEL_ROTATION_Y[avatarId];
-        if (rotY !== undefined) {
-          raw.rotation.y = rotY;
-          raw.updateMatrixWorld(true);
+    void this.assets
+      .instantiate(`avatar:${avatarId}`)
+      .then((model) => {
+        if (!model || this.avatarRequestToken !== requestToken || this.currentAvatar !== avatarId) {
+          return;
         }
-
-        // For Elsa: calibrate rest pose by lowering arms from A-pose to graceful sides
-        if (avatarId === 'elsa') {
-          raw.traverse(c => {
-            if (c.name === 'Bip001_L_UpperArm_060' && (c as THREE.Bone).isBone) {
-              c.rotation.y += 0.60;
-            }
-            if (c.name === 'Bip001_R_UpperArm_070' && (c as THREE.Bone).isBone) {
-              c.rotation.y -= 0.60;
-            }
-          });
-          raw.updateMatrixWorld(true);
-        }
-
-        // Compute bounds and scale to target height ~2.2 for chibi, 4.4 for Elsa (scale x2)
-        const box = new THREE.Box3().setFromObject(raw);
-        const size = box.getSize(new THREE.Vector3());
-        const targetHeight = avatarId === 'elsa' ? 3.6 : 2.2;
-        const scale = targetHeight / (size.y > 0 ? size.y : 1);
-        raw.scale.setScalar(scale);
-        raw.updateMatrixWorld(true);
-
-        // Center on X and Z, and rest base on Y=0
-        const scaledBox = new THREE.Box3().setFromObject(raw);
-        raw.position.x = -(scaledBox.min.x + scaledBox.max.x) / 2;
-        raw.position.y = -scaledBox.min.y;
-        raw.position.z = -(scaledBox.min.z + scaledBox.max.z) / 2;
-
-        const wrapper = new THREE.Group();
-        wrapper.add(raw);
-        wrapper.userData.isGLTF = true;
-
-        if (avatarId === 'cinnamoroll') {
-          this.attachCinnamorollFace(wrapper);
-        }
-
-        this.gltfCache.set(avatarId, wrapper);
-
-        // If currently active, upgrade immediately
-        if (this.currentAvatar === avatarId) {
-          this.clearMesh();
-          const clone = SkeletonUtils.clone(wrapper) as THREE.Group;
-          this.group.add(clone);
-          this.gltfActiveModel = clone;
-          this.attachArmRig(clone, avatarId);
-          this.options?.onModelLoaded?.(avatarId);
-        }
-      },
-      undefined,
-      err => {
-        console.warn(`[PlayerAvatar] Failed to load 3D model for ${avatarId}:`, err);
-      }
-    );
-  }
-
-  private attachCinnamorollFace(wrapper: THREE.Group): void {
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
-    const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const blushMat = new THREE.MeshStandardMaterial({ color: 0xfecdd3, roughness: 0.5 });
-    const noseMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.4 });
-
-    const geomEye = new THREE.SphereGeometry(0.08, 12, 12);
-    geomEye.scale(0.85, 1.1, 0.4);
-    const geomShine = new THREE.SphereGeometry(0.028, 8, 8);
-    const geomBlush = new THREE.SphereGeometry(0.1, 12, 12);
-    geomBlush.scale(1.3, 0.65, 0.3);
-    const geomNose = new THREE.SphereGeometry(0.03, 8, 8);
-    geomNose.scale(1.2, 0.7, 0.5);
-
-    const leftEye = new THREE.Mesh(geomEye, eyeMat);
-    leftEye.position.set(-0.24, 1.48, 0.48);
-    const leftShine = new THREE.Mesh(geomShine, shineMat);
-    leftShine.position.set(-0.21, 1.51, 0.51);
-
-    const rightEye = new THREE.Mesh(geomEye, eyeMat);
-    rightEye.position.set(0.24, 1.48, 0.48);
-    const rightShine = new THREE.Mesh(geomShine, shineMat);
-    rightShine.position.set(0.27, 1.51, 0.51);
-
-    const leftBlush = new THREE.Mesh(geomBlush, blushMat);
-    leftBlush.position.set(-0.38, 1.38, 0.44);
-    const rightBlush = new THREE.Mesh(geomBlush, blushMat);
-    rightBlush.position.set(0.38, 1.38, 0.44);
-
-    const nose = new THREE.Mesh(geomNose, noseMat);
-    nose.position.set(0, 1.42, 0.50);
-
-    const faceGroup = new THREE.Group();
-    faceGroup.add(leftEye, leftShine, rightEye, rightShine, leftBlush, rightBlush, nose);
-    faceGroup.traverse(child => { child.userData.isGLTF = true; });
-    wrapper.add(faceGroup);
+        this.clearMesh();
+        this.group.add(model);
+        this.gltfActiveModel = model;
+        this.attachArmRig(model, avatarId);
+        this.options?.onModelLoaded?.(avatarId);
+      })
+      .catch((err) => {
+        console.warn(`[PlayerAvatar] Failed to instantiate 3D model for ${avatarId}:`, err);
+      });
   }
 
   // ─── Private: Procedural Geometry Delegation ──────────────────────────────

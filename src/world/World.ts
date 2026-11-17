@@ -165,6 +165,7 @@ export class World {
     }
     this.village();
     this.avatar = new PlayerAvatar({
+      assets: this.assets,
       onModelLoaded: () => {
         this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
       },
@@ -1303,7 +1304,7 @@ export class World {
   private async loadFarmMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
     try {
       if (!this.farmSanctuary) {
-        this.farmSanctuary = new FarmSanctuary();
+        this.farmSanctuary = new FarmSanctuary(this.assets);
       }
 
       // Position farm at zone center
@@ -1863,5 +1864,12 @@ export class World {
     this.farmRescued = rescued;
   }
 
-  dispose() { cancelAnimationFrame(this.frame); this.observer.disconnect(); this.assets.dispose(); this.renderer.dispose(); }
+  dispose() {
+    cancelAnimationFrame(this.frame);
+    this.observer.disconnect();
+    this.avatar.dispose();
+    this.geom.dispose();
+    this.assets.dispose();
+    this.renderer.dispose();
+  }
 }

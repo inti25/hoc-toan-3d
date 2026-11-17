@@ -150,8 +150,8 @@ Cơ chế điều khiển động lực học hệ xương khớp (xương vai, 
 _Avoid_: Rigging cứng, Hoạt ảnh tĩnh, Animation lặp cứng
 
 **Hiển Thị Đồng Hành Đệm (Progressive Avatar Rendering)**:
-Cơ chế hiển thị tức thì hình tượng nhân vật cơ bản ngay khi lựa chọn và tự động nâng cấp mượt mà sang Mô Hình Đồng Hành 3D chi tiết ngay khi hoàn tất nạp dữ liệu.
-_Avoid_: Màn hình chờ tải, Loading bar, Chờ nạp mesh
+Cơ chế hiển thị tức thì hình tượng nhân vật cơ bản ngay khi lựa chọn và chỉ nạp theo nhu cầu Mô Hình Đồng Hành 3D chi tiết của đúng nhân vật đang chọn, nâng cấp mượt mà khi hoàn tất nạp dữ liệu (tuyệt đối không tải hàng loạt các nhân vật không sử dụng).
+_Avoid_: Màn hình chờ tải, Loading bar, Chờ nạp mesh, Preload tất cả nhân vật
 
 
 **Kho Dự Phòng Cục Bộ (Bundled Fallback Cache)**:
