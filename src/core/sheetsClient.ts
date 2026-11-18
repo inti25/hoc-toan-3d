@@ -405,41 +405,60 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
   });
 }
 
+const inFlightRemoteFetches = new Map<
+  string,
+  Promise<{ zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> } | null>
+>();
+
 /**
- * Gọi API trực tiếp từ Google Apps Script
+ * Gọi API trực tiếp từ Google Apps Script (tự động gộp các request trùng đang bay)
  */
 export async function fetchRemoteData(scriptUrl: string): Promise<{
   zones: RemoteZoneConfig[];
   questionsBySheet: Record<string, RemoteProblem[]>;
 } | null> {
-  const url = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}action=getAll&_t=${Date.now()}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { Accept: 'application/json' }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Lỗi kết nối máy chủ Google Sheets (${response.status} ${response.statusText})`);
+  const existing = inFlightRemoteFetches.get(scriptUrl);
+  if (existing) {
+    return existing;
   }
 
-  const json = await response.json();
-  if (json.status !== 'success' || !Array.isArray(json.zones)) {
-    throw new Error(json.message || 'Cấu trúc dữ liệu Apps Script không hợp lệ');
-  }
-
-  const sanitizedZones: RemoteZoneConfig[] = sanitizeRemoteZones(json.zones);
-
-  const sanitizedQuestions: Record<string, RemoteProblem[]> = {};
-  if (json.questions && typeof json.questions === 'object') {
-    Object.keys(json.questions).forEach((sheetKey) => {
-      sanitizedQuestions[sheetKey] = sanitizeRemoteProblems(json.questions[sheetKey]);
+  const requestPromise = (async () => {
+    const url = `${scriptUrl}${scriptUrl.includes('?') ? '&' : '?'}action=getAll&_t=${Date.now()}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
     });
+
+    if (!response.ok) {
+      throw new Error(`Lỗi kết nối máy chủ Google Sheets (${response.status} ${response.statusText})`);
+    }
+
+    const json = await response.json();
+    if (json.status !== 'success' || !Array.isArray(json.zones)) {
+      throw new Error(json.message || 'Cấu trúc dữ liệu Apps Script không hợp lệ');
+    }
+
+    const sanitizedZones: RemoteZoneConfig[] = sanitizeRemoteZones(json.zones);
+
+    const sanitizedQuestions: Record<string, RemoteProblem[]> = {};
+    if (json.questions && typeof json.questions === 'object') {
+      Object.keys(json.questions).forEach((sheetKey) => {
+        sanitizedQuestions[sheetKey] = sanitizeRemoteProblems(json.questions[sheetKey]);
+      });
+    }
+
+    const finalPayload = { zones: sanitizedZones, questionsBySheet: sanitizedQuestions };
+    saveRemoteDataToCache(finalPayload);
+
+    return finalPayload;
+  })();
+
+  inFlightRemoteFetches.set(scriptUrl, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    inFlightRemoteFetches.delete(scriptUrl);
   }
-
-  const finalPayload = { zones: sanitizedZones, questionsBySheet: sanitizedQuestions };
-  saveRemoteDataToCache(finalPayload);
-
-  return finalPayload;
 }
 
 /**

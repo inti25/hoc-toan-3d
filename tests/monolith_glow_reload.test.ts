@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { GeometryBuilder } from '../src/world/geom';
+import { SceneBatchPool } from '../src/world/SceneBatchPool';
 import { ArchimedesZoneBuilder, type Obstacle } from '../src/world/ArchimedesZoneBuilder';
 import { Adventure } from '../src/core/adventure';
 import { freshState, parseSave } from '../src/core/state';
@@ -25,7 +25,7 @@ test('Monoliths retain glowing activation state after page reload with saved pro
   assert.equal(reloadedAdventure.isProblemSolved(306), true, 'Reloaded adventure has problem 306 solved');
 
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const zoneBuilder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -54,7 +54,7 @@ test('Monoliths retain glowing activation state after page reload with saved pro
 
 test('ArchimedesZoneBuilder.activateMonolith works with both ID (e.g. 306) and array index (e.g. 0)', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const zoneBuilder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -74,7 +74,7 @@ test('ArchimedesZoneBuilder.activateMonolith works with both ID (e.g. 306) and a
 
 test('ArchimedesZoneBuilder.setMonolithsActivated supports SaveState object directly', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const zoneBuilder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 

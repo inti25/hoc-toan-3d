@@ -5,7 +5,7 @@ import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
-import { GeometryBuilder } from './geom';
+import { SceneBatchPool } from './SceneBatchPool';
 import { ArchimedesZoneBuilder, type MonolithItem, type Obstacle } from './ArchimedesZoneBuilder';
 import type { RemoteZoneConfig, RemoteProblem } from '../data/remoteTypes';
 import {
@@ -19,8 +19,36 @@ import {
 } from '../data/lakeLand';
 import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 import { FarmSanctuary } from './farm/FarmSanctuary';
+import type { PortalSummary, WorldFrameSnapshot } from './loop/types';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
+
+export const STATIC_LAKE_SANCTUARIES: ReadonlyArray<{
+  id: number;
+  center: { x: number; z: number };
+  template: 'GRID_SANCTUARY' | 'CIRCLE_SANCTUARY';
+}> = [
+  { id: 1, center: { x: 110, z: -60 }, template: 'GRID_SANCTUARY' },
+  { id: 2, center: { x: 150, z: -60 }, template: 'GRID_SANCTUARY' },
+  { id: 3, center: { x: 110, z: 60 }, template: 'CIRCLE_SANCTUARY' },
+  { id: 4, center: { x: 150, z: 60 }, template: 'GRID_SANCTUARY' },
+  { id: 5, center: { x: 190, z: 0 }, template: 'CIRCLE_SANCTUARY' }
+];
+
+export function shouldRunRenderLoop(active: boolean, paused: boolean, hidden = false): boolean {
+  return active && !paused && !hidden;
+}
+
+export function selectLakeSanctuariesToLoad(
+  playerX: number,
+  activeZoneIds: ReadonlySet<number>,
+  loadedIds: ReadonlySet<number>
+) {
+  if (playerX <= 35) return [];
+  return STATIC_LAKE_SANCTUARIES.filter(
+    (s) => activeZoneIds.has(s.id) && !loadedIds.has(s.id)
+  );
+}
 
 /**
  * Builds portal links connecting Starter Village to dynamic FARM_SANCTUARY zones.
@@ -59,16 +87,6 @@ export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[
   }
 
   return portals;
-}
-
-interface Spark { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number }
-interface TrailParticle {
-  mesh: THREE.Mesh;
-  velocity: THREE.Vector3;
-  life: number;
-  maxLife: number;
-  floatSpeed: number;
-  rotSpeed: THREE.Vector3;
 }
 
 export interface FlowerItem {
@@ -114,10 +132,18 @@ export class World {
   readonly goal = new THREE.Vector3(16, 0, 0);
   readonly keys = new Set<string>();
   readonly spatial = new SpatialWorld(-6, 6);
-  private geom = new GeometryBuilder();
+  private geom = new SceneBatchPool();
   private obstacles: Obstacle[] = [];
-  private sparks: Spark[] = [];
+  private ripples: THREE.Mesh[] = [];
   private clouds: THREE.Group[] = [];
+  private readonly scratchWanted = new THREE.Vector3();
+  private readonly scratchProj = new THREE.Vector3();
+  private readonly scratchRay = new THREE.Raycaster();
+  private readonly scratchPointer = new THREE.Vector2();
+  private readonly scratchRayPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private readonly scratchHit = new THREE.Vector3();
+  private readonly scratchLocalHit = new THREE.Vector3();
+  private readonly shopWorldPos = new THREE.Vector3(-12.4, 0, -3.5);
   private windmill = new THREE.Group();
   private water: THREE.Mesh;
   private clock = new THREE.Clock();
@@ -130,20 +156,13 @@ export class World {
   private time = 0;
   private observer: ResizeObserver;
   private frame = 0;
-  active = false;
-  paused = false;
+  private idleFrame = 0;
+  private _active = false;
+  private _paused = false;
+  private hudFrameTick = 0;
+  private pendingPortalTransit: PortalSummary | null = null;
   joystick = { x: 0, y: 0 };
-  onFrame?: (
-    near: boolean,
-    crossed: boolean,
-    fps: number,
-    nearFlower: number,
-    nearPortal: boolean,
-    nearMonolith: number,
-    nearParkTree: number,
-    nearShop: boolean,
-    nearFarmAnimal: string | null
-  ) => void;
+  onFrame?: (snapshot: WorldFrameSnapshot) => void;
   onJump?: () => void;
   onSceneClick?: (near: boolean) => void;
   onFlowerClick?: (index: number) => void;
@@ -155,7 +174,6 @@ export class World {
   onTeleport?: (x: number, z: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
   private shopBeacon?: THREE.Mesh;
-  private trailParticles: TrailParticle[] = [];
   private trailTimer = 0;
   equippedTrail = '';
   readonly parkTrees: ParkTreeEntity[] = [];
@@ -175,6 +193,26 @@ export class World {
   private villageParkPortalArch?: THREE.Group;
   private villageFarmPortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
+
+  get active(): boolean {
+    return this._active;
+  }
+
+  set active(value: boolean) {
+    if (this._active === value) return;
+    this._active = value;
+    this.syncRenderLoopState();
+  }
+
+  get paused(): boolean {
+    return this._paused;
+  }
+
+  set paused(value: boolean) {
+    if (this._paused === value) return;
+    this._paused = value;
+    this.syncRenderLoopState();
+  }
 
   get monoliths(): MonolithItem[] {
     return this.archimedes.monoliths;
@@ -201,30 +239,33 @@ export class World {
     this.water = this.box(this.scene, 7, -.05, 0, 6, .18, 40, 0x48b8cf); this.water.receiveShadow = true;
     for (let i = 0; i < 28; i++) {
       const foam = this.box(this.scene, 4.7 + (i % 4) * 1.35, .05, -18 + (i * 2.17) % 37, .35 + (i % 3) * .2, .025, .07, 0xb5f4ed);
-      foam.userData.ripple = true;
+      this.ripples.push(foam);
     }
     this.village();
+    this.geom.attachEffects(this.scene);
     this.avatar = new PlayerAvatar({
       assets: this.assets,
       onModelLoaded: () => {
-        this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+        this.burstPlayer(1.2);
       },
     });
     this.player.add(this.avatar.group);
     this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
     this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
-    this.loadLakeSanctuaries();
     this.scene.add(this.player, this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement!); this.resize();
     let pointer = { x: 0, y: 0, moved: false, id: -1 };
-    canvas.addEventListener('pointerdown', e => { if (!this.active || this.paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
-    canvas.addEventListener('pointermove', e => { if (pointer.id !== e.pointerId || !this.active || this.paused) return; const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y; if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true; this.yaw -= dx * .006; this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, .45, 1.15); pointer.x = e.clientX; pointer.y = e.clientY; });
-    canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this.paused) this.interactAtScreen(e.clientX, e.clientY); pointer.id = -1; });
+    canvas.addEventListener('pointerdown', e => { if (!this._active || this._paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (pointer.id !== e.pointerId || !this._active || this._paused) return; const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y; if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true; this.yaw -= dx * .006; this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, .45, 1.15); pointer.x = e.clientX; pointer.y = e.clientY; });
+    canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this._paused) this.interactAtScreen(e.clientX, e.clientY); pointer.id = -1; });
     canvas.addEventListener('pointercancel', () => { pointer.id = -1; });
-    canvas.addEventListener('wheel', e => { if (!this.active || this.paused) return; e.preventDefault(); this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * .025, 23, 60); }, { passive: false });
-    this.animate();
+    canvas.addEventListener('wheel', e => { if (!this._active || this._paused) return; e.preventDefault(); this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * .025, 23, 60); }, { passive: false });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    }
+    this.renderFrame(0);
   }
 
   private material(color: number) { return this.geom.material(color); }
@@ -649,6 +690,7 @@ export class World {
 
   private dynamicIslandIds = new Set<number>();
   private dynamicObstacles: Obstacle[] = [];
+  private dynamicIslandPortals = new Map<number, PortalLink[]>();
 
   private createIslandScenery(z: {
     id: number;
@@ -785,12 +827,14 @@ export class World {
     return { decorGroup, obstacles };
   }
 
-  public renderDynamicZones(
+  public async renderDynamicZones(
     zones: RemoteZoneConfig[],
     positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = [],
     questionsBySheet?: Record<string, RemoteProblem[]>
-  ) {
+  ): Promise<void> {
     const customPortals: PortalLink[] = [];
+    const proceduralTasks: Promise<void>[] = [];
+    const mapTasks: Promise<void>[] = [];
 
     // 0. Đồng bộ trạng thái hiển thị cho các Đền Cổng và Vùng Đất Archimedes 1-5
     const activeZoneIds = new Set(zones.map((z) => z.id));
@@ -867,7 +911,7 @@ export class World {
         const parkQuestions = questionsBySheet?.[z.sheetName];
         if (!this.dynamicIslandIds.has(z.id)) {
           this.dynamicIslandIds.add(z.id);
-          this.loadParkMap(z, parkQuestions);
+          mapTasks.push(this.loadParkMap(z, parkQuestions));
 
           // Cổng quay về từ Công Viên về Làng Khởi Đầu (đặt ở lối vào phía Đông của công viên)
           const retX = z.center.x + 14;
@@ -920,7 +964,7 @@ export class World {
         this.latestFarmQuestions = farmQuestions;
         if (!this.dynamicIslandIds.has(z.id)) {
           this.dynamicIslandIds.add(z.id);
-          this.loadFarmMap(z, farmQuestions);
+          mapTasks.push(this.loadFarmMap(z, farmQuestions));
 
           // Cổng quay về từ Nông Trại về bờ sông Làng Khởi Đầu (đặt cạnh cổng chuồng)
           const retX = z.center.x - 8;
@@ -939,7 +983,7 @@ export class World {
         this.dynamicIslandIds.add(z.id);
 
         if (z.template === 'PROCEDURAL_SANCTUARY') {
-          void proceduralLandBuilder.buildLand(z, this.assets).then((res) => {
+          const task = proceduralLandBuilder.buildLand(z, this.assets).then((res) => {
             this.scene.add(res.group);
             this.dynamicIslandGroups.set(z.id, [res.group]);
             this.dynamicObstacles.push(...res.obstacles);
@@ -966,7 +1010,7 @@ export class World {
               retArch.visible = false;
             }
 
-            customPortals.push(
+            this.dynamicIslandPortals.set(z.id, [
               {
                 id: `hub_to_z${z.id}`,
                 name: `Đến ${z.name}`,
@@ -981,12 +1025,13 @@ export class World {
                 target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
                 triggerRadius: 1.5
               }
-            );
+            ]);
           });
+          proceduralTasks.push(task);
         } else if (usesLakeTerrain(z.template)) {
           const disc = this.createLakeFallback(z.id, z.center.x, z.center.z, z.color);
           this.dynamicIslandGroups.set(z.id, [disc]);
-          this.loadLakeMap(z);
+          mapTasks.push(this.loadLakeMap(z));
 
           // Cổng kết nối từ Hub tới đảo mới
           const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
@@ -1005,7 +1050,7 @@ export class World {
             retArch.visible = false;
           }
 
-          customPortals.push(
+          this.dynamicIslandPortals.set(z.id, [
             {
               id: `hub_to_z${z.id}`,
               name: `Đến ${z.name}`,
@@ -1020,7 +1065,7 @@ export class World {
               target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
               triggerRadius: 1.5
             }
-          );
+          ]);
         } else {
           const islandGroup = this.createSingleIsland({
             cx: z.center.x,
@@ -1055,7 +1100,7 @@ export class World {
             retArch.visible = false;
           }
 
-          customPortals.push(
+          this.dynamicIslandPortals.set(z.id, [
             {
               id: `hub_to_z${z.id}`,
               name: `Đến ${z.name}`,
@@ -1070,8 +1115,18 @@ export class World {
               target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
               triggerRadius: 1.5
             }
-          );
+          ]);
         }
+      }
+    });
+
+    if (proceduralTasks.length > 0) {
+      await Promise.all(proceduralTasks);
+    }
+    otherZones.forEach((z) => {
+      const portals = this.dynamicIslandPortals.get(z.id);
+      if (portals) {
+        customPortals.push(...portals);
       }
     });
 
@@ -1119,6 +1174,12 @@ export class World {
     // 4. Đồng bộ hóa sang SpatialWorld
     const allPositions = positionedMonoliths.filter((pm) => pm.position).map((pm) => pm.position!);
     this.spatial.setDynamicData(zones, allPositions, customPortals, this.dynamicObstacles);
+    this.ensureLakeSanctuariesLoaded(this.player.position.x);
+
+    if (mapTasks.length > 0) {
+      await Promise.all(mapTasks);
+    }
+    this.requestIdleRender();
   }
 
   nearFlower(): number {
@@ -1166,7 +1227,9 @@ export class World {
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
+    this.ensureLakeSanctuariesLoaded(x);
     this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1, 0)));
+    this.requestIdleRender();
     this.onTeleport?.(x, z);
   }
 
@@ -1174,7 +1237,9 @@ export class World {
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
+    this.ensureLakeSanctuariesLoaded(x);
     this.resetCamera();
+    this.requestIdleRender();
   }
 
   private createMilo() {
@@ -1211,16 +1276,10 @@ export class World {
     return disc;
   }
 
-  private loadLakeSanctuaries() {
-    const sanctuaries = [
-      { id: 1, center: { x: 110, z: -60 }, template: 'GRID_SANCTUARY' },
-      { id: 2, center: { x: 150, z: -60 }, template: 'GRID_SANCTUARY' },
-      { id: 3, center: { x: 110, z: 60 }, template: 'CIRCLE_SANCTUARY' },
-      { id: 4, center: { x: 150, z: 60 }, template: 'GRID_SANCTUARY' },
-      { id: 5, center: { x: 190, z: 0 }, template: 'CIRCLE_SANCTUARY' }
-    ];
-    for (const s of sanctuaries) {
-      this.loadLakeMap(s);
+  private ensureLakeSanctuariesLoaded(playerX = this.player.position.x) {
+    const pending = selectLakeSanctuariesToLoad(playerX, this.activeZoneIds, new Set(this.lakeModels.keys()));
+    for (const s of pending) {
+      void this.loadLakeMap(s);
     }
   }
 
@@ -1315,12 +1374,13 @@ export class World {
 
     this.scene.add(lakeGroup);
     this.lakeModels.set(zone.id, lakeGroup);
+    this.requestIdleRender();
   }
 
   private async loadFarmMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
     try {
       if (!this.farmSanctuary) {
-        this.farmSanctuary = new FarmSanctuary(this.assets);
+        this.farmSanctuary = new FarmSanctuary(this.assets, this.geom);
       }
 
       // Position farm at zone center
@@ -1585,7 +1645,13 @@ export class World {
     for (let i = 0; i < 9; i++) { const rock = this.sphere(this.scene, -20 + i * 5, -2.4, 21, .8, 0xb9ac8e); rock.scale.set(1.3, .7, .9); }
   }
 
-  private resize() { const { clientWidth: w, clientHeight: h } = this.canvas; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
+  private resize() {
+    const { clientWidth: w, clientHeight: h } = this.canvas;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.requestIdleRender();
+  }
   private floorHeight() { return this.spatial.floorHeight(); }
   jump() { if (this.active && !this.paused && this.spatial.jump()) { this.onJump?.(); } }
   clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; }
@@ -1593,25 +1659,27 @@ export class World {
 
   private interactAtScreen(x: number, y: number) {
     const rect = this.canvas.getBoundingClientRect();
-    const pointer = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(pointer, this.camera);
+    this.scratchPointer.set(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1
+    );
+    this.scratchRay.setFromCamera(this.scratchPointer, this.camera);
 
     // 1. Direct 3D raycast on farm animals
     if (this.farmSanctuary && this.farmSanctuary.group.visible) {
-      const animalHit = this.farmSanctuary.findAnimalAtRay(ray);
+      const animalHit = this.farmSanctuary.findAnimalAtRay(this.scratchRay);
       if (animalHit) {
         this.onFarmAnimalClick?.(animalHit.id);
         return;
       }
     }
 
-    const hit = new THREE.Vector3();
-    if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) {
+    const hit = this.scratchHit;
+    if (this.scratchRay.ray.intersectPlane(this.scratchRayPlane, hit)) {
       // 2. Click near farm animal on ground plane
       if (this.farmSanctuary && this.farmSanctuary.group.visible) {
-        const localHit = new THREE.Vector3().copy(hit).sub(this.farmSanctuary.group.position);
-        const nearAnimal = this.farmSanctuary.findAnimalNearPoint(localHit, 2.5);
+        this.scratchLocalHit.copy(hit).sub(this.farmSanctuary.group.position);
+        const nearAnimal = this.farmSanctuary.findAnimalNearPoint(this.scratchLocalHit, 2.5);
         if (nearAnimal) {
           this.onFarmAnimalClick?.(nearAnimal.id);
           return;
@@ -1660,7 +1728,7 @@ export class World {
           return;
         }
       }
-      if (hit.distanceTo(new THREE.Vector3(-12.4, 0, -3.5)) < 3.5 && this.spatial.isNearShop()) {
+      if (hit.distanceTo(this.shopWorldPos) < 3.5 && this.spatial.isNearShop()) {
         this.onShopClick?.();
         return;
       }
@@ -1675,100 +1743,97 @@ export class World {
     this.equippedTrail = trailId;
   }
 
-  private emitFootstepTrail(x: number, y: number, z: number, trailType: string) {
-    let colors: number[] = [];
-    let geoType: 'flower' | 'star' | 'frost' = 'flower';
-
-    if (trailType === 'trail_flower') {
-      colors = [0xff69b4, 0xffd166, 0x06d6a0, 0xf72585, 0x70e000];
-      geoType = 'flower';
-    } else if (trailType === 'trail_stardust') {
-      colors = [0xffd700, 0xffbe0b, 0xfff8e7, 0xfb5607, 0xffe600];
-      geoType = 'star';
-    } else if (trailType === 'trail_frost') {
-      colors = [0x00f5d4, 0x70d6ff, 0xe0fbfc, 0x00b4d8, 0x90e0ef];
-      geoType = 'frost';
-    } else {
-      return;
-    }
-
-    const count = geoType === 'star' ? 2 : 1;
-    for (let c = 0; c < count; c++) {
-      const col = colors[Math.floor(Math.random() * colors.length)];
-      const offsetX = (Math.random() - 0.5) * 0.45;
-      const offsetZ = (Math.random() - 0.5) * 0.45;
-      const py = y + 0.08 + Math.random() * 0.06;
-
-      let geom: THREE.BufferGeometry;
-      if (geoType === 'flower') {
-        geom = new THREE.IcosahedronGeometry(0.12, 0);
-      } else if (geoType === 'star') {
-        geom = new THREE.TetrahedronGeometry(0.11, 0);
-      } else {
-        geom = new THREE.OctahedronGeometry(0.12, 0);
-      }
-
-      const mat = new THREE.MeshBasicMaterial({ color: col });
-      const mesh = new THREE.Mesh(geom, mat);
-      mesh.position.set(x + offsetX, py, z + offsetZ);
-      mesh.scale.setScalar(0.01);
-      this.scene.add(mesh);
-
-      const maxLife = 0.8 + Math.random() * 0.4;
-      this.trailParticles.push({
-        mesh,
-        velocity: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.4 + Math.random() * 0.3, (Math.random() - 0.5) * 0.3),
-        life: maxLife,
-        maxLife,
-        floatSpeed: 0.35 + Math.random() * 0.25,
-        rotSpeed: new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5)
-      });
-    }
-  }
-
   private movement(dt: number) {
     const pose = this.spatial.tick(dt, { keys: this.keys, joystick: this.joystick }, this.yaw);
     this.player.position.set(pose.x, pose.y, pose.z);
     this.player.rotation.y = pose.rotation;
     this.avatar.updateWalkAnimation(this.time, pose.moving);
+    this.ensureLakeSanctuariesLoaded(pose.x);
+
+    const transit = this.spatial.checkPortalTransit(dt);
+    if (transit && !this.pendingPortalTransit) {
+      this.pendingPortalTransit = transit;
+    }
 
     if (pose.moving && this.equippedTrail) {
       this.trailTimer += dt;
       if (this.trailTimer >= 0.09) {
         this.trailTimer = 0;
-        this.emitFootstepTrail(pose.x, pose.y, pose.z, this.equippedTrail);
+        this.geom.emitTrail(pose.x, pose.y, pose.z, this.equippedTrail);
       }
     }
   }
 
   burst(position: THREE.Vector3 | { x: number; y: number; z: number }) {
-    for (let i = 0; i < 20; i++) { const mesh = this.sphere(this.scene, position.x, position.y, position.z, .09, [0xffd164, 0xfff4c7, 0x7dd4b5, 0xf06292][i % 4]); mesh.castShadow = false; this.sparks.push({ mesh, life: 1.2, velocity: new THREE.Vector3((Math.random() - .5) * 5, 3 + Math.random() * 3, (Math.random() - .5) * 5) }); }
+    this.geom.emitBurst(position.x, position.y, position.z);
   }
 
   burstPlayer(offsetY = 1.0) {
-    this.burst({
-      x: this.player.position.x,
-      y: this.player.position.y + offsetY,
-      z: this.player.position.z
-    });
+    this.geom.emitBurst(this.player.position.x, this.player.position.y + offsetY, this.player.position.z);
   }
 
   project(point: THREE.Vector3 | { x: number; y: number; z: number }) {
-    const p = point instanceof THREE.Vector3 ? point : new THREE.Vector3(point.x, point.y, point.z);
-    const v = p.clone().project(this.camera);
+    const v = this.scratchProj.set(point.x, point.y, point.z).project(this.camera);
     return { x: (v.x * .5 + .5) * this.canvas.clientWidth, y: (-.5 * v.y + .5) * this.canvas.clientHeight, visible: v.z < 1 };
   }
 
+  private isLoopActive(): boolean {
+    const hidden = typeof document !== 'undefined' ? document.hidden : false;
+    return shouldRunRenderLoop(this._active, this._paused, hidden);
+  }
+
+  private handleVisibilityChange = () => {
+    this.syncRenderLoopState();
+  };
+
+  private syncRenderLoopState(): void {
+    if (this.isLoopActive()) {
+      if (this.idleFrame) {
+        cancelAnimationFrame(this.idleFrame);
+        this.idleFrame = 0;
+      }
+      this.clock.getDelta(); // discard elapsed idle delta
+      this.accumulator = 0;
+      if (!this.frame) {
+        this.frame = requestAnimationFrame(this.animate);
+      }
+    } else {
+      if (this.frame) {
+        cancelAnimationFrame(this.frame);
+        this.frame = 0;
+      }
+      this.renderFrame(0);
+    }
+  }
+
+  private requestIdleRender(): void {
+    if (this.frame || this.idleFrame) return;
+    this.idleFrame = requestAnimationFrame(() => {
+      this.idleFrame = 0;
+      if (!this.frame) {
+        this.renderFrame(0);
+      }
+    });
+  }
+
   private animate = () => {
+    if (!this.isLoopActive()) {
+      this.frame = 0;
+      return;
+    }
     this.frame = requestAnimationFrame(this.animate);
     const rawDt = Math.min(this.clock.getDelta(), 0.1);
+    this.renderFrame(rawDt);
+  };
+
+  private renderFrame(rawDt: number): void {
     this.time += rawDt;
 
     // Fixed-step simulation: physics & movement update at a constant 60Hz rate
     this.accumulator += rawDt;
     let steps = 0;
     while (this.accumulator >= this.FIXED_DT && steps < this.MAX_SUB_STEPS) {
-      if (this.active && !this.paused) {
+      if (this._active && !this._paused) {
         this.movement(this.FIXED_DT);
         if (this.farmSanctuary) {
           this.farmSanctuary.update(this.FIXED_DT, this.player.position);
@@ -1783,9 +1848,17 @@ export class World {
 
     // Presentation tick: smooth camera lerp & procedural animations using rawDt
     const wantedY = this.avatar.activeAvatar === 'elsa' ? 0.7 : 0;
-    const wanted = this.active ? new THREE.Vector3(this.player.position.x, wantedY, this.player.position.z) : new THREE.Vector3(-7, 0, 0);
-    this.target.lerp(wanted, 1 - Math.exp(-rawDt * 3));
-    const distance = this.active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
+    if (this._active) {
+      this.scratchWanted.set(this.player.position.x, wantedY, this.player.position.z);
+    } else {
+      this.scratchWanted.set(-7, 0, 0);
+    }
+    if (rawDt > 0) {
+      this.target.lerp(this.scratchWanted, 1 - Math.exp(-rawDt * 3));
+    } else {
+      this.target.copy(this.scratchWanted);
+    }
+    const distance = this._active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
     this.camera.position.set(this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, this.target.y + Math.sin(this.pitch) * distance, this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance);
     this.camera.lookAt(this.target);
     this.windmill.rotation.z -= rawDt * .25;
@@ -1809,7 +1882,7 @@ export class World {
         f.bloom.scale.setScalar(s);
         f.bud.scale.setScalar(Math.max(0.001, 1 - f.bloomAnim));
         if (Math.random() < 0.25) {
-          this.burst(new THREE.Vector3(f.position.x, 2.0, f.position.z));
+          this.geom.emitBurst(f.position.x, 2.0, f.position.z);
         }
       }
       if (f.bloomed) {
@@ -1828,27 +1901,14 @@ export class World {
       this.shopBeacon.rotation.z += rawDt * 1.5;
     }
 
-    for (let i = this.trailParticles.length - 1; i >= 0; i--) {
-      const p = this.trailParticles[i];
-      p.life -= rawDt;
-      p.mesh.position.addScaledVector(p.velocity, rawDt);
-      p.mesh.rotation.x += p.rotSpeed.x * rawDt;
-      p.mesh.rotation.y += p.rotSpeed.y * rawDt;
-      p.mesh.rotation.z += p.rotSpeed.z * rawDt;
-      const progress = Math.max(0, p.life / p.maxLife);
-      const scale = Math.sin(progress * Math.PI);
-      p.mesh.scale.setScalar(Math.max(0.001, scale));
-      if (p.life <= 0) {
-        this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        if (p.mesh.material instanceof THREE.Material) p.mesh.material.dispose();
-        this.trailParticles.splice(i, 1);
-      }
-    }
-
     this.archimedes.updateAnimations(rawDt, this.time);
-    for (let i = this.sparks.length - 1; i >= 0; i--) { const s = this.sparks[i]; s.life -= rawDt; s.velocity.y -= rawDt * 6; s.mesh.position.addScaledVector(s.velocity, rawDt); s.mesh.scale.setScalar(Math.max(0, s.life)); if (s.life <= 0) { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); this.sparks.splice(i, 1); } }
-    this.scene.children.forEach(o => { if (o.userData.ripple) o.position.z += rawDt * .25; if (o.userData.ripple && o.position.z > 19) o.position.z = -19; });
+    this.geom.updateEffects(rawDt);
+
+    for (let i = 0; i < this.ripples.length; i++) {
+      const r = this.ripples[i];
+      r.position.z += rawDt * .25;
+      if (r.position.z > 19) r.position.z = -19;
+    }
     let nearFarmId: string | null = null;
     if (this.farmSanctuary) {
       const px = this.player.position.x;
@@ -1866,18 +1926,47 @@ export class World {
 
     this.renderer.render(this.scene, this.camera);
 
-    this.onFrame?.(
-      this.spatial.isNearMilo(),
-      this.spatial.hasCrossedRiver(),
-      1 / Math.max(rawDt, .001),
-      this.spatial.nearFlowerIndex(),
-      this.spatial.isNearPortal(),
-      this.spatial.nearMonolithIndex(),
-      this.spatial.nearParkTreeIndex(),
-      this.spatial.isNearShop(),
-      nearFarmId
-    );
-  };
+    const nearPortal = this.spatial.getNearPortal();
+    if (nearPortal) {
+      this.assets.prefetchForPortal(nearPortal.id);
+    }
+
+    const transit = this.pendingPortalTransit;
+    this.pendingPortalTransit = null;
+
+    const emitHudPoses = rawDt === 0 || transit !== null || this.hudFrameTick++ % 3 === 0;
+    const hudPoses = emitHudPoses
+      ? {
+          miloPose: this.project({ x: -3, y: 3.5, z: 1.5 }),
+          bridgePose: this.project({ x: 7, y: 0.8, z: 0 }),
+          portalPose: this.project(
+            nearPortal
+              ? { x: nearPortal.source.x, y: 3.8, z: nearPortal.source.z }
+              : { x: this.portalPos.x, y: this.portalPos.y + 4.4, z: this.portalPos.z }
+          )
+        }
+      : undefined;
+
+    this.onFrame?.({
+      active: this._active,
+      paused: this._paused,
+      fps: 1 / Math.max(rawDt, .001),
+      playerPosition: { x: this.player.position.x, z: this.player.position.z },
+      locationName: this.spatial.getCurrentLocationName(),
+      inGarden: this.spatial.isInGarden(),
+      inArchimedes: this.spatial.isInArchimedesRealm(),
+      nearMilo: this.spatial.isNearMilo(),
+      crossedRiver: this.spatial.hasCrossedRiver(),
+      nearFlowerIndex: this.spatial.nearFlowerIndex(),
+      nearMonolithIndex: this.spatial.nearMonolithIndex(),
+      nearParkTreeIndex: this.spatial.nearParkTreeIndex(),
+      nearShop: this.spatial.isNearShop(),
+      nearFarmAnimalId: nearFarmId,
+      nearPortal,
+      portalTransit: transit,
+      hudPoses
+    });
+  }
 
   setFarmRescued(rescued: Record<string, boolean>) {
     this.farmRescued = rescued;
@@ -1885,8 +1974,15 @@ export class World {
 
   dispose() {
     cancelAnimationFrame(this.frame);
+    cancelAnimationFrame(this.idleFrame);
+    this.frame = 0;
+    this.idleFrame = 0;
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    }
     this.observer.disconnect();
     this.avatar.dispose();
+    this.farmSanctuary?.dispose();
     this.geom.dispose();
     this.assets.dispose();
     this.renderer.dispose();

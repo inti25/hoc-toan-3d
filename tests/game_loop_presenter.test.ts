@@ -219,3 +219,76 @@ test('HudPresenter reset() clears caches and allows re-application of values', (
   presenter.render(state);
   assert.equal(villageStatus.writeCounts.textContent, 2, 'Render after reset must re-apply values');
 });
+
+test('HudPresenter.renderSnapshot formats portal, Milo, and pause-hidden states from WorldFrameSnapshot', () => {
+  const elements = new Map<string, MockElement>();
+  const getEl = (id: string) => {
+    if (!elements.has(id)) {
+      elements.set(id, createMockElement(id));
+    }
+    return elements.get(id) as unknown as HTMLElement;
+  };
+
+  const presenter = new HudPresenter(getEl);
+
+  // 1. Near Milo in Starter Village
+  presenter.renderSnapshot(
+    {
+      active: true,
+      paused: false,
+      fps: 60,
+      playerPosition: { x: -4, z: 2 },
+      locationName: 'Làng Khởi Đầu',
+      inGarden: false,
+      inArchimedes: false,
+      nearMilo: true,
+      crossedRiver: false,
+      nearFlowerIndex: -1,
+      nearMonolithIndex: -1,
+      nearParkTreeIndex: -1,
+      nearShop: false,
+      nearFarmAnimalId: null,
+      nearPortal: null,
+      portalTransit: null,
+      hudPoses: {
+        miloPose: { x: 100, y: 120, visible: true },
+        bridgePose: { x: 200, y: 150, visible: true },
+        portalPose: { x: 300, y: 180, visible: false }
+      }
+    },
+    { subLabel: 'KHÁM PHÁ', arrowHtml: '→' }
+  );
+
+  assert.equal(elements.get('travel-text')!.textContent, 'Đến Vườn Hoa');
+  assert.equal(elements.get('interact')!.hidden, false);
+  assert.ok(elements.get('interact')!.innerHTML.includes('Nói chuyện với Milo'));
+  assert.equal(elements.get('bridge-label')!.hidden, false);
+  assert.equal(elements.get('portal-label')!.hidden, true);
+
+  // 2. Paused near farm portal -> hides interact & floating labels
+  presenter.renderSnapshot(
+    {
+      active: true,
+      paused: true,
+      fps: 60,
+      playerPosition: { x: -8, z: 14 },
+      locationName: 'Làng Khởi Đầu',
+      inGarden: false,
+      inArchimedes: false,
+      nearMilo: false,
+      crossedRiver: false,
+      nearFlowerIndex: -1,
+      nearMonolithIndex: -1,
+      nearParkTreeIndex: -1,
+      nearShop: false,
+      nearFarmAnimalId: null,
+      nearPortal: { id: 'village_to_farm', name: 'Nông Trại Vui Vẻ' },
+      portalTransit: null
+    },
+    { subLabel: 'KHÁM PHÁ', arrowHtml: '→' }
+  );
+
+  assert.equal(elements.get('interact')!.hidden, true);
+  assert.equal(elements.get('bridge-label')!.hidden, true);
+  assert.equal(elements.get('portal-label')!.hidden, true);
+});

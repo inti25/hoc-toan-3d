@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { GeometryBuilder } from '../src/world/geom';
+import { SceneBatchPool } from '../src/world/SceneBatchPool';
 import { ArchimedesZoneBuilder, type Obstacle } from '../src/world/ArchimedesZoneBuilder';
 
 test('ArchimedesZoneBuilder creates portal arches and registers spatial obstacles', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const builder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -24,7 +24,7 @@ test('ArchimedesZoneBuilder creates portal arches and registers spatial obstacle
 
 test('ArchimedesZoneBuilder createArchimedesPortals builds full set of realm portals', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const builder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -36,7 +36,7 @@ test('ArchimedesZoneBuilder createArchimedesPortals builds full set of realm por
 
 test('ArchimedesZoneBuilder creates monoliths, manages activation states and beams', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const builder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -70,7 +70,7 @@ test('ArchimedesZoneBuilder creates monoliths, manages activation states and bea
 
 test('ArchimedesZoneBuilder animation loop advances crystal rotations and floating heights without errors', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const builder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 
@@ -87,7 +87,7 @@ test('ArchimedesZoneBuilder animation loop advances crystal rotations and floati
 
 test('ArchimedesZoneBuilder removes garden monoliths cleanly', () => {
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const builder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 

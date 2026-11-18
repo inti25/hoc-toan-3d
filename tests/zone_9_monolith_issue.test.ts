@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { GeometryBuilder } from '../src/world/geom';
+import { SceneBatchPool } from '../src/world/SceneBatchPool';
 import { ArchimedesZoneBuilder, type Obstacle } from '../src/world/ArchimedesZoneBuilder';
 import { Adventure } from '../src/core/adventure';
 import { freshState } from '../src/core/state';
@@ -89,7 +89,7 @@ test('Zone 9: all crystal columns must appear on map and unsolved 222_1 must not
   assert.equal(adventure.isProblemSolved('222_3'), false, 'Problem 222_3 is NOT solved');
 
   const scene = new THREE.Scene();
-  const geom = new GeometryBuilder();
+  const geom = new SceneBatchPool();
   const obstacles: Obstacle[] = [];
   const zoneBuilder = new ArchimedesZoneBuilder(scene, geom, obstacles);
 

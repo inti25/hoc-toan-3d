@@ -115,3 +115,32 @@ test('loadZonesAndQuestions does NOT fetch when cache is fresh within 30 minutes
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchRemoteData deduplicates concurrent in-flight requests for the same scriptUrl', async () => {
+  let networkCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    await new Promise((r) => setTimeout(r, 15));
+    return {
+      ok: true,
+      json: async () => ({
+        status: 'success',
+        zones: [{ ZoneId: '1', ZoneName: 'Z1', Template: 'GRID_SANCTUARY', SheetName: 'S1' }],
+        questions: { S1: [] }
+      })
+    } as any;
+  }) as any;
+
+  try {
+    const [r1, r2] = await Promise.all([
+      fetchRemoteData('https://example.test/dedupe'),
+      fetchRemoteData('https://example.test/dedupe')
+    ]);
+    assert.equal(networkCalls, 1, 'Concurrent fetchRemoteData calls must coalesce into 1 HTTP request');
+    assert.equal(r1?.zones[0].name, 'Z1');
+    assert.equal(r2?.zones[0].name, 'Z1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

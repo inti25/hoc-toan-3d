@@ -4,6 +4,7 @@ import { generateFarmMultiplicationProblem } from '../../core/adventure';
 import type { Obstacle } from '../SpatialWorld';
 import { AssetRepository } from '../assets/AssetRepository';
 import type { AssetRepositorySeam } from '../assets/types';
+import { SceneBatchPool, type StaticPlacement } from '../SceneBatchPool';
 
 export interface FarmInteractTrigger {
   position: THREE.Vector3;
@@ -38,13 +39,19 @@ export class FarmSanctuary {
 
   // Triggers for answering math problems
   public interactTriggers: FarmInteractTrigger[] = [];
+  private triggerByAnimalId = new Map<string, FarmInteractTrigger>();
+  private readonly scratchLocalPlayerPos = new THREE.Vector3();
 
   private readonly assets: AssetRepositorySeam;
+  private readonly batchPool: SceneBatchPool;
+  private readonly ownsBatchPool: boolean;
   private time = 0;
   private lastFarmRescued: Record<string, boolean> = {};
 
-  constructor(assets?: AssetRepositorySeam) {
+  constructor(assets?: AssetRepositorySeam, batchPool?: SceneBatchPool) {
     this.assets = assets ?? new AssetRepository();
+    this.ownsBatchPool = !batchPool;
+    this.batchPool = batchPool ?? new SceneBatchPool();
     this.sceneryGroup.name = 'farm_scenery';
     this.animalsGroup.name = 'farm_animals';
     this.group.add(this.sceneryGroup);
@@ -92,6 +99,7 @@ export class FarmSanctuary {
     this.animalsGroup.clear();
     this.animals = [];
     this.interactTriggers = [];
+    this.triggerByAnimalId.clear();
 
     // Ensure shadows on source library meshes
     libraryScene.traverse((child) => {
@@ -216,12 +224,10 @@ export class FarmSanctuary {
       floraPool.push(this.createProceduralFlowerCluster());
     }
 
-    // Distribute 140 flora clusters covering the entire pasture from 6.2m to 28.5m
+    // Distribute 140 flora clusters covering the entire pasture from 6.2m to 28.5m using InstancedMesh batching
+    const floraPlacements: StaticPlacement[] = [];
     for (let i = 0; i < 140; i++) {
       const template = floraPool[Math.floor(Math.random() * floraPool.length)];
-      const prop = template.clone(true);
-      prop.name = template.name || `flora_${i}`;
-
       const t = i / 140;
       const angle = t * Math.PI * 2 * 9 + (Math.random() - 0.5) * 0.5;
       const radius = 6.2 + Math.sqrt(Math.random()) * 22.3;
@@ -237,21 +243,16 @@ export class FarmSanctuary {
         }
       }
 
-      prop.position.set(px, 0.02, pz);
-      prop.rotation.y = Math.random() * Math.PI * 2;
-      const s = 0.45 + Math.random() * 0.45;
-      prop.scale.set(s, s, s);
-
-      prop.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
+      floraPlacements.push({
+        template,
+        position: { x: px, y: 0.02, z: pz },
+        rotationY: Math.random() * Math.PI * 2,
+        scale: 0.45 + Math.random() * 0.45
       });
-      this.sceneryGroup.add(prop);
     }
+    this.batchPool.batchStaticTemplates(this.sceneryGroup, floraPlacements, { namePrefix: 'flora' });
 
-    // E. Perimeter Bush002 hedge surrounding the entire farm island
+    // E. Perimeter Bush002 hedge surrounding the entire farm island using InstancedMesh batching
     const bushTemplate =
       this.bushPrefab ||
       (this.parkLibrary ? this.extractFloraFromPark('Bush002') : null) ||
@@ -259,28 +260,19 @@ export class FarmSanctuary {
 
     const perimeterBushCount = 80;
     const perimeterRadius = 30.5;
+    const bushPlacements: StaticPlacement[] = [];
 
     for (let i = 0; i < perimeterBushCount; i++) {
       const angle = (i / perimeterBushCount) * Math.PI * 2;
-      const bush = bushTemplate.clone(true);
-      bush.name = `perimeter_bush_${i}`;
-
       const r = perimeterRadius + (Math.random() - 0.5) * 0.5;
-      const bx = Math.cos(angle) * r;
-      const bz = Math.sin(angle) * r;
-      bush.position.set(bx, 0.02, bz);
-      bush.rotation.y = angle + Math.PI / 2 + (Math.random() - 0.5) * 0.35;
-      const scale = 1.0 + Math.random() * 0.25;
-      bush.scale.set(scale, scale, scale);
-
-      bush.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
+      bushPlacements.push({
+        template: bushTemplate,
+        position: { x: Math.cos(angle) * r, y: 0.02, z: Math.sin(angle) * r },
+        rotationY: angle + Math.PI / 2 + (Math.random() - 0.5) * 0.35,
+        scale: 1.0 + Math.random() * 0.25
       });
-      this.sceneryGroup.add(bush);
     }
+    this.batchPool.batchStaticTemplates(this.sceneryGroup, bushPlacements, { namePrefix: 'perimeter_bush' });
 
 
 
@@ -568,14 +560,16 @@ export class FarmSanctuary {
         // Create interaction trigger for math challenge
         const problemData = this.buildAnimalProblemData(questions?.[i], i, kind);
 
-        this.interactTriggers.push({
+        const trigger: FarmInteractTrigger = {
           position: entity.root.position.clone(),
           radius: 3.5,
           id: problemData.id || animalId,
           animalId: animalId,
           isActive: true,
           problemData
-        });
+        };
+        this.interactTriggers.push(trigger);
+        this.triggerByAnimalId.set(animalId, trigger);
       }
 
 
@@ -603,12 +597,13 @@ export class FarmSanctuary {
       this.animalsGroup.clear();
       this.animals = [];
       this.interactTriggers = [];
+      this.triggerByAnimalId.clear();
       this.spawnAnimals(this.lastFarmRescued, questions);
       return;
     }
 
     this.animals.forEach((animal, i) => {
-      const trigger = this.interactTriggers.find((t) => t.animalId === animal.id);
+      const trigger = this.triggerByAnimalId.get(animal.id);
       if (!trigger) return;
       const problemData = this.buildAnimalProblemData(questions[i], i, animal.kind);
       trigger.problemData = problemData;
@@ -686,8 +681,8 @@ export class FarmSanctuary {
   public update(dt: number, playerPos: THREE.Vector3) {
     this.time += dt;
 
-    // Convert world player position into Farm local space for accurate look-at
-    const localPlayerPos = new THREE.Vector3().copy(playerPos).sub(this.group.position);
+    // Convert world player position into Farm local space without allocating per tick
+    const localPlayerPos = this.scratchLocalPlayerPos.copy(playerPos).sub(this.group.position);
 
     for (const animal of this.animals) {
       const pos = animal.root.position;
@@ -776,11 +771,13 @@ export class FarmSanctuary {
           // Wander slightly inside home shelter area
           const homeCenter = SHELTER_CENTERS[animal.kind] || { x: 0, z: 0 };
           animal.state = 'HOMEWARD';
-          animal.targetPos = new THREE.Vector3(
-            homeCenter.x + (Math.random() - 0.5) * 2.0,
-            0,
-            homeCenter.z + (Math.random() - 0.5) * 2.0
-          );
+          const wx = homeCenter.x + (Math.random() - 0.5) * 2.0;
+          const wz = homeCenter.z + (Math.random() - 0.5) * 2.0;
+          if (animal.targetPos) {
+            animal.targetPos.set(wx, 0, wz);
+          } else {
+            animal.targetPos = new THREE.Vector3(wx, 0, wz);
+          }
         }
       } else if (animal.state === 'ENGAGED') {
         // Look directly at player
@@ -799,7 +796,7 @@ export class FarmSanctuary {
       animal.root.rotation.y = animal.heading;
 
       // Synchronize trigger position to match current animal location
-      const trigger = this.interactTriggers.find((t) => t.animalId === animal.id);
+      const trigger = this.triggerByAnimalId.get(animal.id);
       if (trigger && trigger.isActive) {
         trigger.position.copy(pos);
       }
@@ -848,6 +845,17 @@ export class FarmSanctuary {
     while (angle > Math.PI) angle -= Math.PI * 2;
     while (angle < -Math.PI) angle += Math.PI * 2;
     return angle;
+  }
+
+  public dispose(): void {
+    this.sceneryGroup.clear();
+    this.animalsGroup.clear();
+    this.animals = [];
+    this.interactTriggers = [];
+    this.triggerByAnimalId.clear();
+    if (this.ownsBatchPool) {
+      this.batchPool.dispose();
+    }
   }
 }
 

@@ -1,24 +1,20 @@
 import './style.css';
-import type { World } from './world/World';
-import { WorldLoader } from './boot/WorldLoader';
-import { HudPresenter, formatPortalOverlay } from './world/loop/HudPresenter';
+import type { WorldHandle } from './boot/types';
+import { WorldSession, classifyZoneTemplate } from './boot/WorldSession';
+import { HudPresenter } from './world/loop/HudPresenter';
+import type { WorldFrameSnapshot } from './world/loop/types';
 import { Adventure, getArchimedesSolvedCount } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
 import { CHARACTERS, getCharacter } from './data/characters';
-import { ARCHIMEDES_ZONES, type ArchimedesMonolith } from './data/archimedesTrialMap';
+import { ARCHIMEDES_ZONES } from './data/archimedesTrialMap';
 import { AudioManager } from './audio/audio';
 import {
-  loadZonesAndQuestions,
   getAppsScriptUrl,
   getExplorerProfile,
   saveExplorerProfile,
   logRemoteProgress,
-  fetchRemoteData,
-  resolveZoneProblemsWithPositions,
   seedRemoteDatabase,
   getBundledFallbackData,
-  isZoneVisible,
-  REMOTE_CACHE_KEY,
   loadPlayerProgressFromSheets
 } from './core/sheetsClient';
 import { normalizePasscode, defaultStorage, profileManager } from './core/profile';
@@ -29,7 +25,7 @@ import {
   getSyncStatusLabel,
   runLocalStorageMigration
 } from './core/SyncManager';
-import type { RemoteZoneConfig, RemoteProblem, RemotePlayerProgress } from './data/remoteTypes';
+import type { RemoteZoneConfig, RemotePlayerProgress } from './data/remoteTypes';
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
 import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 import { ShopModal } from './ui/ShopModal';
@@ -38,18 +34,23 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const adventure = new Adventure();
 
-let activeRemoteZones: RemoteZoneConfig[] = [];
-let activeRemoteQuestions: Record<string, RemoteProblem[]> = {};
-let activeMonolithProblems: RemoteProblem[] = [];
-
+let lastSavedPos = { x: -6, z: 6 };
+let savePositionTimer: number | undefined;
 
 const syncManager = new SyncManager(adventure, profileManager, {
-  getMonolithCount: (s) => getArchimedesSolvedCount(s, activeMonolithProblems)
+  getMonolithCount: (s) => getArchimedesSolvedCount(s, worldSession.monolithProblems)
 });
 const audio = new AudioManager();
-const worldLoader = new WorldLoader();
+const worldSession: WorldSession = new WorldSession({
+  adventure,
+  onSyncQueue: (isMilestone) => syncManager.queueSync(isMilestone),
+  onContentUpdated: () => updateHUD(),
+  onDeferredSpawn: (safe) => {
+    lastSavedPos = safe;
+  }
+});
 const hudPresenter = new HudPresenter();
-let world: World | null = null;
+let world: WorldHandle | null = null;
 
 let mode: 'bridge' | 'practice' = 'bridge';
 let currentDialog = '';
@@ -61,10 +62,6 @@ let nearMonolith = -1;
 let nearParkTree = -1;
 let nearShop = false;
 let nearFarmAnimalId: string | null = null;
-let frameTick = 0;
-let deferredSpawnPosition: { x: number; z: number } | null = null;
-let lastSavedPos = { x: -6, z: 6 };
-let savePositionTimer: number | undefined;
 
 function queueSavePosition(x: number, z: number, immediate = false) {
   if (!adventure.getState().started) return;
@@ -98,7 +95,7 @@ const challengeDialog = new ChallengeDialog({
   },
   world: {
     burstPlayer: () => world?.burstPlayer(1.0),
-    getWorld: () => world!
+    getWorld: () => world! as any
   },
   adventure,
   telemetry: {
@@ -108,7 +105,7 @@ const challengeDialog = new ChallengeDialog({
 
 const shopModal = new ShopModal({
   adventure,
-  world: () => world,
+  world: () => world as any,
   audio,
   updateHUD: () => updateHUD(),
   toast: (msg) => toast(msg),
@@ -126,71 +123,6 @@ function getThemeBadgeIcon(theme?: string): string {
     default:
       return '🏛️';
   }
-}
-
-function syncDynamicContent(data: { zones: RemoteZoneConfig[]; questionsBySheet: Record<string, RemoteProblem[]> }) {
-  // Lọc vùng đất theo cột Active/StartAt trong CONFIG; tiến trình vẫn được giữ nguyên cho vùng đang ẩn
-  const visibleZones = data.zones.filter((z) => isZoneVisible(z));
-  activeRemoteZones = visibleZones;
-  activeRemoteQuestions = data.questionsBySheet;
-
-  const monolithProblems: RemoteProblem[] = [];
-  visibleZones.forEach((z) => {
-    const list = data.questionsBySheet[z.sheetName] || [];
-    const resolved = resolveZoneProblemsWithPositions(z, list);
-
-    // Vườn Hoa Tri Thức, Công Viên Xanh và Nông Trại tuyệt đối KHÔNG sinh bia đá (công viên gắn bài vào cây, nông trại gắn vào thú cưng)
-    if (
-      z.template === 'FLOWER_BEDS' ||
-      z.template === 'PARK_SANCTUARY' ||
-      z.template === 'FARM_SANCTUARY' ||
-      z.id === 6 ||
-      z.id === 7 ||
-      z.sheetName === 'VuonHoa' ||
-      z.sheetName === 'CongVienXanh'
-    ) {
-      return;
-    }
-    monolithProblems.push(...resolved);
-  });
-  activeMonolithProblems = monolithProblems;
-
-  const changed = adventure.reconcileZoneProgress(data.zones, data.questionsBySheet);
-  if (changed) {
-    syncManager.queueSync(false);
-  }
-
-  if (world) {
-    world.renderDynamicZones(
-      visibleZones,
-      monolithProblems.map((p) => ({
-        id: p.id,
-        position: p.position!,
-        color: p.color,
-        title: p.title
-      })),
-      data.questionsBySheet
-    );
-
-    const currentState = adventure.getState();
-    world.setMonolithsActivated((id, index) => {
-      return (
-        adventure.isProblemSolved(id) ||
-        (typeof id === 'number' && id >= 306 && id < 306 + currentState.monoliths.length && currentState.monoliths[id - 306] === true)
-      );
-    });
-
-    if (deferredSpawnPosition) {
-      const safe = world.spatial.resolveSafeSpawn(deferredSpawnPosition.x, deferredSpawnPosition.z);
-      if (safe) {
-        world.teleport(safe.x, safe.z);
-        queueSavePosition(safe.x, safe.z, true);
-        deferredSpawnPosition = null;
-      }
-    }
-  }
-
-  updateHUD();
 }
 
 const app = $('app');
@@ -391,11 +323,12 @@ function updateHUD() {
     .join('');
 
   // Archimedes & Kingdom quest tracker
-  const monolithCount = getArchimedesSolvedCount(state, activeMonolithProblems);
-  const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
+  const monolithProblems = worldSession.monolithProblems;
+  const monolithCount = getArchimedesSolvedCount(state, monolithProblems);
+  const totalMonoliths = monolithProblems.length > 0 ? monolithProblems.length : 40;
   $('monolith-count').textContent = `${monolithCount} / ${totalMonoliths} Bia Đá`;
-  const zonesForBadges = activeRemoteZones.length > 0
-    ? activeRemoteZones.filter((z) => z.id !== 6 && z.sheetName !== 'VuonHoa')
+  const zonesForBadges = worldSession.badgeZones.length > 0
+    ? worldSession.badgeZones
     : ARCHIMEDES_ZONES;
   $('archimedes-badges').innerHTML = zonesForBadges.map((z, i) => {
     const earned = state.zoneBadges[i];
@@ -503,12 +436,9 @@ async function start() {
   document.body.classList.add('playing');
   updateHUD();
 
-  // Nạp và đồng bộ dữ liệu từ Google Sheets
-  loadZonesAndQuestions((fresh) => {
-    syncDynamicContent(fresh);
-    toast('✨ Đã cập nhật câu hỏi mới từ Google Sheets!');
-  }).then((data) => {
-    syncDynamicContent(data);
+  // Tái sử dụng phiên đồng bộ khởi động nếu đang chạy hoặc đã xong (không gọi fetch trùng)
+  void worldSession.bootSync().catch((err) => {
+    console.warn('Lỗi đồng bộ câu hỏi khi vào thế giới:', err);
   });
 
   toast(`Chào mừng ${profile.nickname}! Cùng Milo khám phá Vương Quốc nhé! ✨`);
@@ -603,11 +533,11 @@ function interactAction() {
 }
 
 function openParkSelectionDialog() {
-  const parkZones = activeRemoteZones.filter((z) => z.template === 'PARK_SANCTUARY');
+  const parkZones = worldSession.zones.filter((z) => classifyZoneTemplate(z) === 'park');
   if (parkZones.length === 0) return;
 
   const parkCardsHtml = parkZones.map((pz) => {
-    const questions = activeRemoteQuestions[pz.sheetName] || [];
+    const questions = worldSession.getQuestionsForSheet(pz.sheetName);
     const state = adventure.getState();
     const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
     const totalCount = questions.length;
@@ -679,24 +609,11 @@ function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
 function openParkTreeDialog(index: number, stepIndex = 0) {
   const locName = world?.spatial?.getCurrentLocationName();
   const parkZone =
-    activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY' && locName === z.name) ||
-    activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+    worldSession.zones.find((z) => classifyZoneTemplate(z) === 'park' && locName === z.name) ||
+    worldSession.zones.find((z) => classifyZoneTemplate(z) === 'park');
   const sheetName = parkZone?.sheetName || 'CongVienXanh';
-  let parkQuestions = activeRemoteQuestions[sheetName];
-  if (!parkQuestions || parkQuestions.length === 0) {
-    try {
-      const raw = localStorage.getItem(REMOTE_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const questions = parsed?.data?.questionsBySheet || parsed?.questionsBySheet;
-        if (questions?.[sheetName]?.length) {
-          parkQuestions = questions[sheetName];
-          activeRemoteQuestions[sheetName] = parkQuestions;
-        }
-      }
-    } catch (_) { }
-  }
-  if (!parkQuestions || index < 0 || index >= parkQuestions.length) {
+  const parkQuestions = worldSession.getQuestionsForSheet(sheetName);
+  if (index < 0 || index >= parkQuestions.length) {
     return;
   }
   return challengeDialog.startChallenge({
@@ -709,20 +626,7 @@ function openParkTreeDialog(index: number, stepIndex = 0) {
 }
 
 function openFlowerDialog(index: number, stepIndex = 0) {
-  let remoteFlowers = activeRemoteQuestions['VuonHoa'];
-  if (!remoteFlowers || remoteFlowers.length === 0) {
-    try {
-      const raw = localStorage.getItem(REMOTE_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const questions = parsed?.data?.questionsBySheet || parsed?.questionsBySheet;
-        if (questions?.['VuonHoa']?.length) {
-          remoteFlowers = questions['VuonHoa'];
-          activeRemoteQuestions['VuonHoa'] = remoteFlowers;
-        }
-      }
-    } catch (_) { }
-  }
+  const remoteFlowers = worldSession.getQuestionsForSheet('VuonHoa');
   return challengeDialog.startChallenge({
     type: 'flower',
     index,
@@ -762,7 +666,7 @@ async function openFarmAnimalDialog(animalId: string) {
   const pd = trigger.problemData;
   const questionId = pd?.id || animalId;
 
-  const farmZone = activeRemoteZones.find((z) => z.template === 'FARM_SANCTUARY');
+  const farmZone = worldSession.zones.find((z) => classifyZoneTemplate(z) === 'farm');
   const outcome = await challengeDialog.startChallenge({
     type: 'farm_animal',
     animalId,
@@ -791,10 +695,10 @@ async function openFarmAnimalDialog(animalId: string) {
 
 function openArchimedesMapDialog(selectedZoneId = 0) {
   const state = adventure.getState();
-  const zones: RemoteZoneConfig[] = activeRemoteZones.length > 0 ? activeRemoteZones : getBundledFallbackData().zones;
+  const zones: RemoteZoneConfig[] = worldSession.zones.length > 0 ? worldSession.zones : getBundledFallbackData().zones;
   const currentZone = zones.find((z) => z.id === selectedZoneId);
 
-  const totalMonolithCompleted = getArchimedesSolvedCount(state, activeMonolithProblems);
+  const totalMonolithCompleted = getArchimedesSolvedCount(state, worldSession.monolithProblems);
   const totalFlowerCompleted = state.flowers.filter(Boolean).length;
   const badgesEarned = state.zoneBadges.filter(Boolean).length;
 
@@ -802,10 +706,11 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     `<button class="archimedes-zone-tab" data-zone="0" aria-pressed="${selectedZoneId === 0}">🌐 Toàn Cảnh (${zones.length} Vùng)</button>`,
     `<button class="archimedes-zone-tab" data-zone="-1" aria-pressed="${selectedZoneId === -1}">🏡 Làng Khởi Đầu</button>`,
     ...zones.map((z) => {
-      const qList = activeRemoteQuestions[z.sheetName] || [];
-      const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
-      const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-      const isFarmZone = z.template === 'FARM_SANCTUARY';
+      const qList = worldSession.getQuestionsForSheet(z.sheetName);
+      const kind = classifyZoneTemplate(z);
+      const isFlowerZone = kind === 'flower';
+      const isParkZone = kind === 'park';
+      const isFarmZone = kind === 'farm';
       const farmRescuedCount = Object.values(state.farmRescued || {}).filter(Boolean).length;
       const total = isParkZone
         ? qList.length
@@ -841,10 +746,11 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       </div>
       `,
       ...zones.map((z) => {
-        const qList = activeRemoteQuestions[z.sheetName] || [];
-        const isFlowerZone = z.id === 6 || z.sheetName === 'VuonHoa';
-        const isParkZone = z.id === 7 || z.sheetName === 'CongVienXanh' || z.template === 'PARK_SANCTUARY';
-        const isFarmZone = z.template === 'FARM_SANCTUARY';
+        const qList = worldSession.getQuestionsForSheet(z.sheetName);
+        const kind = classifyZoneTemplate(z);
+        const isFlowerZone = kind === 'flower';
+        const isParkZone = kind === 'park';
+        const isFarmZone = kind === 'farm';
         const farmRescuedCount = Object.values(state.farmRescued || {}).filter(Boolean).length;
         const total = isParkZone
           ? qList.length
@@ -916,7 +822,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     `;
   } else if (selectedZoneId === 6) {
     // 3. Vườn Hoa Tri Thức
-    const remoteFlowers = activeRemoteQuestions['VuonHoa'] || [];
+    const remoteFlowers = worldSession.getQuestionsForSheet('VuonHoa');
     const flowerList = remoteFlowers.length > 0
       ? remoteFlowers
       : Array.from({ length: 10 }, (_, i) => ({ id: i + 1, title: `Hoa Tri Thức #${i + 1}`, subtitle: 'Làm nở hoa bằng cách trả lời đúng' }));
@@ -965,7 +871,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     `;
   } else if (currentZone?.template === 'PARK_SANCTUARY') {
     // 4. Vùng đất Công Viên Tri Thức (PARK_SANCTUARY)
-    const remoteParkTrees = activeRemoteQuestions[currentZone.sheetName] || [];
+    const remoteParkTrees = worldSession.getQuestionsForSheet(currentZone.sheetName);
     // Chỉ lấy đúng số lượng câu hỏi trên Google Sheets, không tự sinh fallback 20 câu
     const treeList = remoteParkTrees;
 
@@ -1019,7 +925,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     `;
   } else if (currentZone?.template === 'FARM_SANCTUARY') {
     // 4b. Vùng đất Nông Trại Giải Cứu Thú Cưng (FARM_SANCTUARY)
-    const qList = currentZone ? activeRemoteQuestions[currentZone.sheetName] || [] : [];
+    const qList = currentZone ? worldSession.getQuestionsForSheet(currentZone.sheetName) : [];
     const totalAnimals = Math.max(world?.farmSanctuary?.animals?.length || 0, qList.length, 10);
     const availableKinds = ['cow', 'pig', 'chicken', 'duck', 'dog'];
     const animalEmojis: Record<string, string> = {
@@ -1081,7 +987,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     `;
   } else {
     // 5. Các phân khu Archimedes & Vùng đất tùy biến từ Google Sheets
-    const qList = currentZone ? activeRemoteQuestions[currentZone.sheetName] || [] : [];
+    const qList = currentZone ? worldSession.getQuestionsForSheet(currentZone.sheetName) : [];
     const monolithCardsHtml = qList.map((m) => {
       const isDone = adventure.isProblemSolved(m.id) || (typeof m.id === 'number' && m.id >= 306 && state.monoliths[m.id - 306]);
       const pPos = m.position || { x: currentZone?.center.x || 0, z: currentZone?.center.z || 0 };
@@ -1165,10 +1071,9 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
         return;
       }
       toast('⏳ Đang đồng bộ câu hỏi mới nhất từ Google Sheets...');
-      fetchRemoteData(url)
+      worldSession.refreshFromRemote()
         .then((fresh) => {
           if (fresh) {
-            syncDynamicContent(fresh);
             toast('✨ Đã cập nhật câu hỏi mới từ Google Sheets!');
             openArchimedesMapDialog(selectedZoneId);
           }
@@ -1245,9 +1150,9 @@ function openArchimedesMonolithDialog(monolithRef: number | string, stepIndex = 
     type: 'archimedes',
     monolithRef,
     stepIndex,
-    questionsBySheet: activeRemoteQuestions,
-    zones: activeRemoteZones,
-    monolithProblems: activeMonolithProblems
+    questionsBySheet: worldSession.questionsBySheet,
+    zones: worldSession.zones,
+    monolithProblems: worldSession.monolithProblems
   });
 }
 
@@ -1279,7 +1184,7 @@ $('learn-welcome').onclick = () => learn();
 $('travel').onclick = () => {
   if (!world?.active || world.paused) return;
   const locName = world.spatial.getCurrentLocationName();
-  const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY' && locName === z.name);
+  const parkZone = worldSession.zones.find((z) => classifyZoneTemplate(z) === 'park' && locName === z.name);
   if (parkZone) {
     world.teleport(-6, 5);
     toast('Đã trở về Làng Khởi Đầu!');
@@ -1298,10 +1203,11 @@ $('travel').onclick = () => {
 function openQuestDialog() {
   const state = adventure.getState();
   const bloomedCount = state.flowers.filter(Boolean).length;
-  const monolithCount = getArchimedesSolvedCount(state, activeMonolithProblems);
-  const totalMonoliths = activeMonolithProblems.length > 0 ? activeMonolithProblems.length : 40;
-  const zonesForBadges = activeRemoteZones.length > 0
-    ? activeRemoteZones.filter((z) => z.id !== 6 && z.sheetName !== 'VuonHoa')
+  const monolithProblems = worldSession.monolithProblems;
+  const monolithCount = getArchimedesSolvedCount(state, monolithProblems);
+  const totalMonoliths = monolithProblems.length > 0 ? monolithProblems.length : 40;
+  const zonesForBadges = worldSession.badgeZones.length > 0
+    ? worldSession.badgeZones
     : ARCHIMEDES_ZONES;
 
   const questCopy = state.questComplete
@@ -1711,12 +1617,10 @@ function settings() {
   };
 
   $('refresh-sheets-btn').onclick = () => {
-    const url = getAppsScriptUrl();
     toast('⏳ Đang tải lại câu hỏi mới nhất từ Google Sheets...');
-    fetchRemoteData(url)
+    worldSession.refreshFromRemote()
       .then((fresh) => {
         if (fresh) {
-          syncDynamicContent(fresh);
           toast('✨ Đã tải lại câu hỏi mới nhất từ Google Sheets thành công!');
         }
       })
@@ -1731,10 +1635,7 @@ function settings() {
     seedRemoteDatabase(url)
       .then((res) => {
         toast(`✨ ${res.message}`);
-        return fetchRemoteData(url);
-      })
-      .then((fresh) => {
-        if (fresh) syncDynamicContent(fresh);
+        return worldSession.refreshFromRemote();
       })
       .catch((err) => {
         toast(`⚠️ Khởi tạo thất bại: ${err.message}`);
@@ -1844,7 +1745,7 @@ function settings() {
         world.resetCamera();
       }
       lastSavedPos = { x: -6, z: 6 };
-      deferredSpawnPosition = null;
+      worldSession.clearDeferredSpawn();
 
       menu();
       toast('Một hành trình mới đang chờ bạn!');
@@ -2075,137 +1976,97 @@ $('wallet-btn').onclick = () => shopModal.open('shop', 'full');
 $('archimedes-btn').onclick = () => openArchimedesMapDialog();
 $('portal-label').onclick = handlePortalAction;
 
-function onWorldFrame(
-  isNear: boolean,
-  crossed: boolean,
-  _fps: number,
-  nearFlowerIdx: number,
-  isNearPortal: boolean,
-  nearMonolithIdx: number,
-  nearParkTreeIdx: number,
-  isNearShop = false,
-  nearFarmAnimal: string | null = null
-) {
+function onWorldFrame(snapshot: WorldFrameSnapshot) {
   if (!world) return;
-  near = isNear;
-  nearFlower = nearFlowerIdx;
-  nearPortal = isNearPortal;
-  nearMonolith = nearMonolithIdx;
-  nearParkTree = nearParkTreeIdx;
-  nearShop = isNearShop;
-  nearFarmAnimalId = nearFarmAnimal;
+  near = snapshot.nearMilo;
+  nearFlower = snapshot.nearFlowerIndex;
+  nearPortal = snapshot.nearPortal !== null;
+  nearMonolith = snapshot.nearMonolithIndex;
+  nearParkTree = snapshot.nearParkTreeIndex;
+  nearShop = snapshot.nearShop;
+  nearFarmAnimalId = snapshot.nearFarmAnimalId;
 
-  if (world.active && !world.paused && !$<HTMLDialogElement>('dialog').open) {
-    queueSavePosition(world.player.position.x, world.player.position.z);
-    const transit = world.spatial.checkPortalTransit(0.016);
-    if (transit) {
-      if (transit.requiresSelection) {
+  if (snapshot.active && !snapshot.paused && !$<HTMLDialogElement>('dialog').open) {
+    queueSavePosition(snapshot.playerPosition.x, snapshot.playerPosition.z);
+    if (snapshot.portalTransit) {
+      if (snapshot.portalTransit.requiresSelection) {
         openParkSelectionDialog();
       } else {
         audio.playCue('jump');
         world.burstPlayer(1.0);
-        queueSavePosition(world.player.position.x, world.player.position.z, true);
-        toast(`✨ ${transit.name}!`);
+        queueSavePosition(snapshot.playerPosition.x, snapshot.playerPosition.z, true);
+        toast(`✨ ${snapshot.portalTransit.name}!`);
       }
     }
   }
 
-  if (++frameTick % 3 !== 0) return;
+  if (!snapshot.hudPoses) return;
 
-  const locName = world.spatial.getCurrentLocationName();
-  const inArchimedes = world.spatial.isInArchimedesRealm();
-  const inGarden = world.spatial.isInGarden();
-
+  const locName = snapshot.locationName;
   let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
-  const dynZone = activeRemoteZones.find((z) => z.name === locName);
+  const dynZone = worldSession.zones.find((z) => z.name === locName);
   if (dynZone) {
-    subLabel = dynZone.template === 'PARK_SANCTUARY'
+    subLabel = classifyZoneTemplate(dynZone) === 'park'
       ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
       : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
   } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
   else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
-  else if (inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
+  else if (snapshot.inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
 
-  const travelText = locName === 'Làng Khởi Đầu' ? 'Đến Vườn Hoa' : locName === 'Vườn Hoa Tri Thức' ? 'Đến Đền Cổng' : 'Về Làng Khởi Đầu';
-
-  const nearPortalObj = world.spatial.getNearPortal();
-  if (nearPortalObj) {
-    world.assets.prefetchForPortal(nearPortalObj.id);
-  }
-
-  let interactHtml = '';
-  let interactHidden = true;
-
+  let interactTargetLabel: { html: string; visible: boolean } | undefined;
   if (nearShop) {
-    interactHtml = `🛍️ <b>Tiệm Tạp Hóa Vương Quốc</b> (Bấm E để vào tiệm) ${icon('arrow')}`;
-    interactHidden = world.paused;
+    interactTargetLabel = {
+      html: `🛍️ <b>Tiệm Tạp Hóa Vương Quốc</b> (Bấm E để vào tiệm) ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
   } else if (nearFarmAnimalId) {
-    const animal = world?.farmSanctuary?.animals.find(a => a.id === nearFarmAnimalId);
+    const animal = world.farmSanctuary?.animals.find(a => a.id === nearFarmAnimalId);
     const animalName = animal ? getAnimalVietnameseName(animal.kind) : 'Bé Thú';
-    const trigger = world?.farmSanctuary?.getInteractTriggers().find(t => t.animalId === nearFarmAnimalId);
+    const trigger = world.farmSanctuary?.getInteractTriggers().find(t => t.animalId === nearFarmAnimalId);
     const pd = trigger?.problemData;
     const probTitle = pd?.title || pd?.subtitle || `Bé ${animalName} Cần Giúp Đỡ`;
     const isRescued = adventure.getState().farmRescued?.[nearFarmAnimalId] === true;
-    interactHtml = `🐾 <b>${probTitle}</b> ${isRescued ? '(Đã về chuồng - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
-    interactHidden = world.paused;
+    interactTargetLabel = {
+      html: `🐾 <b>${probTitle}</b> ${isRescued ? '(Đã về chuồng - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
   } else if (nearParkTree !== -1) {
-    const parkZone = activeRemoteZones.find((z) => z.template === 'PARK_SANCTUARY');
+    const parkZone = worldSession.zones.find((z) => classifyZoneTemplate(z) === 'park');
     const sheetName = parkZone?.sheetName || 'CongVienXanh';
-    const parkQuestions = activeRemoteQuestions[sheetName] || [];
+    const parkQuestions = worldSession.getQuestionsForSheet(sheetName);
     const prob = parkQuestions[nearParkTree];
     const treeTitle = prob?.title || prob?.subtitle || `Cây Tri Thức #${nearParkTree + 1}`;
     const awakened = adventure.isParkTreeAwakened(nearParkTree) || (prob?.id ? adventure.isProblemSolved(prob.id) : false);
-    interactHtml = `🌳 <b>${treeTitle}</b> ${awakened ? '(Đã thức tỉnh - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
-    interactHidden = world.paused;
+    interactTargetLabel = {
+      html: `🌳 <b>${treeTitle}</b> ${awakened ? '(Đã thức tỉnh - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
   } else if (nearMonolith !== -1) {
-    const dynamicProb = activeMonolithProblems[nearMonolith];
+    const dynamicProb = worldSession.monolithProblems[nearMonolith];
     const mId = dynamicProb?.id !== undefined ? dynamicProb.id : (306 + nearMonolith);
     const mTitle = dynamicProb?.title || dynamicProb?.subtitle || `Bia Đá ${mId}`;
     const done = adventure.isProblemSolved(mId) || (typeof mId === 'number' && mId >= 306 && mId < 306 + adventure.getState().monoliths.length && adventure.getState().monoliths[mId - 306]);
-    interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
-    interactHidden = world.paused;
-  } else if (nearPortal) {
-    interactHtml = formatPortalOverlay(nearPortalObj, inGarden, icon('arrow')).interactHtml;
-    interactHidden = world.paused;
-  } else if (nearFlower !== -1) {
-    const flowerProb = activeRemoteQuestions['VuonHoa']?.[nearFlower];
+    interactTargetLabel = {
+      html: `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
+  } else if (!nearPortal && nearFlower !== -1) {
+    const flowerProb = worldSession.getQuestionsForSheet('VuonHoa')[nearFlower];
     const flowerTitle = flowerProb?.title || flowerProb?.subtitle || `Cây Hoa ${nearFlower + 1}`;
     const bloomed = adventure.getState().flowers[nearFlower];
-    interactHtml = `${icon('flower')} <b>${flowerTitle}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`;
-    interactHidden = world.paused;
-  } else if (isNear) {
-    interactHtml = `<kbd>E</kbd> Nói chuyện với Milo ${icon('arrow')}`;
-    interactHidden = world.paused;
-  } else {
-    interactHidden = true;
+    interactTargetLabel = {
+      html: `${icon('flower')} <b>${flowerTitle}</b> ${bloomed ? '(Đã nở - Xem lại)' : '(Bấm E để làm nở hoa)'} ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
   }
 
-  const m = world.project({ x: -3, y: 3.5, z: 1.5 });
-  const b = world.project({ x: 7, y: 0.8, z: 0 });
-  const portalTargetPos = nearPortalObj
-    ? { x: nearPortalObj.source.x, y: 3.8, z: nearPortalObj.source.z }
-    : { x: world.portalPos.x, y: world.portalPos.y + 4.4, z: world.portalPos.z };
-  const p = world.project(portalTargetPos);
-
-  const portalLabelHtml = formatPortalOverlay(nearPortalObj, inGarden, icon('arrow')).portalLabelHtml;
-
-  hudPresenter.render({
-    locName,
+  hudPresenter.renderSnapshot(snapshot, {
     subLabel,
-    travelText,
-    interactHtml,
-    interactHidden,
-    isNearMilo: isNear,
-    isNearPortal,
-    miloPose: { x: m.x, y: m.y, visible: !world.paused },
-    bridgePose: { x: b.x, y: b.y, visible: !(world.paused || inGarden || inArchimedes) },
-    portalPose: { x: p.x, y: p.y, visible: !(world.paused || (!inGarden && !isNearPortal)) },
-    portalLabelHtml,
-    bridgeLabelHidden: world.paused || inGarden || inArchimedes,
-    portalLabelHidden: world.paused || (!inGarden && !isNearPortal)
+    interactTargetLabel,
+    arrowHtml: icon('arrow')
   });
 
-  if (world.active && !world.paused && crossed) {
+  if (snapshot.active && !snapshot.paused && snapshot.crossedRiver) {
     const delta = adventure.completeRiverCrossing();
     if (delta.completed) {
       updateHUD();
@@ -2221,22 +2082,14 @@ function onWorldFrame(
   }
 }
 
-async function ensureWorld(): Promise<World> {
+async function ensureWorld(): Promise<WorldHandle> {
   const init = adventure.getState();
-  const worldInstance = await worldLoader.launch({
+  if (init.started && init.position) {
+    lastSavedPos = { x: init.position.x, z: init.position.z };
+  }
+
+  return worldSession.launch({
     canvas: $<HTMLCanvasElement>('world'),
-    avatar: init.avatar,
-    bridge: init.bridge,
-    flowers: init.flowers,
-    monolithChecker: (id, index) => {
-      return (
-        adventure.isProblemSolved(id) ||
-        (typeof id === 'number' && id >= 306 && id < 306 + init.monoliths.length && init.monoliths[id - 306] === true)
-      );
-    },
-    parkTrees: init.parkTrees || [],
-    farmRescued: init.farmRescued || {},
-    equippedTrail: init.equippedTrail || '',
     initialPosition: (init.started && init.position) ? init.position : null,
     onTeleport: (x, z) => queueSavePosition(x, z, true),
     onJump: () => audio.playCue('jump'),
@@ -2249,28 +2102,6 @@ async function ensureWorld(): Promise<World> {
     onFarmAnimalClick: (animalId) => openFarmAnimalDialog(animalId),
     onFrame: onWorldFrame
   });
-
-  worldInstance.isParkTreeAwakened = (idx) => adventure.isParkTreeAwakened(idx);
-
-  if (init.started && init.position) {
-    lastSavedPos = { x: init.position.x, z: init.position.z };
-    const safe = worldInstance.spatial.resolveSafeSpawn(init.position.x, init.position.z);
-    if (safe) {
-      worldInstance.setInitialPosition(safe.x, safe.z);
-      if (safe.x !== init.position.x || safe.z !== init.position.z) {
-        lastSavedPos = safe;
-        queueSavePosition(safe.x, safe.z, true);
-      }
-    } else {
-      deferredSpawnPosition = init.position;
-    }
-  }
-
-  if (activeRemoteZones.length > 0) {
-    syncDynamicContent({ zones: activeRemoteZones, questionsBySheet: activeRemoteQuestions });
-  }
-
-  return worldInstance;
 }
 
 // Khởi tạo ngay lập tức App Shell (<50ms)
@@ -2286,21 +2117,16 @@ void runLocalStorageMigration(adventure, undefined, syncManager, defaultStorage,
 // Tải ngầm 3D engine dưới nền khi luồng chính rảnh (Speculative Preload)
 if (typeof requestIdleCallback !== 'undefined') {
   requestIdleCallback(() => {
-    worldLoader.preload().catch((err) => console.warn('Preload ngầm 3D:', err));
+    worldSession.preloadEngine().catch((err) => console.warn('Preload ngầm 3D:', err));
   });
 } else {
   setTimeout(() => {
-    worldLoader.preload().catch((err) => console.warn('Preload ngầm 3D:', err));
+    worldSession.preloadEngine().catch((err) => console.warn('Preload ngầm 3D:', err));
   }, 100);
 }
 
 // Nạp câu hỏi và bản đồ từ Google Sheets dưới nền (cache 30 phút & Stale-While-Revalidate)
-loadZonesAndQuestions((fresh) => {
-  syncDynamicContent(fresh);
-  console.log('✨ [Sheets] Đã đồng bộ câu hỏi mới nhất từ Google Sheets!');
-}).then((data) => {
-  syncDynamicContent(data);
-}).catch((err) => {
+worldSession.bootSync().catch((err) => {
   console.warn('Lỗi nạp câu hỏi khởi động:', err);
 });
 

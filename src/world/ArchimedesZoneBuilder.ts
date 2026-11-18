@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
-import type { GeometryBuilder } from './geom';
+import type { SceneBatchPool } from './SceneBatchPool';
 import { computeLakeAnchors } from '../data/lakeLand';
 
 export interface Obstacle {
@@ -35,7 +35,7 @@ export class ArchimedesZoneBuilder {
 
   constructor(
     private scene: THREE.Scene,
-    private geom: GeometryBuilder,
+    private geom: SceneBatchPool,
     private obstacles: Obstacle[]
   ) {}
 

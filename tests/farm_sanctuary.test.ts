@@ -361,17 +361,32 @@ test('FarmSanctuary scenery includes grass and flowers outside the pen', async (
   farm.parkLibrary = mockPark;
   farm.setupFromLibrary(mockLibrary, {});
 
-  const floraObjects = (farm as any).sceneryGroup.children.filter((c: any) => 
-    c.name.includes('Grass') || c.name.includes('Flowers') || c.name.includes('Bush') || c.name.includes('park_')
+  const floraObjects = (farm as any).sceneryGroup.children.filter((c: any) =>
+    c.name.includes('Grass') || c.name.includes('Flowers') || c.name.includes('Bush') || c.name.includes('park_') || c.name.includes('flora_')
   );
 
   assert.ok(floraObjects.length > 0, `Scenery must contain grass and flower flora items (found ${floraObjects.length})`);
-  
-  // Verify that all flora are placed OUTSIDE the pen
+
+  // Verify that all flora instances are placed OUTSIDE the pen
+  const mat = new THREE.Matrix4();
+  const instPos = new THREE.Vector3();
+  let totalChecked = 0;
   for (const obj of floraObjects) {
-    const isInsidePen = Math.abs(obj.position.x) <= 5.0 && Math.abs(obj.position.z) <= 4.0;
-    assert.equal(isInsidePen, false, `Flora ${obj.name} placed inside pen at (${obj.position.x}, ${obj.position.z})`);
+    if (obj.isInstancedMesh) {
+      for (let i = 0; i < obj.count; i++) {
+        obj.getMatrixAt(i, mat);
+        instPos.setFromMatrixPosition(mat);
+        const isInsidePen = Math.abs(instPos.x) <= 5.0 && Math.abs(instPos.z) <= 4.0;
+        assert.equal(isInsidePen, false, `Flora ${obj.name}#${i} placed inside pen at (${instPos.x}, ${instPos.z})`);
+        totalChecked++;
+      }
+    } else {
+      const isInsidePen = Math.abs(obj.position.x) <= 5.0 && Math.abs(obj.position.z) <= 4.0;
+      assert.equal(isInsidePen, false, `Flora ${obj.name} placed inside pen at (${obj.position.x}, ${obj.position.z})`);
+      totalChecked++;
+    }
   }
+  assert.ok(totalChecked >= 140, `Expected at least 140 placed flora instances, got ${totalChecked}`);
 });
 
 test('FarmSanctuary spawns 20 animals when 20 questions are configured in Google Sheets', async () => {
@@ -423,23 +438,34 @@ test('FarmSanctuary flora covers wide pasture and surrounds perimeter with Bush0
   farm.parkLibrary = mockPark;
   farm.setupFromLibrary(mockLibrary, {});
 
-  // 1. Check perimeter bush002 hedge
-  const perimeterBushes = (farm as any).sceneryGroup.children.filter((c: any) => 
-    c.name.includes('Bush') || c.name.includes('perimeter_bush') || c.name.includes('park_bush')
+  // 1. Check perimeter bush002 hedge batched via InstancedMesh
+  const instancedMeshes = (farm as any).sceneryGroup.children.filter(
+    (c: any): c is import('three').InstancedMesh => Boolean(c.isInstancedMesh)
   );
+  const bushCount = instancedMeshes
+    .filter((m) => m.name.includes('perimeter_bush'))
+    .reduce((sum, m) => sum + m.count, 0);
   assert.ok(
-    perimeterBushes.length >= 40,
-    `Must have at least 40 Bush002 surrounding the farm perimeter, found ${perimeterBushes.length}`
+    bushCount >= 40,
+    `Must have at least 40 Bush002 instances surrounding the farm perimeter, found ${bushCount}`
   );
 
-  // 2. Check wide flora distribution covering up to radius > 20m
-  const wideFlora = (farm as any).sceneryGroup.children.filter((c: any) => {
-    const r = Math.hypot(c.position.x, c.position.z);
-    return r > 20 && !c.name.includes('floor');
-  });
+  // 2. Check wide flora distribution covering up to radius > 20m across InstancedMesh batches
+  const m = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  let wideFloraCount = 0;
+  for (const batch of instancedMeshes.filter((im) => im.name.includes('flora'))) {
+    for (let i = 0; i < batch.count; i++) {
+      batch.getMatrixAt(i, m);
+      pos.setFromMatrixPosition(m);
+      if (Math.hypot(pos.x, pos.z) > 20) {
+        wideFloraCount++;
+      }
+    }
+  }
   assert.ok(
-    wideFlora.length > 10,
-    `Flora must cover outer pasture beyond 20m radius, found ${wideFlora.length}`
+    wideFloraCount > 10,
+    `Flora instances must cover outer pasture beyond 20m radius, found ${wideFloraCount}`
   );
 });
 

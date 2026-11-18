@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { AvatarId } from '../data/characters';
-import { GeometryBuilder } from './geom';
+import { SceneBatchPool } from './SceneBatchPool';
 import { AssetRepository } from './assets/AssetRepository';
 import type { AssetRepositorySeam } from './assets/types';
 
@@ -43,7 +43,7 @@ export class PlayerAvatar {
   readonly group = new THREE.Group();
 
   private readonly assets: AssetRepositorySeam;
-  private geom = new GeometryBuilder();
+  private geom = new SceneBatchPool();
   private legs: THREE.Mesh[] = [];
   private proceduralArms: THREE.Mesh[] = [];
   private elsaArmRig?: ElsaArmRig;
@@ -210,13 +210,7 @@ export class PlayerAvatar {
 
   private clearMesh(): void {
     while (this.group.children.length > 0) {
-      const obj = this.group.children[0];
-      this.group.remove(obj);
-      obj.traverse(child => {
-        if ((child as THREE.Mesh).isMesh && !child.userData.isGLTF) {
-          (child as THREE.Mesh).geometry.dispose();
-        }
-      });
+      this.group.remove(this.group.children[0]);
     }
     this.legs = [];
     this.proceduralArms = [];

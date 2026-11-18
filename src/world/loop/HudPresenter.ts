@@ -1,4 +1,10 @@
-import type { FloatingLabelPose, HudPresentationState, PresentationPresenterSeam } from './types';
+import type {
+  FloatingLabelPose,
+  HudPresentationState,
+  HudSnapshotContext,
+  PresentationPresenterSeam,
+  WorldFrameSnapshot
+} from './types';
 
 export interface PortalOverlayInfo {
   interactHtml: string;
@@ -184,6 +190,53 @@ export class HudPresenter implements PresentationPresenterSeam {
         elPortal.style.transform = `translate(${state.portalPose.x}px,${state.portalPose.y}px) translate(-50%,-100%)`;
       }
     }
+  }
+
+  renderSnapshot(snapshot: WorldFrameSnapshot, context: HudSnapshotContext): void {
+    const travelText =
+      snapshot.locationName === 'Làng Khởi Đầu'
+        ? 'Đến Vườn Hoa'
+        : snapshot.locationName === 'Vườn Hoa Tri Thức'
+          ? 'Đến Đền Cổng'
+          : 'Về Làng Khởi Đầu';
+
+    const overlay = formatPortalOverlay(snapshot.nearPortal, snapshot.inGarden, context.arrowHtml);
+    let interactHtml = '';
+    let interactHidden = true;
+
+    if (context.interactTargetLabel) {
+      interactHtml = context.interactTargetLabel.html;
+      interactHidden = !context.interactTargetLabel.visible || snapshot.paused;
+    } else if (snapshot.nearPortal) {
+      interactHtml = overlay.interactHtml;
+      interactHidden = snapshot.paused;
+    } else if (snapshot.nearMilo) {
+      interactHtml = `<kbd>E</kbd> Nói chuyện với Milo ${context.arrowHtml}`;
+      interactHidden = snapshot.paused;
+    }
+
+    const hideGlobalLabels = snapshot.paused;
+    this.render({
+      locName: snapshot.locationName,
+      subLabel: context.subLabel,
+      travelText,
+      interactHtml,
+      interactHidden,
+      isNearMilo: snapshot.nearMilo,
+      isNearPortal: snapshot.nearPortal !== null,
+      miloPose: snapshot.hudPoses
+        ? { ...snapshot.hudPoses.miloPose, visible: !hideGlobalLabels }
+        : undefined,
+      bridgePose: snapshot.hudPoses
+        ? { ...snapshot.hudPoses.bridgePose, visible: !(hideGlobalLabels || snapshot.inGarden || snapshot.inArchimedes) }
+        : undefined,
+      portalPose: snapshot.hudPoses
+        ? { ...snapshot.hudPoses.portalPose, visible: !(hideGlobalLabels || (!snapshot.inGarden && snapshot.nearPortal === null)) }
+        : undefined,
+      portalLabelHtml: overlay.portalLabelHtml,
+      bridgeLabelHidden: hideGlobalLabels || snapshot.inGarden || snapshot.inArchimedes,
+      portalLabelHidden: hideGlobalLabels || (!snapshot.inGarden && snapshot.nearPortal === null)
+    });
   }
 
   private shouldUpdatePose(
