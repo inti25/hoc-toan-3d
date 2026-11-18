@@ -41,11 +41,19 @@ export class FarmAnimalEntity {
 
   // Target steering
   public targetPos?: THREE.Vector3;
+  public roamAnchor?: THREE.Vector3;
   public restTime = 0;
-  
-  // Shelter
+
+  // Shelter & homeward tracking
   public shelterPos?: THREE.Vector3;
-  public shelterGate?: THREE.Vector3; // the gate of the farm pen to go through first
+  public shelterGate?: THREE.Vector3; // the gate/entry of the farm pen to go through first
+  public homewardElapsed = 0;
+  public homewardStartDist = 0;
+
+  // Guidance beacon above unrescued animals
+  public beaconGroup?: THREE.Group;
+  private beaconOrb?: THREE.Mesh;
+  private beaconBaseY = 2.0;
 
   constructor(id: string, index: number, kind: AnimalKind, sourceGlb: THREE.Group) {
     this.id = id;
@@ -66,13 +74,54 @@ export class FarmAnimalEntity {
 
     // Invisible hit box for convenient raycasting & tapping
     const hitbox = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.85, 0.85, 1.2, 8),
+      new THREE.CylinderGeometry(0.95, 0.95, 1.4, 8),
       new THREE.MeshBasicMaterial({ visible: false })
     );
     hitbox.name = `hitbox_${id}`;
-    hitbox.position.y = 0.6;
+    hitbox.position.y = 0.7;
     hitbox.userData = { animalId: id, isAnimalHitbox: true };
     this.root.add(hitbox);
+
+    this.attachBeacon();
+  }
+
+  private attachBeacon(): void {
+    const group = new THREE.Group();
+    group.name = `beacon_${this.id}`;
+
+    this.beaconBaseY = this.isCowOrPig()
+      ? (this.kind === 'calf' || this.kind === 'piglet' ? 1.85 : 2.25)
+      : 1.7;
+
+    const orb = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    orb.position.y = this.beaconBaseY;
+    this.beaconOrb = orb;
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.55, 0.78, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0x84cc16,
+        transparent: true,
+        opacity: 0.75,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.1;
+
+    group.add(orb, ring);
+    this.beaconGroup = group;
+    this.root.add(group);
+  }
+
+  public setBeaconVisible(visible: boolean): void {
+    if (this.beaconGroup) {
+      this.beaconGroup.visible = visible;
+    }
   }
 
   private extractParts(node: THREE.Object3D) {
@@ -150,6 +199,12 @@ export class FarmAnimalEntity {
       const flapAmt = this.flap * 0.5 + (moving ? Math.sin(this.phase) * 0.1 : 0);
       this.wingL.mesh.rotation.z = flapAmt;
       this.wingR.mesh.rotation.z = -flapAmt;
+    }
+
+    // Beacon animation above unrescued animals
+    if (this.beaconOrb && this.beaconGroup?.visible) {
+      this.beaconOrb.position.y = this.beaconBaseY + Math.sin(time * 3 + this.index) * 0.16;
+      this.beaconOrb.rotation.y += dt * 1.6;
     }
   }
 

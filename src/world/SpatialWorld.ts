@@ -1,8 +1,15 @@
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
 import { QHMJ_SPEED } from '../data/qhmjMap';
+import {
+  FARM_FENCE_JUMP_CLEARANCE,
+  FARM_PLAYABLE_BOUNDS,
+  FARM_REGION_RADIUS,
+  FARM_SPEED
+} from '../data/farmMap';
 import { RoadSurface } from './qhmj/RoadSurface';
 import { evalJumpArc, type JumpLink } from './qhmj/JumpLinks';
+import type { FarmColliderGrid } from './farm/FarmTerrain';
 import {
   LAKE_WALK_INNER,
   LAKE_WALK_OUTER,
@@ -104,6 +111,17 @@ export interface QhmjZoneState {
   links: JumpLink[];
   nodes: QhmjNodeAnchor[];
   lockedLinkIds: Set<number>;
+}
+
+export interface FarmZoneState {
+  id: number;
+  name: string;
+  cx: number;
+  cz: number;
+  radius: number;
+  spawn: { x: number; y: number; z: number };
+  surface: RoadSurface | null;
+  colliders: FarmColliderGrid | null;
 }
 
 /** Cửa sổ độ cao khi bám mặt đường: bước lên tối đa / xuống tối đa so với độ cao hiện tại. */
@@ -222,6 +240,52 @@ export class SpatialWorld {
   private padArmed = true;
   private padCooldown = 0;
   private lastRoadSafe: { x: number; y: number; z: number } | null = null;
+  private farmZones: FarmZoneState[] = [];
+  private lastFarmSafe: { x: number; y: number; z: number } | null = null;
+
+  /** Đăng ký vùng Nông Trại (giữ lại địa hình 3D đã nạp nếu cùng mã vùng). */
+  setFarmZones(
+    zones: { id: number; name: string; cx: number; cz: number; radius: number; spawn: { x: number; y: number; z: number } }[]
+  ) {
+    const prev = new Map(this.farmZones.map((z) => [z.id, z]));
+    this.farmZones = zones.map((z) => ({
+      ...z,
+      surface: prev.get(z.id)?.surface ?? null,
+      colliders: prev.get(z.id)?.colliders ?? null
+    }));
+  }
+
+  setFarmTerrain(id: number, surface: RoadSurface | null, colliders: FarmColliderGrid | null) {
+    const zone = this.farmZones.find((z) => z.id === id);
+    if (zone) {
+      zone.surface = surface;
+      zone.colliders = colliders;
+    }
+  }
+
+  getFarmZones(): ReadonlyArray<FarmZoneState> {
+    return this.farmZones;
+  }
+
+  private activeFarmZone(): FarmZoneState | null {
+    if (!this.regionScopingEnabled || !this.activeRegionId.startsWith('zone:')) return null;
+    const zoneId = Number(this.activeRegionId.slice(5));
+    return this.farmZones.find((z) => z.id === zoneId) ?? null;
+  }
+
+  private farmAt(x: number, z: number): FarmZoneState | null {
+    const active = this.activeFarmZone();
+    if (active) {
+      return active.surface ? active : null;
+    }
+    if (this.regionScopingEnabled && !this.resolveRegionForPoint(x, z).startsWith('zone:')) {
+      return null;
+    }
+    for (const fz of this.farmZones) {
+      if (fz.surface && Math.hypot(x - fz.cx, z - fz.cz) <= fz.radius) return fz;
+    }
+    return null;
+  }
 
   /** Đăng ký vùng QHMJ (giữ lại bề mặt đường đã nạp nếu cùng mã vùng). */
   setQhmjZones(zones: { id: number; name: string; cx: number; cz: number; radius: number; spawn: { x: number; y: number; z: number } }[]) {
@@ -382,19 +446,14 @@ export class SpatialWorld {
       }
     }
 
+    // Ưu tiên kiểm tra các đảo nhỏ gọn trước, tránh bị vùng Nông Trại rộng lớn che mất khi test gần nhau
     for (const isl of this.dynamicIslands) {
       const isStaticGarden =
         isl.id === 6 ||
         (isl.template === 'FLOWER_BEDS' && isl.cx >= 10 && isl.cx <= 34 && Math.abs(isl.cz) <= 19);
-      if (isStaticGarden) continue;
-      if (isl.template === 'QHMJ_SANCTUARY') continue;
+      if (isStaticGarden || isl.template === 'QHMJ_SANCTUARY' || isl.template === 'FARM_SANCTUARY') continue;
       if (isl.template === 'PARK_SANCTUARY') {
         if (Math.hypot(x - isl.cx, z - isl.cz) <= Math.max(20, Math.max(isl.w, isl.d) / 2 + 4)) {
-          return `zone:${isl.id}`;
-        }
-      } else if (isl.template === 'FARM_SANCTUARY') {
-        const d = Math.hypot(x - isl.cx, z - isl.cz);
-        if (d <= Math.max(34, Math.max(isl.w, isl.d) / 2 + 18) + 2.0) {
           return `zone:${isl.id}`;
         }
       } else if (usesLakeTerrain(isl.template)) {
@@ -415,6 +474,14 @@ export class SpatialWorld {
       }
     }
 
+    for (const isl of this.dynamicIslands) {
+      if (isl.template !== 'FARM_SANCTUARY') continue;
+      const d = Math.hypot(x - isl.cx, z - isl.cz);
+      if (d <= Math.max(FARM_REGION_RADIUS, Math.max(isl.w, isl.d) / 2 + 18) + 2.0) {
+        return `zone:${isl.id}`;
+      }
+    }
+
     return 'core';
   }
 
@@ -424,6 +491,22 @@ export class SpatialWorld {
       if (Math.hypot(x - qz.cx, z - qz.cz) <= qz.radius) {
         return qz.surface ? qz.surface.sample(x, z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN) !== null : false;
       }
+    }
+
+    // Farm 3D Terrain: ưu tiên kiểm tra khi đang đứng trong vùng Nông Trại đã nạp địa hình
+    const activeFarm = this.activeFarmZone();
+    if (activeFarm?.surface) {
+      const lx = x - activeFarm.cx;
+      const lz = z - activeFarm.cz;
+      if (
+        lx < FARM_PLAYABLE_BOUNDS.minX ||
+        lx > FARM_PLAYABLE_BOUNDS.maxX ||
+        lz < FARM_PLAYABLE_BOUNDS.minZ ||
+        lz > FARM_PLAYABLE_BOUNDS.maxZ
+      ) {
+        return false;
+      }
+      return activeFarm.surface.sample(x, z, this.y, 1.5, 3.5) !== null;
     }
 
     // 0. Park Island(s) (PARK_SANCTUARY loaded dynamically)
@@ -452,8 +535,23 @@ export class SpatialWorld {
     for (const isl of this.dynamicIslands) {
       if (isl.template === 'QHMJ_SANCTUARY') continue;
       if (isl.template === 'FARM_SANCTUARY') {
+        const matchedFarm = this.farmZones.find((f) => f.id === isl.id);
+        if (matchedFarm?.surface) {
+          const lx = x - matchedFarm.cx;
+          const lz = z - matchedFarm.cz;
+          if (
+            lx >= FARM_PLAYABLE_BOUNDS.minX &&
+            lx <= FARM_PLAYABLE_BOUNDS.maxX &&
+            lz >= FARM_PLAYABLE_BOUNDS.minZ &&
+            lz <= FARM_PLAYABLE_BOUNDS.maxZ &&
+            matchedFarm.surface.sample(x, z, this.y, 1.5, 3.5) !== null
+          ) {
+            return true;
+          }
+          continue;
+        }
         const d = Math.hypot(x - isl.cx, z - isl.cz);
-        if (d <= Math.max(34, Math.max(isl.w, isl.d) / 2 + 18)) return true;
+        if (d <= Math.max(FARM_REGION_RADIUS, Math.max(isl.w, isl.d) / 2 + 18)) return true;
       } else if (usesLakeTerrain(isl.template)) {
         const d = Math.hypot(x - isl.cx, z - isl.cz);
         if (d <= LAKE_WALK_OUTER) return true;
@@ -486,6 +584,14 @@ export class SpatialWorld {
 
   canMove(x: number, z: number): boolean {
     if (!this.isWithinLand(x, z)) return false;
+    const fz = this.farmAt(x, z);
+    if (fz?.colliders) {
+      const ground = fz.surface?.sample(x, z, this.y, 1.5, 3.5);
+      const floor = ground ? ground.y : this.y;
+      if (fz.colliders.isBlockedForPlayer(x, z, this.y, floor)) {
+        return false;
+      }
+    }
     return this.findBlockingObstacle(x, z) === null;
   }
 
@@ -494,6 +600,24 @@ export class SpatialWorld {
       if (Math.hypot(x - qz.cx, z - qz.cz) <= qz.radius) {
         if (!qz.surface) return { x, z };
         return qz.surface.sampleNearest(x, z, qz.spawn.y) ? { x, z } : { x: qz.spawn.x, z: qz.spawn.z };
+      }
+    }
+
+    for (const fz of this.farmZones) {
+      if (Math.hypot(x - fz.cx, z - fz.cz) <= fz.radius) {
+        if (!fz.surface) return { x, z };
+        const lx = x - fz.cx;
+        const lz = z - fz.cz;
+        const inBounds =
+          lx >= FARM_PLAYABLE_BOUNDS.minX &&
+          lx <= FARM_PLAYABLE_BOUNDS.maxX &&
+          lz >= FARM_PLAYABLE_BOUNDS.minZ &&
+          lz <= FARM_PLAYABLE_BOUNDS.maxZ;
+        const hit = inBounds ? fz.surface.sampleNearest(x, z, fz.spawn.y) : null;
+        if (hit && (!fz.colliders || !fz.colliders.isBlockedForPlayer(x, z, hit.y, hit.y))) {
+          return { x, z };
+        }
+        return { x: fz.spawn.x, z: fz.spawn.z };
       }
     }
 
@@ -522,6 +646,10 @@ export class SpatialWorld {
   }
 
   getCurrentLocationName(): string {
+    const activeFarm = this.activeFarmZone();
+    if (activeFarm) {
+      return activeFarm.name || 'Nông Trại';
+    }
     for (const qz of this.qhmjZones) {
       if (Math.hypot(this.x - qz.cx, this.z - qz.cz) <= qz.radius) {
         return qz.name || 'Con Đường Bậc Thang';
@@ -553,7 +681,7 @@ export class SpatialWorld {
 
     for (const isl of this.dynamicIslands) {
       if (isl.template === 'FARM_SANCTUARY') {
-        const farmRadius = Math.max(34, Math.max(isl.w, isl.d) / 2 + 18) + 1.5;
+        const farmRadius = Math.max(FARM_REGION_RADIUS, Math.max(isl.w, isl.d) / 2 + 18) + 1.5;
         if (Math.hypot(this.x - isl.cx, this.z - isl.cz) <= farmRadius) {
           return isl.name || 'Nông Trại';
         }
@@ -577,6 +705,10 @@ export class SpatialWorld {
     const q = this.qhmjAt(this.x, this.z);
     if (q) {
       return q.surface!.sample(this.x, this.z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN)?.y ?? this.y;
+    }
+    const f = this.farmAt(this.x, this.z);
+    if (f) {
+      return f.surface!.sample(this.x, this.z, this.y, 1.5, 3.5)?.y ?? this.y;
     }
     return this.bridgeCount === BRIDGE_PARTS &&
       this.x >= 4 &&
@@ -607,7 +739,18 @@ export class SpatialWorld {
       this.y = qz.surface?.sampleNearest(x, z, targetRefY)?.y ?? targetRefY;
       this.lastRoadSafe = { x, y: this.y, z };
     } else {
-      this.y = this.floorHeight();
+      const fz =
+        this.activeFarmZone() ??
+        (!this.regionScopingEnabled || this.resolveRegionForPoint(x, z).startsWith('zone:')
+          ? this.farmZones.find((f) => Math.hypot(x - f.cx, z - f.cz) <= f.radius)
+          : undefined);
+      if (fz) {
+        const targetRefY = typeof refY === 'number' && Number.isFinite(refY) ? refY : fz.spawn.y;
+        this.y = fz.surface?.sampleNearest(x, z, targetRefY)?.y ?? targetRefY;
+        this.lastFarmSafe = { x, y: this.y, z };
+      } else {
+        this.y = this.floorHeight();
+      }
     }
     this.jumpVelocity = 0;
   }
@@ -684,7 +827,9 @@ export class SpatialWorld {
     for (const portal of allPortals) {
       const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
       if (dist <= portal.triggerRadius) {
-        const sourceRegion = this.resolveRegionForPoint(this.x, this.z);
+        const sourceRegion = this.regionScopingEnabled
+          ? this.activeRegionId
+          : this.resolveRegionForPoint(this.x, this.z);
         const targetRegion = portal.targetRegionId ?? this.resolveRegionForPoint(portal.target.x, portal.target.z);
         const shouldDefer = Boolean(options?.deferTeleport && !portal.requiresSelection && sourceRegion !== targetRegion);
         if (!portal.requiresSelection && !shouldDefer) {
@@ -711,6 +856,7 @@ export class SpatialWorld {
   }
 
   isInGarden(): boolean {
+    if (this.activeFarmZone()) return false;
     return this.x > 8 && this.x <= 35 && Math.abs(this.z) <= 18.8;
   }
 
@@ -828,10 +974,114 @@ export class SpatialWorld {
     return { x: this.x, y: this.y, z: this.z, rotation: this.rotation, moving, speed };
   }
 
+  /** Chuyển đổi bàn phím / joystick sang vector hướng di chuyển trên mặt phẳng XZ theo góc xoay camera. */
+  private computeCameraRelativeMove(input: SpatialInput, cameraYaw: number): { vx: number; vz: number; length: number } {
+    const sx =
+      (input.keys.has('d') || input.keys.has('arrowright') ? 1 : 0) -
+      (input.keys.has('a') || input.keys.has('arrowleft') ? 1 : 0) +
+      input.joystick.x;
+    const sy =
+      (input.keys.has('s') || input.keys.has('arrowdown') ? 1 : 0) -
+      (input.keys.has('w') || input.keys.has('arrowup') ? 1 : 0) +
+      input.joystick.y;
+    const vx = sx * Math.cos(cameraYaw) + sy * Math.sin(cameraYaw);
+    const vz = -sx * Math.sin(cameraYaw) + sy * Math.cos(cameraYaw);
+    return { vx, vz, length: Math.hypot(vx, vz) };
+  }
+
+  /**
+   * Di chuyển tự do trên địa hình 3D của Nông Trại: bám độ cao đồi dốc, chặn công trình cứng,
+   * chặn hàng rào gỗ ở độ cao thấp (cho phép nhảy qua) và trượt dọc theo tường/biên.
+   */
+  private tickFarm(dt: number, input: SpatialInput, cameraYaw: number, fz: FarmZoneState): PlayerPose {
+    const surface = fz.surface!;
+    if (this.portalCooldown > 0) this.portalCooldown = Math.max(0, this.portalCooldown - dt);
+
+    if (!surface.sample(this.x, this.z, this.y, 1.5, 3.5)) {
+      const safe = this.lastFarmSafe ?? fz.spawn;
+      this.x = safe.x;
+      this.z = safe.z;
+      this.y = safe.y;
+      this.jumpVelocity = 0;
+    }
+
+    const curInFence = Boolean(fz.colliders?.hasFenceAt(this.x, this.z));
+    const canStepFarm = (nx: number, nz: number): boolean => {
+      const lx = nx - fz.cx;
+      const lz = nz - fz.cz;
+      if (
+        lx < FARM_PLAYABLE_BOUNDS.minX ||
+        lx > FARM_PLAYABLE_BOUNDS.maxX ||
+        lz < FARM_PLAYABLE_BOUNDS.minZ ||
+        lz > FARM_PLAYABLE_BOUNDS.maxZ
+      ) {
+        return false;
+      }
+      const hit = surface.sample(nx, nz, this.y, 1.5, 3.5);
+      if (!hit) return false;
+      if (fz.colliders) {
+        if (fz.colliders.hasSolidAt(nx, nz)) return false;
+        const hitsFence = fz.colliders.hasFenceAt(nx, nz);
+        if (hitsFence && !curInFence && this.y <= hit.y + FARM_FENCE_JUMP_CLEARANCE) {
+          return false;
+        }
+      }
+      return this.findBlockingObstacle(nx, nz) === null;
+    };
+
+    const move = this.computeCameraRelativeMove(input, cameraYaw);
+    let moving = false;
+    let speed = 0;
+    if (move.length > 0.05) {
+      moving = true;
+      const vx = move.vx / move.length;
+      const vz = move.vz / move.length;
+      speed = FARM_SPEED * dt;
+      for (const a of ROAD_SLIDE_ANGLES) {
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        const dx = vx * cos - vz * sin;
+        const dz = vx * sin + vz * cos;
+        const step = a === 0 ? speed : speed * Math.max(0.35, cos);
+        const nx = this.x + dx * step;
+        const nz = this.z + dz * step;
+        if (canStepFarm(nx, nz)) {
+          this.x = nx;
+          this.z = nz;
+          break;
+        }
+      }
+      this.rotation = Math.atan2(vx, vz);
+    }
+
+    const ground = surface.sample(this.x, this.z, this.y, 1.5, 3.5);
+    const floor = ground ? ground.y : this.y;
+    if (this.y > floor + 0.01 || this.jumpVelocity > 0) {
+      this.jumpVelocity -= 18 * dt;
+      this.y = Math.max(floor, this.y + this.jumpVelocity * dt);
+      if (this.y <= floor + 0.001) {
+        this.y = floor;
+        this.jumpVelocity = 0;
+      }
+    } else {
+      this.y = floor;
+    }
+
+    if (ground && this.y <= floor + 0.05 && (!fz.colliders || !fz.colliders.isBlockedForPlayer(this.x, this.z, floor, floor))) {
+      this.lastFarmSafe = { x: this.x, y: floor, z: this.z };
+    }
+
+    return { x: this.x, y: this.y, z: this.z, rotation: this.rotation, moving, speed };
+  }
+
   tick(dt: number, input: SpatialInput, cameraYaw = 0.57): PlayerPose {
     const roadZone = this.qhmjAt(this.x, this.z);
     if (roadZone) {
       return this.tickRoad(dt, input, cameraYaw, roadZone);
+    }
+    const farmZone = this.farmAt(this.x, this.z);
+    if (farmZone) {
+      return this.tickFarm(dt, input, cameraYaw, farmZone);
     }
     if (this.portalCooldown > 0) {
       this.portalCooldown = Math.max(0, this.portalCooldown - dt);

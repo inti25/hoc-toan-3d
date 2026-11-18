@@ -55,7 +55,7 @@ export interface WorldHandle {
   setFarmRescued?(rescued: Record<string, boolean>): void;
   setEquippedTrail(trailId: string): void;
   setInitialPosition(x: number, z: number, y?: number): void;
-  teleport(x: number, z: number, y?: number): void;
+  teleport(x: number, z: number, y?: number, explicitRegionId?: string): void;
   syncQhmjSolved?(zoneId: number): void;
   getQhmjNodes?(zoneId: number): ReadonlyArray<{
     index: number;
@@ -68,7 +68,7 @@ export interface WorldHandle {
     lockedLinkIds: number[];
     problem: RemoteProblem;
   }>;
-  activateRegionAt?(x: number, z: number): Promise<string>;
+  activateRegionAt?(x: number, z: number, explicitRegionId?: string): Promise<string>;
   getActiveRegionId?(): string;
   renderDynamicZones(
     zones: RemoteZoneConfig[],

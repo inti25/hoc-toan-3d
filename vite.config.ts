@@ -45,6 +45,7 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
+        globIgnores: ['**/3dmodel/**'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.includes('/3dmodel/'),

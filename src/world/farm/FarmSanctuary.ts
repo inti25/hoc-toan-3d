@@ -1,10 +1,25 @@
 import * as THREE from 'three';
-import { FarmAnimalEntity, AnimalKind } from './FarmAnimalEntity';
+import { FarmAnimalEntity, type AnimalKind } from './FarmAnimalEntity';
 import { generateFarmMultiplicationProblem } from '../../core/adventure';
 import type { Obstacle } from '../SpatialWorld';
 import { AssetRepository } from '../assets/AssetRepository';
 import type { AssetRepositorySeam } from '../assets/types';
-import { SceneBatchPool, type StaticPlacement } from '../SceneBatchPool';
+import { SceneBatchPool } from '../SceneBatchPool';
+import {
+  FARM_ANIMAL_ANCHORS_LOCAL,
+  FARM_DIRECT_HOMEWARD_MAX_DIST,
+  FARM_PEN_CENTER_LOCAL,
+  FARM_PEN_ENTRY_LOCAL,
+  FARM_REMOTE_HOMEWARD_WARP_SEC,
+  FARM_SCALE,
+  FARM_SHELTER_CENTERS,
+  FARM_SKY_MATERIALS,
+  FARM_WORLD_MODEL_OFFSET,
+  isInsideFarmPenLocal,
+  isWithinFarmPlayableBoundsLocal
+} from '../../data/farmMap';
+import { extractFarmTerrainFromScene, type FarmColliderGrid } from './FarmTerrain';
+import type { RoadSurface } from '../qhmj/RoadSurface';
 
 export interface FarmInteractTrigger {
   position: THREE.Vector3;
@@ -15,17 +30,7 @@ export interface FarmInteractTrigger {
   problemData: any;
 }
 
-export const SHELTER_CENTERS: Record<AnimalKind, { x: number; z: number }> = {
-  cow: { x: 3.2, z: -1.5 },
-  calf: { x: 2.5, z: -1.0 },
-  chicken: { x: -3.0, z: -1.2 },
-  chick: { x: -3.5, z: -0.5 },
-  duck: { x: -2.0, z: 2.8 },
-  duckling: { x: -1.5, z: 3.2 },
-  pig: { x: 0.2, z: -2.2 },
-  piglet: { x: 0.8, z: -2.0 },
-  dog: { x: -1.5, z: -2.5 }
-};
+export const SHELTER_CENTERS: Record<AnimalKind, { x: number; z: number }> = FARM_SHELTER_CENTERS;
 
 export class FarmSanctuary {
   public group = new THREE.Group();
@@ -33,9 +38,10 @@ export class FarmSanctuary {
   public animalsGroup = new THREE.Group();
   public animals: FarmAnimalEntity[] = [];
   public libraryScene?: THREE.Group;
-  public parkLibrary?: THREE.Group;
-  public floraPrefabs: THREE.Object3D[] = [];
-  public bushPrefab?: THREE.Object3D;
+  public worldScene?: THREE.Group;
+  public terrainSurface: RoadSurface | null = null;
+  public colliderGrid: FarmColliderGrid | null = null;
+  public onHomewardSparkle?: (worldPos: THREE.Vector3) => void;
 
   // Triggers for answering math problems
   public interactTriggers: FarmInteractTrigger[] = [];
@@ -43,15 +49,12 @@ export class FarmSanctuary {
   private readonly scratchLocalPlayerPos = new THREE.Vector3();
 
   private readonly assets: AssetRepositorySeam;
-  private readonly batchPool: SceneBatchPool;
-  private readonly ownsBatchPool: boolean;
   private time = 0;
+  private disposed = false;
   private lastFarmRescued: Record<string, boolean> = {};
 
-  constructor(assets?: AssetRepositorySeam, batchPool?: SceneBatchPool) {
+  constructor(assets?: AssetRepositorySeam, _batchPool?: SceneBatchPool) {
     this.assets = assets ?? new AssetRepository();
-    this.ownsBatchPool = !batchPool;
-    this.batchPool = batchPool ?? new SceneBatchPool();
     this.sceneryGroup.name = 'farm_scenery';
     this.animalsGroup.name = 'farm_animals';
     this.group.add(this.sceneryGroup);
@@ -59,49 +62,39 @@ export class FarmSanctuary {
   }
 
   public async load(farmRescued: Record<string, boolean>, questions?: any[]) {
-    const [farmScene, grass02, grass03, flowers02, flowers03, bush02] = await Promise.all([
+    const [farmScene, worldScene] = await Promise.all([
       this.assets.instantiate('map:farm'),
-      this.assets.instantiate('prefab:park_grass002'),
-      this.assets.instantiate('prefab:park_grass003'),
-      this.assets.instantiate('prefab:park_flowers002'),
-      this.assets.instantiate('prefab:park_flowers003'),
-      this.assets.instantiate('prefab:park_bush002')
+      this.assets.instantiate('map:farm_world')
     ]);
 
     if (!farmScene) {
       throw new Error('Failed to load map:farm from AssetRepository');
     }
 
-    if (bush02) {
-      this.bushPrefab = bush02;
-    }
-
-    this.floraPrefabs = [grass02, grass03, flowers02, flowers03].filter(
-      (m): m is THREE.Group => m !== null
-    );
-
-    this.setupFromLibrary(farmScene, farmRescued, questions);
+    this.setupFromLibrary(farmScene, farmRescued, questions, worldScene ?? undefined);
   }
-
-
-
 
   public setupFromLibrary(
     libraryScene: THREE.Group,
     farmRescued: Record<string, boolean> = {},
-    questions?: any[]
+    questions?: any[],
+    worldScene?: THREE.Group
   ) {
+    this.disposed = false;
     this.libraryScene = libraryScene;
+    this.worldScene = worldScene;
     this.lastFarmRescued = { ...farmRescued };
 
-    // Reset groups
+    // Reset groups & terrain state
     this.sceneryGroup.clear();
     this.animalsGroup.clear();
     this.animals = [];
     this.interactTriggers = [];
     this.triggerByAnimalId.clear();
+    this.terrainSurface = null;
+    this.colliderGrid = null;
 
-    // Ensure shadows on source library meshes
+    // Ensure shadows on source animal/shelter library meshes
     libraryScene.traverse((child) => {
       if ((child as any).isLight || (child as any).isCamera) {
         child.visible = false;
@@ -112,227 +105,107 @@ export class FarmSanctuary {
       }
     });
 
-    // 1. Build modular open scenery (inspired by cute_game)
+    // 1. Mount countryside 3D world (maps/farm/scene.gltf) & extract terrain/colliders
+    if (worldScene) {
+      this.mountCountrysideWorld(worldScene);
+    }
+
+    // 2. Build open Central Farm Pen shelters on the flat eastern meadow
     this.buildScenery();
 
-    // 2. Spawn and configure the 10 farm animals
+    // 3. Spawn and configure farm animals across scenic spots
     this.spawnAnimals(farmRescued, questions);
+  }
+
+  private mountCountrysideWorld(worldScene: THREE.Group): void {
+    worldScene.name = 'farm_world_terrain';
+    worldScene.scale.setScalar(FARM_SCALE);
+    worldScene.position.set(
+      FARM_WORLD_MODEL_OFFSET.x,
+      FARM_WORLD_MODEL_OFFSET.y,
+      FARM_WORLD_MODEL_OFFSET.z
+    );
+
+    worldScene.traverse((child) => {
+      if ((child as any).isLight || (child as any).isCamera) {
+        child.visible = false;
+        return;
+      }
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        if (mats.some((m) => m && FARM_SKY_MATERIALS.has(m.name))) {
+          // Giữ nguyên vòm trời mây xanh và tránh mất nét ở góc nhìn ngang
+          mesh.frustumCulled = false;
+        }
+      }
+    });
+
+    this.sceneryGroup.add(worldScene);
+    this.group.updateMatrixWorld(true);
+
+    const { surface, colliders } = extractFarmTerrainFromScene(worldScene);
+    if (surface.triCount > 0) {
+      this.terrainSurface = surface;
+    }
+    if (colliders.solidCellCount > 0 || colliders.fenceCellCount > 0) {
+      this.colliderGrid = colliders;
+    }
+  }
+
+  /**
+   * Tra độ cao mặt đất 3D theo tọa độ local (so với tâm `FarmSanctuary.group`).
+   */
+  public sampleLocalGroundY(localX: number, localZ: number, refY: number = FARM_PEN_CENTER_LOCAL.y): number {
+    if (!this.terrainSurface) return 0;
+    const wx = this.group.position.x + localX;
+    const wz = this.group.position.z + localZ;
+    return (
+      this.terrainSurface.sample(wx, wz, refY, 4.0, 6.0)?.y ??
+      this.terrainSurface.sampleNearest(wx, wz, refY)?.y ??
+      0
+    );
+  }
+
+  private isBlockedLocal(localX: number, localZ: number): boolean {
+    if (!this.colliderGrid) return false;
+    const wx = this.group.position.x + localX;
+    const wz = this.group.position.z + localZ;
+    return this.colliderGrid.isBlockedForAnimal(wx, wz);
   }
 
   private buildScenery() {
     if (!this.libraryScene) return;
 
-    // A. Sandy / Farm Soil Yard Floor (front and sides stay open, no full perimeter fences)
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(7.5, 32),
-      new THREE.MeshStandardMaterial({
-        color: 0xdfc588,
-        roughness: 0.9,
-        metalness: 0.05
-      })
-    );
-    floor.name = 'yard_floor';
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = 0.02;
-    floor.receiveShadow = true;
-    this.sceneryGroup.add(floor);
+    const placeProp = (name: string, x: number, z: number, rotationY = 0) => {
+      const prop = this.instantiateProp(name);
+      const y = this.sampleLocalGroundY(x, z, FARM_PEN_CENTER_LOCAL.y);
+      prop.position.set(x, y, z);
+      if (rotationY !== 0) prop.rotation.y = rotationY;
+      this.sceneryGroup.add(prop);
+    };
 
-    // B. Duck Pond & Rim
-    const pond = new THREE.Mesh(
-      new THREE.CircleGeometry(2.0, 24),
-      new THREE.MeshStandardMaterial({
-        color: 0x48b8cf,
-        roughness: 0.2,
-        metalness: 0.1
-      })
-    );
-    pond.name = 'duck_pond';
-    pond.rotation.x = -Math.PI / 2;
-    pond.position.set(-2.2, 0.03, 3.2);
-    pond.receiveShadow = true;
-    this.sceneryGroup.add(pond);
+    // Khu Chuồng Trại Trung Tâm (không dựng vòng rào kín cũ, hòa hợp tự nhiên trước Nhà Kho Đỏ & Cối Xay Gió)
+    // 1) Khu Gà: Coop, chicken shelter, egg basket
+    placeProp('coop', 68.5, -39.5, 0.35);
+    placeProp('chicken_shelter', 67.0, -37.2, 0.6);
+    placeProp('egg_basket', 70.0, -38.5);
 
-    const pondRim = new THREE.Mesh(
-      new THREE.RingGeometry(1.9, 2.2, 24),
-      new THREE.MeshStandardMaterial({
-        color: 0x93d9b8,
-        roughness: 0.9
-      })
-    );
-    pondRim.name = 'duck_pond_rim';
-    pondRim.rotation.x = -Math.PI / 2;
-    pondRim.position.set(-2.2, 0.025, 3.2);
-    this.sceneryGroup.add(pondRim);
+    // 2) Khu Bò: Cow shelter, feed trough, water trough, hay bales
+    placeProp('cow_shelter', 76.5, -39.8, -0.35);
+    placeProp('feed_trough', 74.2, -38.0);
+    placeProp('water_trough', 75.6, -36.5, 0.2);
+    placeProp('hay_bale', 77.2, -35.0, Math.PI / 2);
+    placeProp('hay_bale', 77.5, -33.8, 0.3);
 
-    // C. Fences around the pen (Rectangle ~10x8m)
-    // Front: gate in middle, fences on sides
-    const gate = this.instantiateProp('pen_gate');
-    gate.position.set(0, 0, 4);
-    this.sceneryGroup.add(gate);
+    // 3) Khu Heo: Pig shelter
+    placeProp('pig_shelter', 73.0, -41.6);
 
-    for (const x of [-4, -2, 2, 4]) {
-      const fence = this.instantiateProp('pen_fence');
-      fence.position.set(x, 0, 4);
-      this.sceneryGroup.add(fence);
-    }
-    // Back:
-    for (let x = -4; x <= 4; x += 2) {
-      const fence = this.instantiateProp('pen_fence');
-      fence.position.set(x, 0, -4);
-      this.sceneryGroup.add(fence);
-    }
-    // Sides:
-    for (let z = -2; z <= 2; z += 2) {
-      const fenceL = this.instantiateProp('pen_fence');
-      fenceL.position.set(-5, 0, z);
-      fenceL.rotation.y = Math.PI / 2;
-      this.sceneryGroup.add(fenceL);
+    // 4) Khu Chó chăn cừu: Dog shelter
+    placeProp('dog_shelter', 70.2, -42.0, 0.15);
 
-      const fenceR = this.instantiateProp('pen_fence');
-      fenceR.position.set(5, 0, z);
-      fenceR.rotation.y = -Math.PI / 2;
-      this.sceneryGroup.add(fenceR);
-    }
-
-    // Decorate with flora (Grass, Flowers, Bushes outside the fence)
-    const floraPool: THREE.Object3D[] = [];
-
-    // 1. From pre-loaded GLB prefabs (grass, flowers)
-    for (const prefab of this.floraPrefabs) {
-      if (!prefab.name.toLowerCase().includes('bush')) {
-        floraPool.push(prefab);
-      }
-    }
-
-    // 2. Only if prefabs not loaded, fallback to parkLibrary
-    if (floraPool.length === 0 && this.parkLibrary) {
-      const floraNames = [
-        'Grass002', 'Grass003', 'Grass004', 'Grass005', 'Grass006',
-        'Flowers002', 'Flowers003', 'Flowers004', 'Flowers005'
-      ];
-      for (const name of floraNames) {
-        const extracted = this.extractFloraFromPark(name);
-        if (extracted) {
-          floraPool.push(extracted);
-        }
-      }
-    }
-
-    // 3. Fallback procedural flora
-    if (floraPool.length === 0) {
-      floraPool.push(this.createProceduralGrassCluster());
-      floraPool.push(this.createProceduralFlowerCluster());
-    }
-
-    // Distribute 140 flora clusters covering the entire pasture from 6.2m to 28.5m using InstancedMesh batching
-    const floraPlacements: StaticPlacement[] = [];
-    for (let i = 0; i < 140; i++) {
-      const template = floraPool[Math.floor(Math.random() * floraPool.length)];
-      const t = i / 140;
-      const angle = t * Math.PI * 2 * 9 + (Math.random() - 0.5) * 0.5;
-      const radius = 6.2 + Math.sqrt(Math.random()) * 22.3;
-      let px = Math.cos(angle) * radius;
-      let pz = Math.sin(angle) * radius;
-
-      // Ensure never placed inside pen rectangle
-      if (Math.abs(px) < 5.6 && Math.abs(pz) < 4.6) {
-        if (Math.abs(px) / 5.6 > Math.abs(pz) / 4.6) {
-          px = (px >= 0 ? 1 : -1) * 6.2;
-        } else {
-          pz = (pz >= 0 ? 1 : -1) * 5.2;
-        }
-      }
-
-      floraPlacements.push({
-        template,
-        position: { x: px, y: 0.02, z: pz },
-        rotationY: Math.random() * Math.PI * 2,
-        scale: 0.45 + Math.random() * 0.45
-      });
-    }
-    this.batchPool.batchStaticTemplates(this.sceneryGroup, floraPlacements, { namePrefix: 'flora' });
-
-    // E. Perimeter Bush002 hedge surrounding the entire farm island using InstancedMesh batching
-    const bushTemplate =
-      this.bushPrefab ||
-      (this.parkLibrary ? this.extractFloraFromPark('Bush002') : null) ||
-      this.createProceduralBush();
-
-    const perimeterBushCount = 80;
-    const perimeterRadius = 30.5;
-    const bushPlacements: StaticPlacement[] = [];
-
-    for (let i = 0; i < perimeterBushCount; i++) {
-      const angle = (i / perimeterBushCount) * Math.PI * 2;
-      const r = perimeterRadius + (Math.random() - 0.5) * 0.5;
-      bushPlacements.push({
-        template: bushTemplate,
-        position: { x: Math.cos(angle) * r, y: 0.02, z: Math.sin(angle) * r },
-        rotationY: angle + Math.PI / 2 + (Math.random() - 0.5) * 0.35,
-        scale: 1.0 + Math.random() * 0.25
-      });
-    }
-    this.batchPool.batchStaticTemplates(this.sceneryGroup, bushPlacements, { namePrefix: 'perimeter_bush' });
-
-
-
-    // D. Modular shelters and accessories
-    // 1) Chicken area: Coop, chicken shelter, egg basket
-    const coop = this.instantiateProp('coop');
-    coop.position.set(-3.5, 0, -1.8);
-    coop.rotation.y = 0.35;
-    this.sceneryGroup.add(coop);
-
-    const chickenShelter = this.instantiateProp('chicken_shelter');
-    chickenShelter.position.set(-5.2, 0, 0.5);
-    chickenShelter.rotation.y = 0.6;
-    this.sceneryGroup.add(chickenShelter);
-
-    const eggBasket = this.instantiateProp('egg_basket');
-    eggBasket.position.set(-2.2, 0, -1.0);
-    this.sceneryGroup.add(eggBasket);
-
-    // 2) Cow area: Cow shelter, feed trough, water trough, hay bales
-    const cowShelter = this.instantiateProp('cow_shelter');
-    cowShelter.position.set(3.8, 0, -2.5);
-    cowShelter.rotation.y = -0.2;
-    this.sceneryGroup.add(cowShelter);
-
-    const feedTrough = this.instantiateProp('feed_trough');
-    feedTrough.position.set(1.6, 0, -1.8);
-    this.sceneryGroup.add(feedTrough);
-
-    const waterTrough = this.instantiateProp('water_trough');
-    waterTrough.position.set(3.2, 0, -0.5);
-    waterTrough.rotation.y = 0.2;
-    this.sceneryGroup.add(waterTrough);
-
-    const hayBale1 = this.instantiateProp('hay_bale');
-    hayBale1.position.set(4.5, 0, 1.0);
-    hayBale1.rotation.y = Math.PI / 2;
-    this.sceneryGroup.add(hayBale1);
-
-    const hayBale2 = this.instantiateProp('hay_bale');
-    hayBale2.position.set(4.8, 0, 2.0);
-    hayBale2.rotation.y = 0.3;
-    this.sceneryGroup.add(hayBale2);
-
-    // 3) Pig area: Pig shelter
-    const pigShelter = this.instantiateProp('pig_shelter');
-    pigShelter.position.set(0, 0, -3.2);
-    this.sceneryGroup.add(pigShelter);
-
-    // 4) Dog area: Dog shelter
-    const dogShelter = this.instantiateProp('dog_shelter');
-    dogShelter.position.set(-1.8, 0, -3.2);
-    dogShelter.rotation.y = 0.1;
-    this.sceneryGroup.add(dogShelter);
-
-    // 5) Duck area: Duck shelter right beside pond
-    const duckShelter = this.instantiateProp('duck_shelter');
-    duckShelter.position.set(-3.8, 0, 3.2);
-    duckShelter.rotation.y = 0.8;
-    this.sceneryGroup.add(duckShelter);
+    // 5) Khu Vịt: Duck shelter
+    placeProp('duck_shelter', 70.8, -31.8, 0.8);
   }
 
   private instantiateProp(name: string): THREE.Object3D {
@@ -366,149 +239,48 @@ export class FarmSanctuary {
     const ox = worldOrigin.x;
     const oz = worldOrigin.z;
 
-    // 1. Back Fence Wall: z = -4, x from -5 to 5
-    for (let x = -5; x <= 5; x += 1.0) {
-      obs.push({ x: Number((ox + x).toFixed(2)), z: Number((oz - 4).toFixed(2)), radius: 0.65 });
-    }
+    const shelterObstacles: Array<[number, number, number]> = [
+      [68.5, -39.5, 1.15], // coop
+      [67.0, -37.2, 0.95], // chicken shelter
+      [76.5, -39.8, 1.35], // cow shelter
+      [74.2, -38.0, 0.8], // feed trough
+      [75.6, -36.5, 0.8], // water trough
+      [73.0, -41.6, 1.15], // pig shelter
+      [70.2, -42.0, 0.95], // dog shelter
+      [70.8, -31.8, 0.95] // duck shelter
+    ];
 
-    // 2. Left Fence Wall: x = -5, z from -4 to 4
-    for (let z = -4; z <= 4; z += 1.0) {
-      obs.push({ x: Number((ox - 5).toFixed(2)), z: Number((oz + z).toFixed(2)), radius: 0.65 });
-    }
-
-    // 3. Right Fence Wall: x = 5, z from -4 to 4
-    for (let z = -4; z <= 4; z += 1.0) {
-      obs.push({ x: Number((ox + 5).toFixed(2)), z: Number((oz + z).toFixed(2)), radius: 0.65 });
-    }
-
-    // 4. Front Fence Wall: z = 4
-    // Left segment: x from -5 to -1.4
-    for (let x = -5; x <= -1.4; x += 0.9) {
-      obs.push({ x: Number((ox + x).toFixed(2)), z: Number((oz + 4).toFixed(2)), radius: 0.65 });
-    }
-    // Right segment: x from 1.4 to 5
-    for (let x = 1.4; x <= 5; x += 0.9) {
-      obs.push({ x: Number((ox + x).toFixed(2)), z: Number((oz + 4).toFixed(2)), radius: 0.65 });
-    }
-    // (Gate opening between x = -1.3 and 1.3 at z = 4 is open for player passage)
-
-    // 5. Farm Shelters and Pond inside the pen
-    obs.push({ x: Number((ox - 3.5).toFixed(2)), z: Number((oz - 1.8).toFixed(2)), radius: 1.2 }); // coop
-    obs.push({ x: Number((ox - 5.2).toFixed(2)), z: Number((oz + 0.5).toFixed(2)), radius: 1.0 }); // chicken shelter
-    obs.push({ x: Number((ox + 3.8).toFixed(2)), z: Number((oz - 2.5).toFixed(2)), radius: 1.4 }); // cow shelter
-    obs.push({ x: Number((ox + 0.0).toFixed(2)), z: Number((oz - 3.2).toFixed(2)), radius: 1.2 }); // pig shelter
-    obs.push({ x: Number((ox - 1.8).toFixed(2)), z: Number((oz - 3.2).toFixed(2)), radius: 1.0 }); // dog shelter
-    obs.push({ x: Number((ox - 3.8).toFixed(2)), z: Number((oz + 3.2).toFixed(2)), radius: 1.0 }); // duck shelter
-    obs.push({ x: Number((ox - 2.2).toFixed(2)), z: Number((oz + 3.2).toFixed(2)), radius: 1.6 }); // duck pond
-
-    // 6. Perimeter Bush Hedge: radius 30.5m
-    for (let i = 0; i < 48; i++) {
-      const angle = (i / 48) * Math.PI * 2;
-      const bx = ox + Math.cos(angle) * 30.5;
-      const bz = oz + Math.sin(angle) * 30.5;
-      obs.push({ x: Number(bx.toFixed(2)), z: Number(bz.toFixed(2)), radius: 0.9 });
+    for (const [lx, lz, radius] of shelterObstacles) {
+      obs.push({
+        x: Number((ox + lx).toFixed(2)),
+        z: Number((oz + lz).toFixed(2)),
+        radius
+      });
     }
 
     return obs;
   }
 
-  private extractFloraFromPark(name: string): THREE.Object3D | null {
-    if (!this.parkLibrary) return null;
-    const foundNode = this.parkLibrary.getObjectByName(name);
-    if (!foundNode) return null;
-
-    const wrapper = new THREE.Group();
-    wrapper.name = name;
-
-    const clone = foundNode.clone(true);
-    const box = new THREE.Box3().setFromObject(clone);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-
-    // If raw coordinates from park.glb FBX
-    if (size.x > 10 || size.z > 10 || size.y > 10) {
-      clone.rotation.x = -Math.PI / 2;
-      const fbxBox = new THREE.Box3().setFromObject(clone);
-      const fbxCenter = new THREE.Vector3();
-      fbxBox.getCenter(fbxCenter);
-      clone.position.sub(new THREE.Vector3(fbxCenter.x, fbxBox.min.y, fbxCenter.z));
-      wrapper.scale.setScalar(0.01);
-    } else {
-      clone.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
-      const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 2.0) {
-        wrapper.scale.setScalar(1.2 / maxDim);
+  private pickAnimalSpawnAnchor(index: number): { x: number; z: number } {
+    const base = FARM_ANIMAL_ANCHORS_LOCAL[index % FARM_ANIMAL_ANCHORS_LOCAL.length];
+    if (index < FARM_ANIMAL_ANCHORS_LOCAL.length) {
+      return base;
+    }
+    const extraRing = Math.floor(index / FARM_ANIMAL_ANCHORS_LOCAL.length);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const angle = index * 2.1 + attempt * 0.78;
+      const dist = 3.0 + extraRing * 1.8;
+      const cx = base.x + Math.cos(angle) * dist;
+      const cz = base.z + Math.sin(angle) * dist;
+      if (
+        isWithinFarmPlayableBoundsLocal(cx, cz) &&
+        !isInsideFarmPenLocal(cx, cz, 1.0) &&
+        !this.isBlockedLocal(cx, cz)
+      ) {
+        return { x: cx, z: cz };
       }
     }
-
-    wrapper.add(clone);
-    return wrapper;
-  }
-
-  private createProceduralGrassCluster(): THREE.Group {
-    const group = new THREE.Group();
-    group.name = 'Grass002';
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x5ea338,
-      roughness: 0.8,
-      side: THREE.DoubleSide
-    });
-    for (let i = 0; i < 5; i++) {
-      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.6 + Math.random() * 0.3, 4), mat);
-      blade.position.set((Math.random() - 0.5) * 0.4, 0.3, (Math.random() - 0.5) * 0.4);
-      blade.rotation.z = (Math.random() - 0.5) * 0.4;
-      blade.rotation.x = (Math.random() - 0.5) * 0.4;
-      blade.castShadow = true;
-      group.add(blade);
-    }
-    return group;
-  }
-
-  private createProceduralFlowerCluster(): THREE.Group {
-    const group = new THREE.Group();
-    group.name = 'Flowers002';
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0x3d7a22, roughness: 0.9 });
-    const petalColors = [0xf59e0b, 0xec4899, 0xef4444, 0x8b5cf6, 0xffffff];
-    const petalMat = new THREE.MeshStandardMaterial({
-      color: petalColors[Math.floor(Math.random() * petalColors.length)],
-      roughness: 0.5
-    });
-    const centerMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4 });
-
-    for (let i = 0; i < 3; i++) {
-      const fx = (Math.random() - 0.5) * 0.5;
-      const fz = (Math.random() - 0.5) * 0.5;
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 5), stemMat);
-      stem.position.set(fx, 0.2, fz);
-      group.add(stem);
-
-      const center = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), centerMat);
-      center.position.set(fx, 0.42, fz);
-      group.add(center);
-
-      const petal = new THREE.Mesh(new THREE.CircleGeometry(0.12, 6), petalMat);
-      petal.position.set(fx, 0.42, fz);
-      petal.rotation.x = -Math.PI / 2;
-      group.add(petal);
-    }
-    return group;
-  }
-
-  private createProceduralBush(): THREE.Group {
-    const group = new THREE.Group();
-    group.name = 'Bush002';
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x3b7a2d,
-      roughness: 0.85
-    });
-    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.85, 1), mat);
-    mesh.position.y = 0.55;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-    return group;
+    return base;
   }
 
   private spawnAnimals(farmRescued: Record<string, boolean>, questions?: any[]) {
@@ -527,42 +299,35 @@ export class FarmSanctuary {
       const animalId = `farm_${kind}_${i}`;
       const entity = new FarmAnimalEntity(animalId, i, kind, this.libraryScene!);
       const isRescued = farmRescued?.[animalId] === true;
-      const homeCenter = SHELTER_CENTERS[kind] || { x: 0, z: 0 };
+      const homeCenter = SHELTER_CENTERS[kind] || { x: FARM_PEN_CENTER_LOCAL.x, z: FARM_PEN_CENTER_LOCAL.z };
 
       if (isRescued) {
         // Rescued -> resting inside their specific shelter area
         entity.state = 'RESTING';
-        entity.root.position.set(
-          homeCenter.x + (Math.random() - 0.5) * 1.8,
-          0,
-          homeCenter.z + (Math.random() - 0.5) * 1.8
-        );
+        entity.setBeaconVisible(false);
+        const rx = homeCenter.x + (Math.random() - 0.5) * 1.4;
+        const rz = homeCenter.z + (Math.random() - 0.5) * 1.4;
+        const ry = this.sampleLocalGroundY(rx, rz, FARM_PEN_CENTER_LOCAL.y);
+        entity.root.position.set(rx, ry, rz);
         entity.heading = Math.random() * Math.PI * 2;
         entity.targetPos = entity.root.position.clone();
       } else {
-        // Escaped -> roaming outside in the surrounding pasture across radius 9.5m - 25m
+        // Escaped -> localized roaming around verified scenic anchor points
         entity.state = 'ROAMING';
-        const angle = (i / lineup.length) * Math.PI * 2 + 0.3;
-        const ring = i % 4;
-        const radius = 9.5 + ring * 4.2 + (Math.random() - 0.5) * 1.5;
-        entity.root.position.set(
-          Math.cos(angle) * radius,
-          0,
-          Math.sin(angle) * radius
-        );
-        if (Math.abs(entity.root.position.x) < 5.6 && Math.abs(entity.root.position.z) < 4.6) {
-          entity.root.position.x = (entity.root.position.x >= 0 ? 1 : -1) * 6.5;
-        }
-
+        entity.setBeaconVisible(true);
+        const anchor = this.pickAnimalSpawnAnchor(i);
+        const ay = this.sampleLocalGroundY(anchor.x, anchor.z);
+        entity.root.position.set(anchor.x, ay, anchor.z);
+        entity.roamAnchor = entity.root.position.clone();
         entity.heading = Math.random() * Math.PI * 2;
-        entity.targetPos = this.getRandomRoamPos(entity.root.position);
+        entity.targetPos = this.getRandomRoamPos(entity.roamAnchor);
 
         // Create interaction trigger for math challenge
         const problemData = this.buildAnimalProblemData(questions?.[i], i, kind);
 
         const trigger: FarmInteractTrigger = {
           position: entity.root.position.clone(),
-          radius: 3.5,
+          radius: 3.8,
           id: problemData.id || animalId,
           animalId: animalId,
           isActive: true,
@@ -571,7 +336,6 @@ export class FarmSanctuary {
         this.interactTriggers.push(trigger);
         this.triggerByAnimalId.set(animalId, trigger);
       }
-
 
       this.animalsGroup.add(entity.root);
       this.animals.push(entity);
@@ -644,7 +408,10 @@ export class FarmSanctuary {
     let minDist = maxDistance;
 
     for (const animal of this.animals) {
-      const dist = animal.root.position.distanceTo(localPoint);
+      const dist = Math.hypot(
+        animal.root.position.x - localPoint.x,
+        animal.root.position.z - localPoint.z
+      );
       if (dist < minDist) {
         minDist = dist;
         closest = animal;
@@ -657,16 +424,23 @@ export class FarmSanctuary {
   public onAnimalRescued(animalId: string) {
     const animal = this.animals.find((a) => a.id === animalId);
     if (animal) {
+      animal.setBeaconVisible(false);
       animal.state = 'ENGAGED';
       animal.pop = 0; // Trigger celebration jump/pop
-      const homeCenter = SHELTER_CENTERS[animal.kind] || { x: 0, z: 0 };
+      const homeCenter = SHELTER_CENTERS[animal.kind] || { x: FARM_PEN_CENTER_LOCAL.x, z: FARM_PEN_CENTER_LOCAL.z };
       setTimeout(() => {
+        if (this.disposed) return;
         animal.state = 'HOMEWARD';
-        animal.shelterGate = new THREE.Vector3(0, 0, 4.5);
-        animal.shelterPos = new THREE.Vector3(
-          homeCenter.x + (Math.random() - 0.5) * 1.5,
-          0,
-          homeCenter.z + (Math.random() - 0.5) * 1.5
+        animal.homewardElapsed = 0;
+        const gateY = this.sampleLocalGroundY(FARM_PEN_ENTRY_LOCAL.x, FARM_PEN_ENTRY_LOCAL.z, animal.root.position.y);
+        animal.shelterGate = new THREE.Vector3(FARM_PEN_ENTRY_LOCAL.x, gateY, FARM_PEN_ENTRY_LOCAL.z);
+        const sx = homeCenter.x + (Math.random() - 0.5) * 1.4;
+        const sz = homeCenter.z + (Math.random() - 0.5) * 1.4;
+        const sy = this.sampleLocalGroundY(sx, sz, gateY);
+        animal.shelterPos = new THREE.Vector3(sx, sy, sz);
+        animal.homewardStartDist = Math.hypot(
+          animal.root.position.x - animal.shelterGate.x,
+          animal.root.position.z - animal.shelterGate.z
         );
         animal.targetPos = animal.shelterGate;
       }, 1500);
@@ -688,24 +462,53 @@ export class FarmSanctuary {
       const pos = animal.root.position;
 
       if (animal.state === 'ROAMING' || animal.state === 'HOMEWARD') {
-        const homeCenter = SHELTER_CENTERS[animal.kind] || { x: 0, z: 0 };
+        const homeCenter = SHELTER_CENTERS[animal.kind] || { x: FARM_PEN_CENTER_LOCAL.x, z: FARM_PEN_CENTER_LOCAL.z };
         if (!animal.targetPos) {
           animal.targetPos =
             animal.state === 'ROAMING'
-              ? this.getRandomRoamPos(pos)
-              : (animal.shelterGate || new THREE.Vector3(homeCenter.x, 0, homeCenter.z));
+              ? this.getRandomRoamPos(animal.roamAnchor ?? pos)
+              : (animal.shelterGate || new THREE.Vector3(homeCenter.x, pos.y, homeCenter.z));
         }
 
-        const dist = pos.distanceTo(animal.targetPos);
-        if (dist < 1.2) {
+        if (animal.state === 'HOMEWARD') {
+          animal.homewardElapsed += dt;
+          if (
+            animal.shelterGate &&
+            animal.targetPos === animal.shelterGate &&
+            animal.homewardStartDist > FARM_DIRECT_HOMEWARD_MAX_DIST &&
+            animal.homewardElapsed >= FARM_REMOTE_HOMEWARD_WARP_SEC
+          ) {
+            this.onHomewardSparkle?.(
+              new THREE.Vector3(
+                this.group.position.x + pos.x,
+                pos.y + 0.8,
+                this.group.position.z + pos.z
+              )
+            );
+            pos.copy(animal.shelterGate);
+            pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
+            this.onHomewardSparkle?.(
+              new THREE.Vector3(
+                this.group.position.x + pos.x,
+                pos.y + 0.8,
+                this.group.position.z + pos.z
+              )
+            );
+            animal.targetPos = animal.shelterPos ?? animal.shelterGate;
+          }
+        }
+
+        const horizDist = Math.hypot(animal.targetPos.x - pos.x, animal.targetPos.z - pos.z);
+        if (horizDist < 1.25) {
           if (animal.state === 'HOMEWARD') {
             if (animal.shelterGate && animal.targetPos === animal.shelterGate && animal.shelterPos) {
-              // Reached front gate -> enter towards internal species shelter
+              // Reached pen entry -> walk towards species shelter
               animal.targetPos = animal.shelterPos;
             } else {
               animal.state = 'RESTING';
               animal.speed = 0;
               animal.restTime = 4 + Math.random() * 4;
+              animal.shelterGate = undefined;
             }
           } else {
             animal.restTime = 2 + Math.random() * 5;
@@ -716,37 +519,44 @@ export class FarmSanctuary {
           const angleToTarget = Math.atan2(animal.targetPos.x - pos.x, animal.targetPos.z - pos.z);
           const diff = this.normalizeAngle(angleToTarget - animal.heading);
           animal.heading += diff * dt * 3;
-          animal.speed = animal.state === 'HOMEWARD' ? 3.5 : 1.2;
+          animal.speed = animal.state === 'HOMEWARD' ? 4.2 : 1.3;
 
           const nextX = pos.x + Math.sin(animal.heading) * animal.speed * dt;
           const nextZ = pos.z + Math.cos(animal.heading) * animal.speed * dt;
 
-          if (animal.state === 'ROAMING' && Math.abs(nextX) < 5.5 && Math.abs(nextZ) < 4.5) {
-            // Unrescued animal blocked from entering pen boundary
-            animal.targetPos = this.getRandomRoamPos(pos);
-            animal.heading = Math.atan2(pos.x, pos.z);
-            animal.speed = 0;
-            animal.restTime = 1.0;
+          if (animal.state === 'ROAMING') {
+            const outOfBounds = !isWithinFarmPlayableBoundsLocal(nextX, nextZ);
+            const insidePen = isInsideFarmPenLocal(nextX, nextZ, 0.5);
+            const blocked = this.isBlockedLocal(nextX, nextZ);
+            if (outOfBounds || insidePen || blocked) {
+              const anchor = animal.roamAnchor ?? pos;
+              animal.targetPos = this.getRandomRoamPos(anchor);
+              animal.heading = Math.atan2(animal.targetPos.x - pos.x, animal.targetPos.z - pos.z);
+              animal.speed = 0;
+              animal.restTime = 0.6;
+            } else {
+              pos.x = nextX;
+              pos.z = nextZ;
+            }
           } else {
             pos.x = nextX;
             pos.z = nextZ;
           }
         }
 
-        // Hard perimeter defense: unrescued animals must never be inside pen
-        if (animal.state === 'ROAMING') {
-          const penX = 5.5;
-          const penZ = 4.5;
-          if (Math.abs(pos.x) < penX && Math.abs(pos.z) < penZ) {
-            if (Math.abs(pos.x) / penX > Math.abs(pos.z) / penZ) {
-              pos.x = (pos.x >= 0 ? 1 : -1) * (penX + 0.6);
-            } else {
-              pos.z = (pos.z >= 0 ? 1 : -1) * (penZ + 0.6);
-            }
-            animal.heading = Math.atan2(pos.x, pos.z);
-            animal.targetPos = this.getRandomRoamPos(pos);
-          }
+        // Hard perimeter defense: unrescued animals must never enter the Central Farm Pen
+        if (animal.state === 'ROAMING' && isInsideFarmPenLocal(pos.x, pos.z)) {
+          const dx = pos.x - FARM_PEN_CENTER_LOCAL.x;
+          const dz = pos.z - FARM_PEN_CENTER_LOCAL.z;
+          const d = Math.hypot(dx, dz) || 1;
+          const pushR = 10.8;
+          pos.x = FARM_PEN_CENTER_LOCAL.x + (dx / d) * pushR;
+          pos.z = FARM_PEN_CENTER_LOCAL.z + (dz / d) * pushR;
+          animal.heading = Math.atan2(dx, dz);
+          animal.targetPos = this.getRandomRoamPos(animal.roamAnchor ?? pos);
         }
+
+        pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
 
         if (animal.restTime > 0) {
           animal.restTime -= dt;
@@ -768,15 +578,19 @@ export class FarmSanctuary {
         animal.speed = 0;
         animal.restTime -= dt;
         if (animal.restTime <= 0) {
-          // Wander slightly inside home shelter area
-          const homeCenter = SHELTER_CENTERS[animal.kind] || { x: 0, z: 0 };
+          // Wander gently inside home shelter area
+          const homeCenter = SHELTER_CENTERS[animal.kind] || { x: FARM_PEN_CENTER_LOCAL.x, z: FARM_PEN_CENTER_LOCAL.z };
           animal.state = 'HOMEWARD';
-          const wx = homeCenter.x + (Math.random() - 0.5) * 2.0;
-          const wz = homeCenter.z + (Math.random() - 0.5) * 2.0;
+          animal.homewardElapsed = 0;
+          animal.homewardStartDist = 0;
+          animal.shelterGate = undefined;
+          const wx = homeCenter.x + (Math.random() - 0.5) * 1.8;
+          const wz = homeCenter.z + (Math.random() - 0.5) * 1.8;
+          const wy = this.sampleLocalGroundY(wx, wz, pos.y);
           if (animal.targetPos) {
-            animal.targetPos.set(wx, 0, wz);
+            animal.targetPos.set(wx, wy, wz);
           } else {
-            animal.targetPos = new THREE.Vector3(wx, 0, wz);
+            animal.targetPos = new THREE.Vector3(wx, wy, wz);
           }
         }
       } else if (animal.state === 'ENGAGED') {
@@ -787,6 +601,7 @@ export class FarmSanctuary {
         animal.speed = 0;
         animal.graze = 0;
         animal.peck = 0;
+        pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
       }
 
       // Pop celebration
@@ -795,51 +610,40 @@ export class FarmSanctuary {
       // Update rotation
       animal.root.rotation.y = animal.heading;
 
-      // Synchronize trigger position to match current animal location
+      // Synchronize trigger position to match current 3D animal location
       const trigger = this.triggerByAnimalId.get(animal.id);
       if (trigger && trigger.isActive) {
         trigger.position.copy(pos);
       }
 
-      // Procedural walking/head/legs animation
+      // Procedural walking/head/legs/beacon animation
       animal.updateAnimation(dt, this.time);
     }
   }
 
-  private getRandomRoamPos(currentPos?: THREE.Vector3): THREE.Vector3 {
-    let px = 0;
-    let pz = 0;
+  private getRandomRoamPos(anchor?: THREE.Vector3): THREE.Vector3 {
+    const base = anchor && (anchor.x !== 0 || anchor.z !== 0)
+      ? anchor
+      : new THREE.Vector3(FARM_ANIMAL_ANCHORS_LOCAL[0].x, 0, FARM_ANIMAL_ANCHORS_LOCAL[0].z);
 
-    if (currentPos && (currentPos.x !== 0 || currentPos.z !== 0)) {
-      // Roam within an angular arc around current pasture location outside pen
-      const currAngle = Math.atan2(currentPos.z, currentPos.x);
-      const deltaAngle = (Math.random() - 0.5) * 1.4;
-      const angle = currAngle + deltaAngle;
-      // Roam across wide pasture between radius 8.5m and 26.5m
-      const r = 8.5 + Math.random() * 18.0;
-      px = Math.cos(angle) * r;
-      pz = Math.sin(angle) * r;
-    } else {
+    for (let attempt = 0; attempt < 12; attempt++) {
       const angle = Math.random() * Math.PI * 2;
-      const r = 9.0 + Math.random() * 17.5;
-      px = Math.cos(angle) * r;
-      pz = Math.sin(angle) * r;
-    }
-
-    // Strictly ensure target is outside the pen rectangle (-5.5 to 5.5, -4.5 to 4.5)
-    const penMarginX = 5.6;
-    const penMarginZ = 4.6;
-    if (Math.abs(px) < penMarginX && Math.abs(pz) < penMarginZ) {
-      if (Math.abs(px) / penMarginX > Math.abs(pz) / penMarginZ) {
-        px = (px >= 0 ? 1 : -1) * (penMarginX + 1.5);
-      } else {
-        pz = (pz >= 0 ? 1 : -1) * (penMarginZ + 1.5);
+      const r = 2.0 + Math.random() * 6.5;
+      const px = base.x + Math.cos(angle) * r;
+      const pz = base.z + Math.sin(angle) * r;
+      if (
+        isWithinFarmPlayableBoundsLocal(px, pz) &&
+        !isInsideFarmPenLocal(px, pz, 1.0) &&
+        !this.isBlockedLocal(px, pz)
+      ) {
+        const py = this.sampleLocalGroundY(px, pz, base.y);
+        return new THREE.Vector3(px, py, pz);
       }
     }
 
-    return new THREE.Vector3(px, 0, pz);
+    const fallbackY = this.sampleLocalGroundY(base.x, base.z, base.y);
+    return new THREE.Vector3(base.x, fallbackY, base.z);
   }
-
 
   private normalizeAngle(angle: number): number {
     while (angle > Math.PI) angle -= Math.PI * 2;
@@ -848,14 +652,13 @@ export class FarmSanctuary {
   }
 
   public dispose(): void {
+    this.disposed = true;
     this.sceneryGroup.clear();
     this.animalsGroup.clear();
     this.animals = [];
     this.interactTriggers = [];
     this.triggerByAnimalId.clear();
-    if (this.ownsBatchPool) {
-      this.batchPool.dispose();
-    }
+    this.terrainSurface = null;
+    this.colliderGrid = null;
   }
 }
-

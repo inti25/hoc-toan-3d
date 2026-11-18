@@ -141,9 +141,12 @@ test('FarmSanctuary builds modular scenery without raw GLTF dump and front is op
   assert.ok(sceneryNames.includes('duck_shelter'), 'Scenery should contain duck_shelter');
   assert.ok(sceneryNames.includes('pig_shelter'), 'Scenery should contain pig_shelter');
   assert.ok(sceneryNames.includes('dog_shelter'), 'Scenery should contain dog_shelter');
+  assert.equal(sceneryNames.includes('pen_fence'), false, 'Obsolete closed pen fence must be removed');
+  assert.equal(sceneryNames.includes('yard_floor'), false, 'Obsolete flat yard disc must be removed');
 
-  // Verify animals are spawned
+  // Verify animals are spawned with active guidance beacons
   assert.equal(farm.animals.length, 10, 'Should spawn 10 animals');
+  assert.ok(farm.animals.every((a) => a.beaconGroup?.visible === true), 'Unrescued animals show beacons');
 });
 
 test('FarmSanctuary allows raycast and point selection on animals', async () => {
@@ -226,6 +229,7 @@ test('FarmSanctuary moves rescued animals towards species shelters', async () =>
   farm.setupFromLibrary(mockLibrary, { farm_cow_0: true });
   const rescuedCow = farm.animals[0];
   assert.equal(rescuedCow.state, 'RESTING', 'Rescued animal should be RESTING');
+  assert.equal(rescuedCow.beaconGroup?.visible, false, 'Rescued animal beacon must be hidden');
   const expectedShelter = SHELTER_CENTERS['cow'];
   assert.ok(
     Math.hypot(rescuedCow.root.position.x - expectedShelter.x, rescuedCow.root.position.z - expectedShelter.z) < 2.0,
@@ -233,9 +237,10 @@ test('FarmSanctuary moves rescued animals towards species shelters', async () =>
   );
 });
 
-test('FarmSanctuary provides fence obstacles that block player except at gate', async () => {
+test('FarmSanctuary provides shelter obstacles around Central Farm Pen while leaving entry open', async () => {
   const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
   const { SpatialWorld } = await import('../src/world/SpatialWorld');
+  const { FARM_PEN_ENTRY_LOCAL, FARM_SPAWN_LOCAL } = await import('../src/data/farmMap');
   const THREE = await import('three');
 
   const farm = new FarmSanctuary();
@@ -243,54 +248,44 @@ test('FarmSanctuary provides fence obstacles that block player except at gate', 
   farm.setupFromLibrary(mockLibrary, {});
 
   const farmCenter = { x: 50, z: 50 };
-  const obstacles = (farm as any).getObstacles?.(farmCenter) || [];
+  const obstacles = farm.getObstacles(farmCenter);
 
-  assert.ok(obstacles.length > 0, 'FarmSanctuary must generate obstacles for fences and structures');
+  assert.ok(obstacles.length > 0, 'FarmSanctuary must generate obstacles for shelters and troughs');
 
   const spatial = new SpatialWorld();
   spatial.setDynamicData([{
     id: 8,
     name: 'Nông Trại',
     center: farmCenter,
-    width: 32,
-    depth: 32,
+    width: 220,
+    depth: 165,
     template: 'FARM_SANCTUARY'
   }]);
   spatial.addObstacles(obstacles);
 
-  // Player should NOT be able to walk through fence
-  // Right fence wall is at x = farmCenter.x + 5 = 55, z = 50
+  // Player should be blocked by cow_shelter placed at (76.5, -39.8) local
   assert.equal(
-    spatial.canMove(55, 50),
+    spatial.canMove(farmCenter.x + 76.5, farmCenter.z - 39.8),
     false,
-    'Player must be blocked by right fence wall'
+    'Player must be blocked by cow shelter obstacle'
   );
 
-  // Left fence wall is at x = farmCenter.x - 5 = 45, z = 50
+  // Pen entry and spawn must remain open for player and homeward animals
   assert.equal(
-    spatial.canMove(45, 50),
-    false,
-    'Player must be blocked by left fence wall'
-  );
-
-  // Back fence wall is at x = 50, z = farmCenter.z - 4 = 46
-  assert.equal(
-    spatial.canMove(50, 46),
-    false,
-    'Player must be blocked by back fence wall'
-  );
-
-  // Front gate is at x = 50, z = farmCenter.z + 4 = 54
-  // Player SHOULD be able to enter through the gate
-  assert.equal(
-    spatial.canMove(50, 54),
+    spatial.canMove(farmCenter.x + FARM_PEN_ENTRY_LOCAL.x, farmCenter.z + FARM_PEN_ENTRY_LOCAL.z),
     true,
-    'Player should be able to walk through the front gate'
+    'Pen entry must be walkable'
+  );
+  assert.equal(
+    spatial.canMove(farmCenter.x + FARM_SPAWN_LOCAL.x, farmCenter.z + FARM_SPAWN_LOCAL.z),
+    true,
+    'Farm spawn must be walkable'
   );
 });
 
-test('Unrescued animals never appear or enter inside the fenced pen area', async () => {
+test('Unrescued animals never appear or enter inside the Central Farm Pen area', async () => {
   const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
+  const { isInsideFarmPenLocal } = await import('../src/data/farmMap');
   const THREE = await import('three');
 
   const farm = new FarmSanctuary();
@@ -304,25 +299,20 @@ test('Unrescued animals never appear or enter inside the fenced pen area', async
   // Setup farm with no rescued animals
   farm.setupFromLibrary(mockLibrary, {});
 
-  const isInsidePen = (pos: THREE.Vector3) => {
-    return Math.abs(pos.x) <= 5.0 && Math.abs(pos.z) <= 4.0;
-  };
-
-  // 1. Initial positions: all unrescued animals must be outside the pen
+  // 1. Initial positions: all unrescued animals must be outside the Central Farm Pen
   for (const animal of farm.animals) {
     assert.equal(
-      isInsidePen(animal.root.position),
+      isInsideFarmPenLocal(animal.root.position.x, animal.root.position.z),
       false,
       `Unrescued animal ${animal.id} spawned inside pen at (${animal.root.position.x}, ${animal.root.position.z})`
     );
   }
 
-  // 2. Simulate roaming with targeted cross-path to verify pen boundary defense
-  // Place an animal at (-10, 0) aiming for (10, 0) across the pen
+  // 2. Simulate roaming aiming across the pen (from x=61, z=-36 toward x=80, z=-36)
   const testAnimal = farm.animals[0];
-  testAnimal.root.position.set(-8, 0, 0);
-  testAnimal.heading = Math.PI / 2; // facing +X towards center
-  testAnimal.targetPos = new THREE.Vector3(8, 0, 0);
+  testAnimal.root.position.set(61, 0, -36);
+  testAnimal.heading = Math.PI / 2;
+  testAnimal.targetPos = new THREE.Vector3(80, 0, -36);
   testAnimal.restTime = 0;
 
   const dummyPlayerPos = new THREE.Vector3(0, 0, 0);
@@ -332,7 +322,7 @@ test('Unrescued animals never appear or enter inside the fenced pen area', async
     for (const animal of farm.animals) {
       if (animal.state === 'ROAMING') {
         assert.equal(
-          isInsidePen(animal.root.position),
+          isInsideFarmPenLocal(animal.root.position.x, animal.root.position.z),
           false,
           `Unrescued animal ${animal.id} entered inside pen at (${animal.root.position.x.toFixed(2)}, ${animal.root.position.z.toFixed(2)}) on step ${step}`
         );
@@ -341,52 +331,44 @@ test('Unrescued animals never appear or enter inside the fenced pen area', async
   }
 });
 
-test('FarmSanctuary scenery includes grass and flowers outside the pen', async () => {
+test('FarmSanctuary hides beacon immediately on rescue and relocates long-distance homeward animals with sparkle', async () => {
   const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
   const THREE = await import('three');
 
   const farm = new FarmSanctuary();
+  farm.group.position.set(400, 0, 400);
+  const sparkles: THREE.Vector3[] = [];
+  farm.onHomewardSparkle = (pos) => sparkles.push(pos.clone());
+
   const mockLibrary = new THREE.Group();
-  
-  // Provide mock flora in parkLibrary
-  const mockPark = new THREE.Group();
-  const grassMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
-  grassMesh.name = 'Grass002';
-  mockPark.add(grassMesh);
-
-  const flowerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
-  flowerMesh.name = 'Flowers002';
-  mockPark.add(flowerMesh);
-
-  farm.parkLibrary = mockPark;
+  for (const kind of ['cow', 'chicken', 'pig', 'duck', 'dog']) {
+    const node = new THREE.Group();
+    node.name = kind;
+    mockLibrary.add(node);
+  }
   farm.setupFromLibrary(mockLibrary, {});
 
-  const floraObjects = (farm as any).sceneryGroup.children.filter((c: any) =>
-    c.name.includes('Grass') || c.name.includes('Flowers') || c.name.includes('Bush') || c.name.includes('park_') || c.name.includes('flora_')
+  // Pick a distant animal (> 35m from FARM_PEN_ENTRY_LOCAL at (65, -36))
+  const distant = farm.animals.find(
+    (a) => Math.hypot(a.root.position.x - 65, a.root.position.z + 36) > 40
   );
+  assert.ok(distant, 'Should have a distant animal > 40m from pen entry');
+  assert.equal(distant.beaconGroup?.visible, true);
 
-  assert.ok(floraObjects.length > 0, `Scenery must contain grass and flower flora items (found ${floraObjects.length})`);
+  farm.onAnimalRescued(distant.id);
+  assert.equal(distant.beaconGroup?.visible, false, 'Beacon must hide immediately upon rescue');
 
-  // Verify that all flora instances are placed OUTSIDE the pen
-  const mat = new THREE.Matrix4();
-  const instPos = new THREE.Vector3();
-  let totalChecked = 0;
-  for (const obj of floraObjects) {
-    if (obj.isInstancedMesh) {
-      for (let i = 0; i < obj.count; i++) {
-        obj.getMatrixAt(i, mat);
-        instPos.setFromMatrixPosition(mat);
-        const isInsidePen = Math.abs(instPos.x) <= 5.0 && Math.abs(instPos.z) <= 4.0;
-        assert.equal(isInsidePen, false, `Flora ${obj.name}#${i} placed inside pen at (${instPos.x}, ${instPos.z})`);
-        totalChecked++;
-      }
-    } else {
-      const isInsidePen = Math.abs(obj.position.x) <= 5.0 && Math.abs(obj.position.z) <= 4.0;
-      assert.equal(isInsidePen, false, `Flora ${obj.name} placed inside pen at (${obj.position.x}, ${obj.position.z})`);
-      totalChecked++;
-    }
+  // Wait past the 1.5s celebration timeout, then advance simulation >= 4.5s
+  await new Promise((r) => setTimeout(r, 1600));
+  assert.equal(distant.state, 'HOMEWARD');
+
+  const playerPos = new THREE.Vector3(460, 0, 364);
+  for (let i = 0; i < 20; i++) {
+    farm.update(0.4, playerPos);
   }
-  assert.ok(totalChecked >= 140, `Expected at least 140 placed flora instances, got ${totalChecked}`);
+  assert.ok(sparkles.length >= 2, 'Long-distance homeward walk must emit sparkle relocation effects');
+  assert.equal(distant.state, 'RESTING', 'Relocated animal must complete walk into RESTING at its shelter');
+  farm.dispose();
 });
 
 test('FarmSanctuary spawns 20 animals when 20 questions are configured in Google Sheets', async () => {
@@ -424,52 +406,7 @@ test('FarmSanctuary spawns 20 animals when 20 questions are configured in Google
   );
 });
 
-test('FarmSanctuary flora covers wide pasture and surrounds perimeter with Bush002', async () => {
-  const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
-  const THREE = await import('three');
-
-  const farm = new FarmSanctuary();
-  const mockLibrary = new THREE.Group();
-  const mockPark = new THREE.Group();
-  const bushMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
-  bushMesh.name = 'Bush002';
-  mockPark.add(bushMesh);
-
-  farm.parkLibrary = mockPark;
-  farm.setupFromLibrary(mockLibrary, {});
-
-  // 1. Check perimeter bush002 hedge batched via InstancedMesh
-  const instancedMeshes = (farm as any).sceneryGroup.children.filter(
-    (c: any): c is import('three').InstancedMesh => Boolean(c.isInstancedMesh)
-  );
-  const bushCount = instancedMeshes
-    .filter((m) => m.name.includes('perimeter_bush'))
-    .reduce((sum, m) => sum + m.count, 0);
-  assert.ok(
-    bushCount >= 40,
-    `Must have at least 40 Bush002 instances surrounding the farm perimeter, found ${bushCount}`
-  );
-
-  // 2. Check wide flora distribution covering up to radius > 20m across InstancedMesh batches
-  const m = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  let wideFloraCount = 0;
-  for (const batch of instancedMeshes.filter((im) => im.name.includes('flora'))) {
-    for (let i = 0; i < batch.count; i++) {
-      batch.getMatrixAt(i, m);
-      pos.setFromMatrixPosition(m);
-      if (Math.hypot(pos.x, pos.z) > 20) {
-        wideFloraCount++;
-      }
-    }
-  }
-  assert.ok(
-    wideFloraCount > 10,
-    `Flora instances must cover outer pasture beyond 20m radius, found ${wideFloraCount}`
-  );
-});
-
-test('FarmSanctuary.load fetches map:farm and flora prefabs through AssetRepository', async () => {
+test('FarmSanctuary.load fetches map:farm and map:farm_world through AssetRepository', async () => {
   const { FarmSanctuary } = await import('../src/world/farm/FarmSanctuary');
   const { AssetRepository } = await import('../src/world/assets/AssetRepository');
   const THREE = await import('three');
@@ -482,13 +419,11 @@ test('FarmSanctuary.load fetches map:farm and flora prefabs through AssetReposit
         requestedUrls.push(url);
         const g = new THREE.Group();
         if (url.includes('farm.glb')) {
-          for (const name of ['chicken', 'cow', 'pen_fence', 'pen_gate', 'coop']) {
+          for (const name of ['chicken', 'cow', 'coop', 'cow_shelter']) {
             const node = new THREE.Group();
             node.name = name;
             g.add(node);
           }
-        } else {
-          g.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial()));
         }
         return g;
       }
@@ -499,10 +434,8 @@ test('FarmSanctuary.load fetches map:farm and flora prefabs through AssetReposit
   await farm.load({});
 
   assert.ok(requestedUrls.includes('/3dmodel/maps/farm.glb'));
-  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_grass002.glb'));
-  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_bush002.glb'));
-  assert.equal(farm.floraPrefabs.length, 4);
-  assert.ok(farm.bushPrefab);
+  assert.ok(requestedUrls.includes('/3dmodel/maps/farm/scene.gltf'));
+  assert.equal(requestedUrls.some((u) => u.includes('park_')), false, 'Old park flora prefabs must not be fetched');
   assert.ok(farm.animals.length > 0);
 });
 

@@ -43,3 +43,7 @@ Chưa triển khai các giai đoạn 2–3: thế giới khác, đua xe, chiến
 ## Triển khai web độc lập
 
 Bản Sites là bản chơi thử độc lập. Có thể tích hợp bản build tĩnh vào website hiện tại. Để giữ tiến trình khi chuyển tên miền, cần bổ sung luồng xuất/nhập save hoặc đồng bộ tài khoản ở giai đoạn sau.
+
+## Ghi nhận tài sản 3D (Credits)
+
+- This work is based on "moorhuhn kart 2 farm" (https://sketchfab.com/3d-models/moorhuhn-kart-2-farm-ba05d1f313d04268be1ace4afbb86622) by amogusstrikesback2 (https://sketchfab.com/amogusstrikesback2) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/).

@@ -217,14 +217,7 @@ export class AssetRepository implements AssetRepositorySeam {
     }
 
     if (tpl === 'FARM_SANCTUARY' || (!tpl && (id.includes('to_farm') || id.includes('to_multi_farm')))) {
-      const farmKeys: AssetKey[] = [
-        'map:farm',
-        'prefab:park_grass002',
-        'prefab:park_grass003',
-        'prefab:park_flowers002',
-        'prefab:park_flowers003',
-        'prefab:park_bush002'
-      ];
+      const farmKeys: AssetKey[] = ['map:farm_world', 'map:farm'];
       for (const key of farmKeys) {
         if (!this.has(key)) {
           void this.preload(key);
@@ -330,6 +323,17 @@ export class AssetRepository implements AssetRepositorySeam {
         options: {
           hideLightsAndCameras: true,
           enableShadows: true,
+          isSkinned: false
+        }
+      };
+    }
+
+    if (key === 'map:farm_world') {
+      return {
+        path: '3dmodel/maps/farm/scene.gltf',
+        options: {
+          hideLightsAndCameras: true,
+          enableShadows: false,
           isSkinned: false
         }
       };

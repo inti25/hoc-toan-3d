@@ -41,6 +41,13 @@ import {
   QHMJ_VILLAGE_RETURN_TARGET,
   computeQhmjAnchors
 } from '../data/qhmjMap';
+import {
+  FARM_CAMERA_DEFAULTS,
+  FARM_REGION_RADIUS,
+  FARM_VILLAGE_PORTAL,
+  FARM_VILLAGE_RETURN_TARGET,
+  computeFarmAnchors
+} from '../data/farmMap';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -77,35 +84,37 @@ export function selectLakeSanctuariesToLoad(
 export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[] {
   if (farmZones.length === 0) return [];
   const portals: PortalLink[] = [];
+  const firstAnchors = computeFarmAnchors(farmZones[0].center);
 
   if (farmZones.length === 1) {
     const fz = farmZones[0];
     portals.push({
       id: 'village_to_farm',
       name: fz.name ? `Đến ${fz.name}` : 'Cổng Nông Trại',
-      source: { x: -8, z: 14 },
-      target: { x: fz.center.x - 8, z: fz.center.z + 10 },
-      triggerRadius: 1.5,
+      source: { ...FARM_VILLAGE_PORTAL },
+      target: { x: firstAnchors.spawn.x, z: firstAnchors.spawn.z },
+      triggerRadius: 1.85,
       targetRegionId: `zone:${fz.id}`
     });
   } else {
     portals.push({
       id: 'village_to_multi_farm',
       name: 'Cổng Nông Trại',
-      source: { x: -8, z: 14 },
-      target: { x: farmZones[0].center.x - 8, z: farmZones[0].center.z + 10 },
-      triggerRadius: 1.5,
+      source: { ...FARM_VILLAGE_PORTAL },
+      target: { x: firstAnchors.spawn.x, z: firstAnchors.spawn.z },
+      triggerRadius: 1.85,
       targetRegionId: `zone:${farmZones[0].id}`
     });
   }
 
   for (const z of farmZones) {
+    const anchors = computeFarmAnchors(z.center);
     portals.push({
       id: `z${z.id}_to_village_farm`,
       name: 'Về Làng Khởi Đầu',
-      source: { x: z.center.x - 8, z: z.center.z + 14 },
-      target: { x: -8, z: 12 },
-      triggerRadius: 1.5,
+      source: { x: anchors.returnPortal.x, z: anchors.returnPortal.z },
+      target: { ...FARM_VILLAGE_RETURN_TARGET },
+      triggerRadius: 1.85,
       targetRegionId: 'core'
     });
   }
@@ -211,7 +220,6 @@ export class World {
   private dynamicIslandGroups: Map<number, THREE.Object3D[]> = new Map();
   private dynamicPortalArches: Map<number, THREE.Group[]> = new Map();
   private activeZoneIds: Set<number> = new Set([1, 2, 3, 4, 5]);
-  private farmBaseGroup?: THREE.Group;
   readonly assets = new AssetRepository();
   private readonly FIXED_DT = 1 / 60;
   private readonly MAX_SUB_STEPS = 3;
@@ -234,7 +242,7 @@ export class World {
   private dynamicHubPortalCount = 0;
   private readonly qhmjBuilds = new Map<number, QhmjRegionBuild>();
   private villageQhmjPortalArch?: THREE.Group;
-  private inQhmjCamera = false;
+  private cameraMode: 'isometric' | 'qhmj' | 'farm' = 'isometric';
   private sun: THREE.DirectionalLight;
 
   get active(): boolean {
@@ -341,8 +349,9 @@ export class World {
       const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
       if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true;
       this.yaw -= dx * .006;
-      const minPitch = this.inQhmjCamera ? -0.25 : 0.45;
-      const maxPitch = this.inQhmjCamera ? 0.85 : 1.15;
+      const isCloseCam = this.isCloseExplorationCamera();
+      const minPitch = isCloseCam ? -0.25 : 0.45;
+      const maxPitch = isCloseCam ? 0.85 : 1.15;
       this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, minPitch, maxPitch);
       pointer.x = e.clientX;
       pointer.y = e.clientY;
@@ -352,9 +361,10 @@ export class World {
     canvas.addEventListener('wheel', e => {
       if (!this._active || this._paused) return;
       e.preventDefault();
-      const minDist = this.inQhmjCamera ? 0.35 : 23;
-      const maxDist = this.inQhmjCamera ? 14 : 60;
-      const step = this.inQhmjCamera ? 0.008 : 0.025;
+      const isCloseCam = this.isCloseExplorationCamera();
+      const minDist = isCloseCam ? 0.35 : 23;
+      const maxDist = isCloseCam ? 14 : 60;
+      const step = isCloseCam ? 0.008 : 0.025;
       this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * step, minDist, maxDist);
     }, { passive: false });
     if (typeof document !== 'undefined') {
@@ -409,23 +419,45 @@ export class World {
     this.spatial.setQhmjLockedLinks(zoneId, lockedIds);
   }
 
-  private isQhmjRegionId(regionId: string): boolean {
-    if (!regionId.startsWith('zone:')) return false;
-    return this.dynamicZoneById.get(Number(regionId.slice(5)))?.template === 'QHMJ_SANCTUARY';
+  private isCloseExplorationCamera(): boolean {
+    return this.cameraMode !== 'isometric';
   }
 
-  /** Đồng bộ cấu hình camera giữa góc nhìn đẳng cự mặc định và góc nhìn gần sát người chơi trong QHMJ. */
-  private syncCameraModeForRegion(regionId: string): void {
-    const nextIsQhmj = this.isQhmjRegionId(regionId);
-    if (nextIsQhmj === this.inQhmjCamera) return;
-    this.inQhmjCamera = nextIsQhmj;
+  private resolveCameraModeForRegion(regionId: string): 'isometric' | 'qhmj' | 'farm' {
+    if (!regionId.startsWith('zone:')) return 'isometric';
+    const tpl = this.dynamicZoneById.get(Number(regionId.slice(5)))?.template;
+    if (tpl === 'QHMJ_SANCTUARY') return 'qhmj';
+    if (tpl === 'FARM_SANCTUARY') return 'farm';
+    return 'isometric';
+  }
 
-    if (nextIsQhmj) {
+  /** Đồng bộ cấu hình camera giữa Góc Nhìn Đẳng Cự và Góc Nhìn Khám Phá Gần (QHMJ / Nông Trại). */
+  private syncCameraModeForRegion(regionId: string): void {
+    const nextMode = this.resolveCameraModeForRegion(regionId);
+    if (nextMode === this.cameraMode) return;
+    this.cameraMode = nextMode;
+
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (nextMode === 'qhmj') {
       this.yaw = Math.PI / 2;
       this.pitch = 0.14;
       this.distance = 2.4;
       this.camera.fov = 58;
       this.camera.far = 700;
+      if (fog) {
+        fog.near = 170;
+        fog.far = 560;
+      }
+    } else if (nextMode === 'farm') {
+      this.yaw = FARM_CAMERA_DEFAULTS.yaw;
+      this.pitch = FARM_CAMERA_DEFAULTS.pitch;
+      this.distance = FARM_CAMERA_DEFAULTS.distance;
+      this.camera.fov = FARM_CAMERA_DEFAULTS.fov;
+      this.camera.far = FARM_CAMERA_DEFAULTS.far;
+      if (fog) {
+        fog.near = FARM_CAMERA_DEFAULTS.fogNear;
+        fog.far = FARM_CAMERA_DEFAULTS.fogFar;
+      }
     } else {
       this.yaw = 0.57;
       this.pitch = 0.8;
@@ -433,14 +465,12 @@ export class World {
       this.avatar.group.visible = true;
       this.camera.fov = 42;
       this.camera.far = 400;
+      if (fog) {
+        fog.near = 110;
+        fog.far = 320;
+      }
     }
     this.camera.updateProjectionMatrix();
-
-    const fog = this.scene.fog as THREE.Fog | null;
-    if (fog) {
-      fog.near = nextIsQhmj ? 170 : 110;
-      fog.far = nextIsQhmj ? 560 : 320;
-    }
   }
 
   private updateShadowBoundsForRegion(regionId: string) {
@@ -463,10 +493,13 @@ export class World {
       if (dynZone) {
         cx = dynZone.center.x;
         cz = dynZone.center.z;
-        const radius = dynZone.template === 'FARM_SANCTUARY' ? 38 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
+        const radius = dynZone.template === 'FARM_SANCTUARY' ? 90 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
         halfW = radius;
         halfH = radius;
-        if (dynZone.template === 'QHMJ_SANCTUARY') {
+        if (dynZone.template === 'FARM_SANCTUARY') {
+          sunHeight = 90;
+          shadowFar = 280;
+        } else if (dynZone.template === 'QHMJ_SANCTUARY') {
           cx = dynZone.center.x + 4;
           cz = dynZone.center.z - 10;
           halfW = 84;
@@ -1119,10 +1152,16 @@ export class World {
         const farmQuestions = this.dynamicQuestionsBySheet[dynZone.sheetName];
         const obs = await this.loadFarmMap(dynZone, farmQuestions, zoneGroup);
         zoneObs.push(...obs);
-        const retX = dynZone.center.x - 8;
-        const retZ = dynZone.center.z + 14;
-        this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
-        zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
+        const anchors = computeFarmAnchors(dynZone.center);
+        const retY =
+          this.farmSanctuary?.terrainSurface?.sampleNearest(
+            anchors.returnPortal.x,
+            anchors.returnPortal.z,
+            anchors.returnPortal.y
+          )?.y ?? anchors.returnPortal.y;
+        const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, 0, zoneGroup);
+        retArch.position.y = retY;
+        zoneObs.push(...computePortalPillarObstacles(anchors.returnPortal.x, anchors.returnPortal.z, 0));
       } else if (dynZone?.template === 'QHMJ_SANCTUARY') {
         const sheetProblems = this.dynamicQuestionsBySheet[dynZone.sheetName];
         const qhmjProblems = Array.isArray(sheetProblems) && sheetProblems.length > 0
@@ -1245,8 +1284,8 @@ export class World {
     }
   }
 
-  public async activateRegionAt(x: number, z: number): Promise<string> {
-    const regionId = this.spatial.resolveRegionForPoint(x, z);
+  public async activateRegionAt(x: number, z: number, explicitRegionId?: string): Promise<string> {
+    const regionId = explicitRegionId ?? this.spatial.resolveRegionForPoint(x, z);
 
     if (regionId.startsWith('zone:')) {
       const zoneId = Number(regionId.slice(5));
@@ -1409,20 +1448,27 @@ export class World {
     if (this.farmSanctuary) {
       this.farmSanctuary.group.visible = hasFarm;
     }
-    if (this.farmBaseGroup) {
-      this.farmBaseGroup.visible = hasFarm;
-    }
+    this.spatial.setFarmZones(
+      farmZones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        cx: z.center.x,
+        cz: z.center.z,
+        radius: FARM_REGION_RADIUS,
+        spawn: computeFarmAnchors(z.center).spawn
+      }))
+    );
 
     if (farmZones.length > 0) {
       if (!this.villageFarmPortalArch) {
         this.villageFarmPortalArch = this.createPortalArch(
-          -8,
-          14,
+          FARM_VILLAGE_PORTAL.x,
+          FARM_VILLAGE_PORTAL.z,
           farmZones.length === 1 ? (farmZones[0].color || 0x84cc16) : 0x84cc16,
           0,
           this.coreRegionGroup
         );
-        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(-8, 14, 0));
+        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(FARM_VILLAGE_PORTAL.x, FARM_VILLAGE_PORTAL.z, 0));
       }
 
       customPortals.push(...buildFarmPortalLinks(farmZones));
@@ -1613,15 +1659,20 @@ export class World {
     return this.spatial.nearMonolithIndex();
   }
 
-  teleport(x: number, z: number, y?: number) {
-    const targetRegion = this.spatial.resolveRegionForPoint(x, z);
+  teleport(x: number, z: number, y?: number, explicitRegionId?: string) {
+    const targetRegion = explicitRegionId ?? this.spatial.resolveRegionForPoint(x, z);
+    if (explicitRegionId) {
+      this.spatial.setActiveRegion(targetRegion);
+    }
     this.spatial.teleport(x, z, y);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.syncCameraModeForRegion(targetRegion);
-    const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+    const targetY =
+      this.player.position.y +
+      (this.isCloseExplorationCamera() ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
     this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
-      void this.activateRegionAt(x, z);
+      void this.activateRegionAt(x, z, targetRegion);
     }
     this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1, 0)));
     this.requestIdleRender();
@@ -1633,10 +1684,12 @@ export class World {
     this.spatial.teleport(x, z, y);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.syncCameraModeForRegion(targetRegion);
-    const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+    const targetY =
+      this.player.position.y +
+      (this.isCloseExplorationCamera() ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
     this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
-      void this.activateRegionAt(x, z);
+      void this.activateRegionAt(x, z, targetRegion);
     }
     this.resetCamera();
     this.requestIdleRender();
@@ -1788,24 +1841,14 @@ export class World {
       if (!this.farmSanctuary) {
         this.farmSanctuary = new FarmSanctuary(this.assets, this.geom);
       }
+      this.farmSanctuary.onHomewardSparkle = (pos) => this.burst(pos);
 
-      // Position farm at zone center
+      // Position farm at zone center before terrain extraction so world coordinates match
       this.farmSanctuary.group.position.set(zone.center.x, 0, zone.center.z);
-
-      // Create base terrain for farm (dirt and grass)
-      if (!this.farmBaseGroup) {
-        const base = new THREE.Group();
-        base.position.set(zone.center.x, 0, zone.center.z);
-        this.cylinder(base, 0, 0.05, 0, 32, 32, 0.1, 0x8ec963, 32); // Grass base
-        this.cylinder(base, 0, 0.06, 0, 12, 12, 0.1, 0xead5a3, 32); // Dirt path around pen
-        parent.add(base);
-        this.farmBaseGroup = base;
-      }
 
       parent.add(this.farmSanctuary.group);
       if (this.activeZoneIds && !this.activeZoneIds.has(zone.id)) {
         this.farmSanctuary.group.visible = false;
-        if (this.farmBaseGroup) this.farmBaseGroup.visible = false;
       }
 
       await this.farmSanctuary.load(this.farmRescued, questions);
@@ -1813,7 +1856,13 @@ export class World {
         this.farmSanctuary.syncQuestions(this.latestFarmQuestions);
       }
 
-      // Register fence & shelter physical obstacles so player cannot walk through fences
+      this.spatial.setFarmTerrain(
+        zone.id,
+        this.farmSanctuary.terrainSurface,
+        this.farmSanctuary.colliderGrid
+      );
+
+      // Register shelter obstacles around the Central Farm Pen
       const farmObs = this.farmSanctuary.getObstacles(zone.center);
       if (farmObs.length > 0) {
         this.obstacles.push(...farmObs);
@@ -2078,10 +2127,16 @@ export class World {
   jump() { if (this.active && !this.paused && this.spatial.jump()) { this.onJump?.(); } }
   clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; }
   resetCamera() {
-    if (this.inQhmjCamera) {
+    if (this.cameraMode === 'qhmj') {
       this.yaw = Math.PI / 2;
       this.pitch = 0.14;
       this.distance = 2.4;
+      return;
+    }
+    if (this.cameraMode === 'farm') {
+      this.yaw = FARM_CAMERA_DEFAULTS.yaw;
+      this.pitch = FARM_CAMERA_DEFAULTS.pitch;
+      this.distance = FARM_CAMERA_DEFAULTS.distance;
       return;
     }
     this.yaw = .57;
@@ -2301,7 +2356,7 @@ export class World {
 
     // Presentation tick: smooth camera lerp & procedural animations using rawDt
     const qhmjBuild = this.activeQhmjBuild();
-    const isNearFps = this.inQhmjCamera;
+    const isNearFps = this.isCloseExplorationCamera();
     const wantedY = isNearFps
       ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85)
       : (this.avatar.activeAvatar === 'elsa' ? 0.7 : 0);
@@ -2392,12 +2447,17 @@ export class World {
     let nearFarmId: string | null = null;
     if (isFarmRegionActive && this.farmSanctuary) {
       const px = this.player.position.x;
+      const py = this.player.position.y;
       const pz = this.player.position.z;
       const farmX = this.farmSanctuary.group.position.x;
       const farmZ = this.farmSanctuary.group.position.z;
       const triggers = this.farmSanctuary.getInteractTriggers();
       for (const t of triggers) {
-        if (t.isActive && Math.hypot(px - (farmX + t.position.x), pz - (farmZ + t.position.z)) < t.radius) {
+        if (
+          t.isActive &&
+          Math.hypot(px - (farmX + t.position.x), pz - (farmZ + t.position.z)) < t.radius &&
+          Math.abs(py - t.position.y) <= 3.0
+        ) {
           nearFarmId = t.animalId;
           break;
         }
@@ -2411,7 +2471,9 @@ export class World {
       const targetRegion = (nearPortal as PortalLink).targetRegionId ?? this.spatial.resolveRegionForPoint(nearPortal.source.x, nearPortal.source.z);
       let targetTemplate: string | undefined;
       if (!nearPortal.requiresSelection && 'target' in nearPortal && (nearPortal as PortalLink).target) {
-        const destRegion = this.spatial.resolveRegionForPoint((nearPortal as PortalLink).target.x, (nearPortal as PortalLink).target.z);
+        const destRegion =
+          (nearPortal as PortalLink).targetRegionId ??
+          this.spatial.resolveRegionForPoint((nearPortal as PortalLink).target.x, (nearPortal as PortalLink).target.z);
         if (destRegion.startsWith('zone:')) {
           const zId = Number(destRegion.slice(5));
           targetTemplate = this.dynamicZoneById.get(zId)?.template ?? STATIC_LAKE_SANCTUARIES.find((s) => s.id === zId)?.template;
@@ -2431,7 +2493,11 @@ export class World {
           bridgePose: this.project({ x: 7, y: 0.8, z: 0 }),
           portalPose: this.project(
             nearPortal
-              ? { x: nearPortal.source.x, y: 3.8, z: nearPortal.source.z }
+              ? {
+                  x: nearPortal.source.x,
+                  y: (this.isCloseExplorationCamera() ? this.player.position.y : 0) + 3.8,
+                  z: nearPortal.source.z
+                }
               : { x: this.portalPos.x, y: this.portalPos.y + 4.4, z: this.portalPos.z }
           )
         }

@@ -6,6 +6,7 @@ import type { WorldFrameSnapshot } from './world/loop/types';
 import { Adventure, generateFarmMultiplicationProblem, getArchimedesSolvedCount } from './core/adventure';
 import { generateQhmjProblems } from './core/qhmjQuestions';
 import { qhmjZoneSpawn } from './data/qhmjMap';
+import { farmZoneSpawn } from './data/farmMap';
 import { qhmjProgressKey } from './world/qhmj/QhmjLayout';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
 import { CHARACTERS, DEFAULT_AVATAR_ID, getCharacter } from './data/characters';
@@ -407,15 +408,21 @@ function hideLoadingOverlay() {
   $('loading').hidden = true;
 }
 
-async function teleportWithRegionLoading(x: number, z: number, destinationName?: string, y?: number) {
+async function teleportWithRegionLoading(
+  x: number,
+  z: number,
+  destinationName?: string,
+  y?: number,
+  explicitRegionId?: string
+) {
   if (!world || isRegionTransitioning) return;
 
-  const targetRegion = world.spatial.resolveRegionForPoint?.(x, z);
+  const targetRegion = explicitRegionId ?? world.spatial.resolveRegionForPoint?.(x, z);
   const currentRegion = world.getActiveRegionId?.();
   const needsRegionSwitch = Boolean(targetRegion && currentRegion && targetRegion !== currentRegion);
 
   if (!needsRegionSwitch) {
-    world.teleport(x, z, y);
+    world.teleport(x, z, y, explicitRegionId);
     audio.playCue('jump');
     world.burstPlayer(1.2);
     queueSavePosition(x, z, true, world.player.position.y);
@@ -433,9 +440,9 @@ async function teleportWithRegionLoading(x: number, z: number, destinationName?:
     // Nhường 1 frame để trình duyệt kịp render lớp phủ loading trước khi parse/compile tài nguyên 3D
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const minWait = new Promise<void>((resolve) => setTimeout(resolve, 220));
-    await Promise.all([world.activateRegionAt?.(x, z), minWait]);
+    await Promise.all([world.activateRegionAt?.(x, z, explicitRegionId), minWait]);
 
-    world.teleport(x, z, y);
+    world.teleport(x, z, y, explicitRegionId);
     world.resetCamera();
     queueSavePosition(x, z, true, world.player.position.y);
     audio.playCue('jump');
@@ -894,8 +901,12 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
                 ? `${done}/${total} Trạm bậc thang`
                 : `${done}/${total} Bia đá tri thức`;
         const qhmjSpawn = isQhmjZone ? qhmjZoneSpawn(z) : null;
-        const tpX = isQhmjZone ? qhmjSpawn!.x : isFarmZone ? (z.center.x - 8) : (z.center.x - z.width / 2 + 4);
-        const tpZ = isQhmjZone ? qhmjSpawn!.z : isFarmZone ? (z.center.z + 10) : z.center.z;
+        const farmSpawn = isFarmZone ? farmZoneSpawn(z) : null;
+        const tpX = isQhmjZone ? qhmjSpawn!.x : isFarmZone ? farmSpawn!.x : (z.center.x - z.width / 2 + 4);
+        const tpY = isFarmZone ? farmSpawn!.y : undefined;
+        const tpZ = isQhmjZone ? qhmjSpawn!.z : isFarmZone ? farmSpawn!.z : z.center.z;
+        const tpRegionAttr = isFarmZone || isQhmjZone ? `data-region="zone:${z.id}"` : '';
+        const tpYAttr = tpY !== undefined ? `data-y="${tpY}"` : '';
         return `
         <div class="zone-overview-card">
           <div>
@@ -906,7 +917,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
             </p>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button class="zone-teleport-btn zone-banner-teleport" data-x="${tpX}" data-z="${tpZ}" data-name="${z.name}">
+            <button class="zone-teleport-btn zone-banner-teleport" data-x="${tpX}" ${tpYAttr} data-z="${tpZ}" ${tpRegionAttr} data-name="${z.name}">
               🚀 Đến đảo này
             </button>
             <button class="archimedes-card-action kingdom-zone-inspect-btn" data-zone="${z.id}">
@@ -1063,6 +1074,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       dog: '🐶'
     };
 
+    const farmSpawn = farmZoneSpawn(currentZone);
     const animalCardsHtml = Array.from({ length: totalAnimals }, (_, i) => {
       const animalEntity = world?.farmSanctuary?.animals?.[i];
       const qItem = qList[i] as any;
@@ -1070,8 +1082,9 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const animalId = animalEntity?.id || `farm_${kind}_${i}`;
       const isRescued = state.farmRescued?.[animalId] === true;
       const aPos = animalEntity?.root?.position;
-      const targetX = aPos ? currentZone.center.x + aPos.x : currentZone.center.x - 8;
-      const targetZ = aPos ? currentZone.center.z + aPos.z + 2 : currentZone.center.z + 10;
+      const targetX = aPos ? currentZone.center.x + aPos.x : farmSpawn.x;
+      const targetY = aPos ? aPos.y : farmSpawn.y;
+      const targetZ = aPos ? currentZone.center.z + aPos.z + 2 : farmSpawn.z;
       const name = `${getAnimalVietnameseName(kind)} #${i + 1}`;
       const emoji = animalEmojis[kind] || '🐾';
       const cardTitle = qItem?.title || name;
@@ -1092,7 +1105,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
             <button class="archimedes-card-action farm-animal-open-btn" data-id="${animalId}">
               ${isRescued ? `${icon('check')} Xem lại` : `🐾 Giải cứu`}
             </button>
-            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${targetX}" data-z="${targetZ}" data-name="${currentZone.name}">
+            <button class="zone-teleport-btn archimedes-card-teleport" data-x="${targetX}" data-y="${targetY}" data-z="${targetZ}" data-region="zone:${currentZone.id}" data-name="${currentZone.name}">
               🚀 Đến chỗ thú cưng
             </button>
           </div>
@@ -1104,9 +1117,9 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       <div class="zone-banner" style="background:linear-gradient(135deg,#3f6212,#65a30d)">
         <div class="zone-banner-info">
           <h4>🏡 ${currentZone.name}</h4>
-          <p>${currentZone.title && currentZone.title !== currentZone.name ? `${currentZone.title} · ` : ''}Giải cứu ${totalAnimals} thú cưng đi lạc · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
+          <p>${currentZone.title && currentZone.title !== currentZone.name ? `${currentZone.title} · ` : ''}Góc nhìn khám phá gần · Giải cứu ${totalAnimals} thú cưng đi lạc · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
         </div>
-        <button class="zone-teleport-btn zone-banner-teleport" data-x="${currentZone.center.x - 8}" data-z="${currentZone.center.z + 10}" data-name="${currentZone.name}">
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${farmSpawn.x}" data-y="${farmSpawn.y}" data-z="${farmSpawn.z}" data-region="zone:${currentZone.id}" data-name="${currentZone.name}">
           🚀 Đến Cổng Nông Trại
         </button>
       </div>
@@ -1283,9 +1296,10 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const x = Number(btn.dataset.x);
       const z = Number(btn.dataset.z);
       const y = btn.dataset.y !== undefined ? Number(btn.dataset.y) : undefined;
+      const regionId = btn.dataset.region || undefined;
       const name = btn.dataset.name || 'đích đến';
       closeDialog();
-      void teleportWithRegionLoading(x, z, name, Number.isFinite(y) ? y : undefined);
+      void teleportWithRegionLoading(x, z, name, Number.isFinite(y) ? y : undefined, regionId);
     };
   });
 
@@ -2178,7 +2192,9 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
         void teleportWithRegionLoading(
           snapshot.portalTransit.target.x,
           snapshot.portalTransit.target.z,
-          snapshot.portalTransit.name
+          snapshot.portalTransit.name,
+          undefined,
+          snapshot.portalTransit.targetRegionId
         );
       } else {
         audio.playCue('jump');

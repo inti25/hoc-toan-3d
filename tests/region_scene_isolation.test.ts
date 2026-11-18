@@ -143,12 +143,12 @@ test('AssetRepository.prefetchForPortal targets exact destination assets and avo
   repo.prefetchForPortal('z7_to_village');
   assert.equal(requestedUrls.includes('/3dmodel/maps/park.glb'), false);
 
-  // 3. Farm entrance portal preloads farm.glb + 5 flora prefabs
+  // 3. Farm entrance portal preloads both countryside scene.gltf and farm.glb (no old park prefabs)
   requestedUrls.length = 0;
   repo.prefetchForPortal('village_to_farm');
+  assert.ok(requestedUrls.includes('/3dmodel/maps/farm/scene.gltf'));
   assert.ok(requestedUrls.includes('/3dmodel/maps/farm.glb'));
-  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_grass002.glb'));
-  assert.ok(requestedUrls.includes('/3dmodel/prefabs/park_bush002.glb'));
+  assert.equal(requestedUrls.some((u) => u.includes('park_')), false);
 
   // 4. Park entrance portal preloads park.glb
   requestedUrls.length = 0;

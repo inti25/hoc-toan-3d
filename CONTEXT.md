@@ -271,15 +271,15 @@ Hiệu ứng hạt ánh sáng thẩm mỹ xuất hiện bám theo từng bước
 _Avoid_: Particle linh tinh, Vết chân dơ
 
 **Bản Mẫu Nông Trại (Farm Sanctuary Template / FARM_SANCTUARY)**:
-Bản Mẫu Vùng Đất chuyên biệt định hình cảnh quan nông trại đồng quê nạp động từ Google Sheets, nổi bật với Khu Chuồng Trại Trung Tâm quây rào cùng Cánh Đồng Tự Do nơi đàn vật nuôi xổng chuồng lang thang mang theo các bài toán thử thách.
+Bản Mẫu Vùng Đất định hình cảnh quan nông trại đồng quê 3D đồi dốc rộng lớn với vòm trời xanh, nhà kho đỏ, cối xay gió và vòng đường đất, nơi đàn vật nuôi xổng chuồng lang thang mang theo bài toán thử thách dưới Góc Nhìn Khám Phá Gần.
 _Avoid_: Farm template, Map nông trại, Vườn thú
 
 **Khu Chuồng Trại Trung Tâm (Central Farm Pen / Barn Yard)**:
-Khuôn viên trung tâm của Ốc Đảo Nông Trại được rào chắn an toàn với cổng gỗ, máng ăn uống, đống rơm và các Chòi Trú Ẩn Theo Loài, là đích đến an toàn của các con vật sau khi được bé giải cứu.
+Khoảng sân bãi cỏ mở phía trước Nhà Kho Đỏ và Cối Xay Gió chứa các Chòi Trú Ẩn Theo Loài, máng ăn uống và đống rơm, là điểm xuất phát và đích đến an toàn của các con vật sau khi được bé giải cứu.
 _Avoid_: Chuồng chính, Trại nhốt, Nhà thú
 
 **Cánh Đồng Tự Do (Free-Range Pasture)**:
-Vùng đồng cỏ hoa đồng nội rộng mở bao bọc quanh Khu Chuồng Trại, nơi các Động Vật Xổng Chuồng thong dong gặm cỏ, dạo chơi và chờ bé đến tương tác.
+Hệ thống vòng đường đất, lối đá cuội, đồng cỏ và ruộng lúa mì nhấp nhô quanh nông trại 3D nơi các Động Vật Xổng Chuồng dạo chơi kèm cột sáng nhận diện phía trên khi chưa được giải cứu.
 _Avoid_: Bãi cỏ quiz, Khu đi dạo, Đồng cỏ hoang
 
 **Động Vật Xổng Chuồng (Escaped Farm Animal / Roaming Animal)**:
@@ -287,8 +287,16 @@ Một trong các thực thể vật nuôi (Bò, Bê, Heo, Vịt, Gà, Chó chăn
 _Avoid_: Quái vật, Mob, Pet đi lạc, Thú quiz
 
 **Hành Trình Về Chuồng (Homeward Walk)**:
-Hoạt cảnh chuyển động tự động của Động Vật Xổng Chuồng sau khi người chơi giải đúng thử thách toán học, nhảy cẫng ăn mừng rồi thong thả rảo bước từ cánh đồng quay trở về đúng Chòi Trú Ẩn Theo Loài trong Khu Chuồng Trại.
+Hoạt cảnh chuyển động bám địa hình của Động Vật Xổng Chuồng sau khi người chơi giải đúng thử thách toán học, nhảy cẫng ăn mừng rồi rảo bước (hoặc phát pháo hoa lấp lánh về đầu sân chuồng nếu ở xa) trở về đúng Chòi Trú Ẩn Theo Loài trong Khu Chuồng Trại Trung Tâm.
 _Avoid_: Tele về chuồng, Biến mất, Đi theo sau
+
+**Góc Nhìn Khám Phá Gần (Close Exploration Camera)**:
+Chế độ camera tầm mắt/thứ ba ở khoảng cách gần (tự ẩn nhân vật khi thu sát thành góc nhìn thứ nhất) dùng cho các vùng đất địa hình 3D rộng lớn như Con Đường Bậc Thang (`QHMJ_SANCTUARY`) và Bản Mẫu Nông Trại (`FARM_SANCTUARY`).
+_Avoid_: Camera QHMJ, Góc nhìn FPS cứng, Camera 1st person
+
+**Góc Nhìn Đẳng Cự (Isometric Overview Camera)**:
+Chế độ camera góc cao toàn cảnh mặc định tại Làng Khởi Đầu, Vườn Hoa Tri Thức, Đền Cổng Archimedes và các ốc đảo nhỏ.
+_Avoid_: Camera mặc định, Góc nhìn top-down
 
 **Chòi Trú Ẩn Theo Loài (Species Shelter)**:
 Công trình mái che đặc thù bên trong Khu Chuồng Trại dành riêng cho từng giống loài (Chuồng gà `coop`, Chuồng bò `cow_shelter`, Chuồng heo `pig_shelter`, Chuồng vịt `duck_shelter`, Chòi cún `dog_shelter`) nơi con vật nghỉ ngơi sau khi hoàn thành Hành Trình Về Chuồng.

@@ -151,6 +151,25 @@
       "color": 15158332,
       "colorHex": "#e74c3c",
       "badge": "🗺️ Nhà Thám Hiểm Đường Bậc Thang"
+    },
+    {
+      "id": 9,
+      "name": "Nông Trại Vui Vẻ",
+      "title": "Nông Trại Giải Cứu Thú Cưng",
+      "description": "Khám phá nông trại 3D rộng lớn, tìm đàn thú cưng đi lạc và giải toán để đưa chúng về chuồng!",
+      "template": "FARM_SANCTUARY",
+      "theme": "VILLAGE",
+      "decorDensity": "MEDIUM",
+      "sheetName": "NongTrai",
+      "center": {
+        "x": 400,
+        "z": 400
+      },
+      "width": 220,
+      "depth": 165,
+      "color": 8702998,
+      "colorHex": "#84cc16",
+      "badge": "🏡 Huy Hiệu Nông Trại Vui Vẻ"
     }
   ],
   "questionsBySheet": {

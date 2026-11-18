@@ -158,7 +158,7 @@ const ZONE_TEMPLATES = {
   FLOWER_BEDS: { label: 'Vườn hoa luống dọc lối đi', theme: 'GARDEN', questionCount: 10, width: 26, depth: 20, colorHex: '#ec4899' },
   PARK_SANCTUARY: { label: 'Công viên cây tri thức', theme: 'FOREST', questionCount: 20, width: 30, depth: 30, colorHex: '#10b981' },
   PROCEDURAL_SANCTUARY: { label: 'Vùng đất cảnh quan tự dựng', theme: 'FOREST', questionCount: 8, width: 28, depth: 28, colorHex: '#f59e0b' },
-  FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 32, depth: 32, colorHex: '#84cc16' },
+  FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 220, depth: 165, colorHex: '#84cc16' },
   QHMJ_SANCTUARY: { label: 'Con đường bậc thang & Bệ bật nhảy', theme: 'RUINS', questionCount: 12, width: 152, depth: 109, colorHex: '#e74c3c' }
 };
 const ZONE_TEMPLATE_ORDER = [
@@ -317,6 +317,27 @@ function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
   const safeName = zoneName.replace(/[^a-zA-Z0-9]/g, '');
   const sheetName = 'Zone_' + nextId + '_' + (safeName || 'Moi');
 
+  const headers = configSheet.getRange(1, 1, 1, configSheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h).trim(); });
+
+  let centerX = 0;
+  let centerZ = 0;
+  if (template === 'FARM_SANCTUARY') {
+    const farmCoords = [[400, 400], [-400, 400], [400, -400]];
+    const tplCol = headers.indexOf('Template');
+    let farmCount = 0;
+    if (tplCol !== -1 && lastRow >= 2) {
+      configSheet.getRange(2, tplCol + 1, lastRow - 1, 1).getValues().forEach(function(row) {
+        if (String(row[0] || '').trim().toUpperCase() === 'FARM_SANCTUARY') {
+          farmCount++;
+        }
+      });
+    }
+    const preset = farmCoords[farmCount % farmCoords.length];
+    centerX = preset[0];
+    centerZ = preset[1];
+  }
+
   const values = {
     ZoneId: nextId,
     Name: zoneName,
@@ -326,8 +347,8 @@ function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
     Theme: tpl.theme,
     DecorDensity: 'MEDIUM',
     SheetName: sheetName,
-    CenterX: 0,
-    CenterZ: 0,
+    CenterX: centerX,
+    CenterZ: centerZ,
     Width: tpl.width,
     Depth: tpl.depth,
     ColorHex: tpl.colorHex,
@@ -336,8 +357,6 @@ function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
     StartAt: '',
     QuestionCount: count
   };
-  const headers = configSheet.getRange(1, 1, 1, configSheet.getLastColumn()).getValues()[0]
-    .map(function(h) { return String(h).trim(); });
   configSheet.appendRow(headers.map(function(h) { return values[h] !== undefined ? values[h] : ''; }));
 
   let questSheet = ss.getSheetByName(sheetName);
