@@ -80,8 +80,12 @@ export class HudPresenter implements PresentationPresenterSeam {
   private lastInteractHtml?: string;
   private lastInteractHidden?: boolean;
   private lastPortalLabelHtml?: string;
+  private lastMiloLabelHidden?: boolean;
   private lastBridgeLabelHidden?: boolean;
   private lastPortalLabelHidden?: boolean;
+  private lastMiloOffscreen = false;
+  private lastBridgeOffscreen = false;
+  private lastPortalOffscreen = false;
   private lastIsNearMilo?: boolean;
   private lastIsNearPortal?: boolean;
 
@@ -101,8 +105,12 @@ export class HudPresenter implements PresentationPresenterSeam {
     this.lastInteractHtml = undefined;
     this.lastInteractHidden = undefined;
     this.lastPortalLabelHtml = undefined;
+    this.lastMiloLabelHidden = undefined;
     this.lastBridgeLabelHidden = undefined;
     this.lastPortalLabelHidden = undefined;
+    this.lastMiloOffscreen = false;
+    this.lastBridgeOffscreen = false;
+    this.lastPortalOffscreen = false;
     this.lastIsNearMilo = undefined;
     this.lastIsNearPortal = undefined;
     this.lastMiloPos = undefined;
@@ -166,6 +174,12 @@ export class HudPresenter implements PresentationPresenterSeam {
     }
 
     // 5. Visibility toggles
+    if (state.miloLabelHidden !== undefined && state.miloLabelHidden !== this.lastMiloLabelHidden) {
+      this.lastMiloLabelHidden = state.miloLabelHidden;
+      const elMilo = this.getEl('milo-label');
+      if (elMilo) elMilo.hidden = state.miloLabelHidden;
+    }
+
     if (state.bridgeLabelHidden !== undefined && state.bridgeLabelHidden !== this.lastBridgeLabelHidden) {
       this.lastBridgeLabelHidden = state.bridgeLabelHidden;
       const elBridge = this.getEl('bridge-label');
@@ -228,6 +242,21 @@ export class HudPresenter implements PresentationPresenterSeam {
     }
 
     const hideGlobalLabels = snapshot.paused;
+    const inCoreRegion = snapshot.activeRegionId !== undefined
+      ? snapshot.activeRegionId === 'core'
+      : (snapshot.locationName === 'Làng Khởi Đầu' || snapshot.inGarden);
+    const inStarterVillage = inCoreRegion && !snapshot.inGarden && !snapshot.inArchimedes;
+
+    if (snapshot.hudPoses) {
+      this.lastMiloOffscreen = !snapshot.hudPoses.miloPose.visible;
+      this.lastBridgeOffscreen = !snapshot.hudPoses.bridgePose.visible;
+      this.lastPortalOffscreen = !snapshot.hudPoses.portalPose.visible;
+    }
+
+    const miloHidden = hideGlobalLabels || !inStarterVillage || this.lastMiloOffscreen;
+    const bridgeHidden = hideGlobalLabels || !inStarterVillage || this.lastBridgeOffscreen;
+    const portalHidden = hideGlobalLabels || (!snapshot.inGarden && snapshot.nearPortal === null) || this.lastPortalOffscreen;
+
     this.render({
       locName: snapshot.locationName,
       subLabel: context.subLabel,
@@ -237,17 +266,18 @@ export class HudPresenter implements PresentationPresenterSeam {
       isNearMilo: snapshot.nearMilo,
       isNearPortal: snapshot.nearPortal !== null,
       miloPose: snapshot.hudPoses
-        ? { ...snapshot.hudPoses.miloPose, visible: !hideGlobalLabels }
+        ? { ...snapshot.hudPoses.miloPose, visible: !miloHidden }
         : undefined,
       bridgePose: snapshot.hudPoses
-        ? { ...snapshot.hudPoses.bridgePose, visible: !(hideGlobalLabels || snapshot.inGarden || snapshot.inArchimedes) }
+        ? { ...snapshot.hudPoses.bridgePose, visible: !bridgeHidden }
         : undefined,
       portalPose: snapshot.hudPoses
-        ? { ...snapshot.hudPoses.portalPose, visible: !(hideGlobalLabels || (!snapshot.inGarden && snapshot.nearPortal === null)) }
+        ? { ...snapshot.hudPoses.portalPose, visible: !portalHidden }
         : undefined,
       portalLabelHtml: overlay.portalLabelHtml,
-      bridgeLabelHidden: hideGlobalLabels || snapshot.inGarden || snapshot.inArchimedes,
-      portalLabelHidden: hideGlobalLabels || (!snapshot.inGarden && snapshot.nearPortal === null)
+      miloLabelHidden: miloHidden,
+      bridgeLabelHidden: bridgeHidden,
+      portalLabelHidden: portalHidden
     });
   }
 

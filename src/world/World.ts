@@ -2442,6 +2442,7 @@ export class World {
       paused: this._paused,
       fps: 1 / Math.max(rawDt, .001),
       playerPosition: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
+      activeRegionId: this.activeRegionId,
       locationName: this.spatial.getCurrentLocationName(),
       inGarden: this.spatial.isInGarden(),
       inArchimedes: this.spatial.isInArchimedesRealm(),

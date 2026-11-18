@@ -18,6 +18,7 @@ export interface WorldFrameSnapshot {
   paused: boolean;
   fps: number;
   playerPosition: { x: number; y?: number; z: number };
+  activeRegionId?: string;
   locationName: string;
   inGarden: boolean;
   inArchimedes: boolean;
@@ -59,6 +60,7 @@ export interface HudPresentationState {
   bridgePose?: FloatingLabelPose;
   portalPose?: FloatingLabelPose;
   portalLabelHtml?: string;
+  miloLabelHidden?: boolean;
   bridgeLabelHidden?: boolean;
   portalLabelHidden?: boolean;
 }

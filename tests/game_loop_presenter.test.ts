@@ -292,3 +292,82 @@ test('HudPresenter.renderSnapshot formats portal, Milo, and pause-hidden states 
   assert.equal(elements.get('bridge-label')!.hidden, true);
   assert.equal(elements.get('portal-label')!.hidden, true);
 });
+
+test('HudPresenter hides milo-label and bridge-label on other lands even when camera projects origin into view', () => {
+  const elements = new Map<string, MockElement>();
+  const getEl = (id: string) => {
+    if (!elements.has(id)) {
+      elements.set(id, createMockElement(id));
+    }
+    return elements.get(id) as unknown as HTMLElement;
+  };
+  const presenter = new HudPresenter(getEl);
+
+  // Player in Starter Village -> both labels visible
+  presenter.renderSnapshot(
+    {
+      active: true,
+      paused: false,
+      fps: 60,
+      playerPosition: { x: -6, z: 6 },
+      activeRegionId: 'core',
+      locationName: 'Làng Khởi Đầu',
+      inGarden: false,
+      inArchimedes: false,
+      nearMilo: false,
+      crossedRiver: false,
+      nearFlowerIndex: -1,
+      nearMonolithIndex: -1,
+      nearParkTreeIndex: -1,
+      nearShop: false,
+      nearFarmAnimalId: null,
+      nearPortal: null,
+      portalTransit: null,
+      hudPoses: {
+        miloPose: { x: 400, y: 300, visible: true },
+        bridgePose: { x: 700, y: 320, visible: true },
+        portalPose: { x: 0, y: 0, visible: false }
+      }
+    },
+    { subLabel: 'KHÁM PHÁ', arrowHtml: '→' }
+  );
+  assert.equal(elements.get('milo-label')!.hidden, false);
+  assert.equal(elements.get('bridge-label')!.hidden, false);
+
+  // Player moves to QHMJ / Park / Farm (even with x <= 35 and hudPoses visible=true toward origin)
+  for (const land of [
+    { activeRegionId: 'zone:8', locationName: 'Con Đường Bậc Thang', x: -400, z: -400 },
+    { activeRegionId: 'zone:7', locationName: 'Công Viên Xanh', x: -45, z: 0 },
+    { activeRegionId: 'zone:9', locationName: 'Nông Trại Vui Vẻ', x: -10, z: 60 }
+  ]) {
+    presenter.renderSnapshot(
+      {
+        active: true,
+        paused: false,
+        fps: 60,
+        playerPosition: { x: land.x, z: land.z },
+        activeRegionId: land.activeRegionId,
+        locationName: land.locationName,
+        inGarden: false,
+        inArchimedes: false,
+        nearMilo: false,
+        crossedRiver: false,
+        nearFlowerIndex: -1,
+        nearMonolithIndex: -1,
+        nearParkTreeIndex: -1,
+        nearShop: false,
+        nearFarmAnimalId: null,
+        nearPortal: null,
+        portalTransit: null,
+        hudPoses: {
+          miloPose: { x: 500, y: 300, visible: true },
+          bridgePose: { x: 600, y: 310, visible: true },
+          portalPose: { x: 0, y: 0, visible: false }
+        }
+      },
+      { subLabel: 'KHÁM PHÁ', arrowHtml: '→' }
+    );
+    assert.equal(elements.get('milo-label')!.hidden, true, `${land.locationName}: milo-label must be hidden`);
+    assert.equal(elements.get('bridge-label')!.hidden, true, `${land.locationName}: bridge-label must be hidden`);
+  }
+});
