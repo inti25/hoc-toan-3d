@@ -213,7 +213,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
           );
           break;
         case 'farm_animal':
-          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0);
+          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0, spec.zoneName);
           break;
       }
     });
@@ -1177,7 +1177,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
   // -------------------------------------------------------------
   // Farm Animal Rescue Dialog
   // -------------------------------------------------------------
-  openFarmAnimal(animalId: string, animalName: string, pd: any, stepIndex = 0): void {
+  openFarmAnimal(animalId: string, animalName: string, pd: any, stepIndex = 0, zoneName?: string): void {
     let fallbackStep: RemoteStep = {
       stepId: `farm_${animalId}`,
       prompt: `Cứu bé ${animalName}: Tính giá trị của phép tính`,
@@ -1313,7 +1313,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
           if (nextStepBtn) {
             nextStepBtn.hidden = false;
             nextStepBtn.onclick = () => {
-              this.openFarmAnimal(animalId, animalName, pd, currentStepIndex + 1);
+              this.openFarmAnimal(animalId, animalName, pd, currentStepIndex + 1, zoneName);
             };
             nextStepBtn.focus();
           }
@@ -1411,7 +1411,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     this.host.openDialog(
       `Cứu Bé ${animalName}`,
       `
-      <div class="dialog-eyebrow">NÔNG TRẠI VUI VẺ · BẮT THÚ VỀ CHUỒNG${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
+      <div class="dialog-eyebrow">${(zoneName || 'Nông Trại Vui Vẻ').toUpperCase()} · BẮT THÚ VỀ CHUỒNG${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
       <div class="flower-status-banner bud">
         🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!
       </div>

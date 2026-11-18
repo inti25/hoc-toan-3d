@@ -37,6 +37,7 @@ export type ChallengeSpec =
       animalName: string;
       problemData: any;
       stepIndex?: number;
+      zoneName?: string;
     };
 
 export interface ChallengeRewardSummary {

@@ -1,7 +1,7 @@
 import './style.css';
 import type { World } from './world/World';
 import { WorldLoader } from './boot/WorldLoader';
-import { HudPresenter } from './world/loop/HudPresenter';
+import { HudPresenter, formatPortalOverlay } from './world/loop/HudPresenter';
 import { Adventure, getArchimedesSolvedCount } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
 import { CHARACTERS, getCharacter } from './data/characters';
@@ -762,11 +762,13 @@ async function openFarmAnimalDialog(animalId: string) {
   const pd = trigger.problemData;
   const questionId = pd?.id || animalId;
 
+  const farmZone = activeRemoteZones.find((z) => z.template === 'FARM_SANCTUARY');
   const outcome = await challengeDialog.startChallenge({
     type: 'farm_animal',
     animalId,
     animalName,
-    problemData: pd
+    problemData: pd,
+    zoneName: farmZone?.name
   });
 
   if (outcome.status === 'solved' && outcome.isCorrect) {
@@ -780,7 +782,7 @@ async function openFarmAnimalDialog(animalId: string) {
     adventure.addProduceToInventory(rewardItem, 1);
 
     toast(`🎉 Trả lời đúng! Bé ${animalName} đang vui vẻ chạy về chuồng. +1 Nông sản!`);
-    
+
     world.burstPlayer(1.2);
     adventure.recordQuizResult({ isCorrect: true, questionId });
     updateHUD();
@@ -1067,7 +1069,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       <div class="zone-banner" style="background:linear-gradient(135deg,#3f6212,#65a30d)">
         <div class="zone-banner-info">
           <h4>🏡 ${currentZone.name}</h4>
-          <p>Nông trại giải cứu ${totalAnimals} thú cưng đi lạc · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
+          <p>${currentZone.title && currentZone.title !== currentZone.name ? `${currentZone.title} · ` : ''}Giải cứu ${totalAnimals} thú cưng đi lạc · Vị trí: (X: ${Math.round(currentZone.center.x)}, Z: ${Math.round(currentZone.center.z)})</p>
         </div>
         <button class="zone-teleport-btn zone-banner-teleport" data-x="${currentZone.center.x - 8}" data-z="${currentZone.center.z + 10}" data-name="${currentZone.name}">
           🚀 Đến Cổng Nông Trại
@@ -2163,14 +2165,7 @@ function onWorldFrame(
     interactHtml = `⚡ <b>${mTitle}</b> ${done ? '(Đã kích hoạt - Xem lại)' : '(Bấm E để giải bài)'} ${icon('arrow')}`;
     interactHidden = world.paused;
   } else if (nearPortal) {
-    const isFarmPortal = nearPortalObj?.id.includes('farm');
-    const isParkPortal = nearPortalObj?.id.includes('park') || nearPortalObj?.id.includes('village');
-    const iconStr = isFarmPortal ? '🏡' : (isParkPortal ? '🌀' : '🏛️');
-    const prompt = nearPortalObj?.requiresSelection
-      ? 'Bấm E để chọn Công Viên'
-      : (isParkPortal || isFarmPortal ? 'Bấm E để bước qua cổng' : 'Bấm E để mở Bản Đồ');
-    const portalTitle = isFarmPortal ? (nearPortalObj?.name || 'Cổng Nông Trại') : (isParkPortal ? 'Cổng dịch chuyển' : (nearPortalObj?.name || 'Cổng Không Gian'));
-    interactHtml = `${iconStr} <b>${portalTitle}</b> (${prompt}) ${icon('arrow')}`;
+    interactHtml = formatPortalOverlay(nearPortalObj, inGarden, icon('arrow')).interactHtml;
     interactHidden = world.paused;
   } else if (nearFlower !== -1) {
     const flowerProb = activeRemoteQuestions['VuonHoa']?.[nearFlower];
@@ -2192,19 +2187,7 @@ function onWorldFrame(
     : { x: world.portalPos.x, y: world.portalPos.y + 4.4, z: world.portalPos.z };
   const p = world.project(portalTargetPos);
 
-  let portalLabelHtml = '';
-  if (nearPortalObj) {
-    const isParkPortal = nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village');
-    if (isParkPortal) {
-      portalLabelHtml = `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>${nearPortalObj.id.endsWith('_to_village') ? 'Về Làng Khởi Đầu' : 'Đến Công Viên Tri Thức'}</small>`;
-    } else {
-      portalLabelHtml = `<span class="milo-dot">🏛️</span><strong>${nearPortalObj.name || 'Cổng Archimedes'}</strong><small>Đền Cổng Archimedes</small>`;
-    }
-  } else {
-    portalLabelHtml = inGarden
-      ? `<span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small>`
-      : `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small>`;
-  }
+  const portalLabelHtml = formatPortalOverlay(nearPortalObj, inGarden, icon('arrow')).portalLabelHtml;
 
   hudPresenter.render({
     locName,

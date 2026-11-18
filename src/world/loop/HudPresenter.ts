@@ -1,5 +1,58 @@
 import type { FloatingLabelPose, HudPresentationState, PresentationPresenterSeam } from './types';
 
+export interface PortalOverlayInfo {
+  interactHtml: string;
+  portalLabelHtml: string;
+}
+
+/**
+ * Formats portal interact prompt and floating 3D label for the active portal.
+ */
+export function formatPortalOverlay(
+  nearPortalObj: { id: string; name: string; requiresSelection?: boolean } | null,
+  inGarden: boolean,
+  arrowHtml: string
+): PortalOverlayInfo {
+  if (!nearPortalObj) {
+    return {
+      interactHtml: '',
+      portalLabelHtml: inGarden
+        ? `<span class="milo-dot">🏛️</span><strong>Cổng Archimedes</strong><small>40 Bia Đá Tri Thức</small>`
+        : `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small>`
+    };
+  }
+
+  const isFarmPortal = nearPortalObj.id.includes('farm');
+  const isParkPortal = !isFarmPortal && (nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village'));
+
+  if (isFarmPortal) {
+    const isReturnToVillage = nearPortalObj.id.includes('_to_village');
+    const portalTitle = nearPortalObj.name || 'Cổng Nông Trại';
+    return {
+      interactHtml: `🏡 <b>${portalTitle}</b> (Bấm E để bước qua cổng) ${arrowHtml}`,
+      portalLabelHtml: isReturnToVillage
+        ? `<span class="milo-dot">🏡</span><strong>Cổng dịch chuyển</strong><small>Về Làng Khởi Đầu</small>`
+        : `<span class="milo-dot">🏡</span><strong>${portalTitle}</strong><small>Cổng Nông Trại</small>`
+    };
+  }
+
+  if (isParkPortal) {
+    const prompt = nearPortalObj.requiresSelection
+      ? 'Bấm E để chọn Công Viên'
+      : 'Bấm E để bước qua cổng';
+    return {
+      interactHtml: `🌀 <b>Cổng dịch chuyển</b> (${prompt}) ${arrowHtml}`,
+      portalLabelHtml: `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>${nearPortalObj.id.endsWith('_to_village') ? 'Về Làng Khởi Đầu' : 'Đến Công Viên Tri Thức'}</small>`
+    };
+  }
+
+  const portalTitle = nearPortalObj.name || 'Cổng Không Gian';
+  return {
+    interactHtml: `🏛️ <b>${portalTitle}</b> (Bấm E để mở Bản Đồ) ${arrowHtml}`,
+    portalLabelHtml: `<span class="milo-dot">🏛️</span><strong>${portalTitle}</strong><small>Đền Cổng Archimedes</small>`
+  };
+}
+
 export class HudPresenter implements PresentationPresenterSeam {
   private readonly PIXEL_THRESHOLD_SQ = 0.5 * 0.5; // 0.25 px^2
 
