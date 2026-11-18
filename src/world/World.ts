@@ -6,8 +6,20 @@ import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
 import { SceneBatchPool } from './SceneBatchPool';
-import { ArchimedesZoneBuilder, type MonolithItem, type Obstacle } from './ArchimedesZoneBuilder';
-import type { RemoteZoneConfig, RemoteProblem } from '../data/remoteTypes';
+import {
+  ArchimedesZoneBuilder,
+  allocateDynamicHubPortalSlot,
+  computePortalPillarObstacles,
+  isWithinPortalKeepOut,
+  type MonolithItem,
+  type Obstacle
+} from './ArchimedesZoneBuilder';
+import {
+  computeZonePortalAnchors,
+  sanitizeZoneEntityPosition,
+  type RemoteZoneConfig,
+  type RemoteProblem
+} from '../data/remoteTypes';
 import {
   LAKE_SCALE,
   LAKE_MODEL_CENTER,
@@ -64,7 +76,8 @@ export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[
       name: fz.name ? `Đến ${fz.name}` : 'Cổng Nông Trại',
       source: { x: -8, z: 14 },
       target: { x: fz.center.x - 8, z: fz.center.z + 10 },
-      triggerRadius: 1.5
+      triggerRadius: 1.5,
+      targetRegionId: `zone:${fz.id}`
     });
   } else {
     portals.push({
@@ -72,17 +85,19 @@ export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[
       name: 'Cổng Nông Trại',
       source: { x: -8, z: 14 },
       target: { x: farmZones[0].center.x - 8, z: farmZones[0].center.z + 10 },
-      triggerRadius: 1.5
+      triggerRadius: 1.5,
+      targetRegionId: `zone:${farmZones[0].id}`
     });
   }
 
   for (const z of farmZones) {
     portals.push({
       id: `z${z.id}_to_village_farm`,
-      name: 'Cổng dịch chuyển về Làng Khởi Đầu',
+      name: 'Về Làng Khởi Đầu',
       source: { x: z.center.x - 8, z: z.center.z + 14 },
       target: { x: -8, z: 12 },
-      triggerRadius: 1.5
+      triggerRadius: 1.5,
+      targetRegionId: 'core'
     });
   }
 
@@ -193,6 +208,20 @@ export class World {
   private villageParkPortalArch?: THREE.Group;
   private villageFarmPortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
+  private readonly coreRegionGroup = new THREE.Group();
+  private readonly hubRegionGroup = new THREE.Group();
+  private readonly zoneRegionGroups = new Map<number, THREE.Group>();
+  private activeRegionId = 'core';
+  private activeMountedGroup: THREE.Group;
+  private readonly loadedZoneRegions = new Set<number>();
+  private readonly pendingZoneLoads = new Map<number, Promise<void>>();
+  private dynamicZones: RemoteZoneConfig[] = [];
+  private dynamicZoneById = new Map<number, RemoteZoneConfig>();
+  private dynamicQuestionsBySheet: Record<string, RemoteProblem[]> = {};
+  private pendingMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = [];
+  private monolithActivationChecker?: Parameters<ArchimedesZoneBuilder['setMonolithsActivated']>[0];
+  private dynamicHubPortalCount = 0;
+  private sun: THREE.DirectionalLight;
 
   get active(): boolean {
     return this._active;
@@ -229,16 +258,24 @@ export class World {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor(0xc9e9e5);
+    this.coreRegionGroup.name = 'Region_Core_Village_Garden';
+    this.hubRegionGroup.name = 'Region_Archimedes_Hub';
+    this.activeMountedGroup = this.coreRegionGroup;
+    this.scene.add(this.coreRegionGroup);
+
     this.scene.fog = new THREE.Fog(0xc9e9e5, 110, 320);
     this.scene.add(new THREE.HemisphereLight(0xf2fbff, 0x7d9870, 2.4));
-    const sun = new THREE.DirectionalLight(0xfff0c9, 3.2);
-    sun.position.set(-18, 45, 12); sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -75, right: 220, top: 90, bottom: -90, near: 1, far: 260 });
-    sun.shadow.normalBias = .045; sun.shadow.bias = -.0003; this.scene.add(sun);
+    this.sun = new THREE.DirectionalLight(0xfff0c9, 3.2);
+    this.sun.position.set(-18, 45, 12); this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.normalBias = .045; this.sun.shadow.bias = -.0003;
+    this.scene.add(this.sun, this.sun.target);
+
+    this.spatial.enableRegionScoping();
     this.terrain();
-    this.water = this.box(this.scene, 7, -.05, 0, 6, .18, 40, 0x48b8cf); this.water.receiveShadow = true;
+    this.water = this.box(this.coreRegionGroup, 7, -.05, 0, 6, .18, 40, 0x48b8cf); this.water.receiveShadow = true;
     for (let i = 0; i < 28; i++) {
-      const foam = this.box(this.scene, 4.7 + (i % 4) * 1.35, .05, -18 + (i * 2.17) % 37, .35 + (i % 3) * .2, .025, .07, 0xb5f4ed);
+      const foam = this.box(this.coreRegionGroup, 4.7 + (i % 4) * 1.35, .05, -18 + (i * 2.17) % 37, .35 + (i % 3) * .2, .025, .07, 0xb5f4ed);
       this.ripples.push(foam);
     }
     this.village();
@@ -251,10 +288,37 @@ export class World {
     });
     this.player.add(this.avatar.group);
     this.archimedes = new ArchimedesZoneBuilder(this.scene, this.geom, this.obstacles);
-    this.createMilo(); this.createBridge(); this.createFlowers(); this.archimedes.createArchimedesPortals(); this.archimedes.createArchimedesMonoliths(); this.decorate();
-    this.scene.add(this.player, this.milo, this.bridge);
+    this.createMilo();
+    this.createBridge();
+    this.createFlowers();
+    this.archimedes.createArchimedesPortals({
+      coreParent: this.coreRegionGroup,
+      hubParent: this.hubRegionGroup,
+      getZoneParent: (id) => this.getOrCreateZoneGroup(id)
+    });
+    this.archimedes.createArchimedesMonoliths();
+    this.decorate();
+    this.scene.add(this.player);
+    this.coreRegionGroup.add(this.milo, this.bridge);
     this.player.position.set(-6, 0, 6); this.milo.position.set(-3, 0, 1.5);
     this.obstacles.push({ x: -3, z: 1.5, radius: .85 });
+    this.spatial.addRegionObstacles('core', [
+      { x: 32, z: -1.5, radius: .45 },
+      { x: 32, z: 1.5, radius: .45 }
+    ]);
+    this.spatial.addRegionObstacles('hub', [
+      { x: 52, z: -1.5, radius: .45 }, { x: 52, z: 1.5, radius: .45 },
+      { x: 68 - (-1.5) * Math.sin(Math.PI / 4), z: -8 + (-1.5) * Math.cos(Math.PI / 4), radius: .45 },
+      { x: 68 - 1.5 * Math.sin(Math.PI / 4), z: -8 + 1.5 * Math.cos(Math.PI / 4), radius: .45 },
+      { x: 70 - (-1.5) * Math.sin(Math.PI / 6), z: -4 + (-1.5) * Math.cos(Math.PI / 6), radius: .45 },
+      { x: 70 - 1.5 * Math.sin(Math.PI / 6), z: -4 + 1.5 * Math.cos(Math.PI / 6), radius: .45 },
+      { x: 70, z: -1.5, radius: .45 }, { x: 70, z: 1.5, radius: .45 },
+      { x: 70 - (-1.5) * Math.sin(-Math.PI / 6), z: 4 + (-1.5) * Math.cos(-Math.PI / 6), radius: .45 },
+      { x: 70 - 1.5 * Math.sin(-Math.PI / 6), z: 4 + 1.5 * Math.cos(-Math.PI / 6), radius: .45 },
+      { x: 68 - (-1.5) * Math.sin(-Math.PI / 4), z: 8 + (-1.5) * Math.cos(-Math.PI / 4), radius: .45 },
+      { x: 68 - 1.5 * Math.sin(-Math.PI / 4), z: 8 + 1.5 * Math.cos(-Math.PI / 4), radius: .45 }
+    ]);
+    this.updateShadowBoundsForRegion('core');
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement!); this.resize();
     let pointer = { x: 0, y: 0, moved: false, id: -1 };
     canvas.addEventListener('pointerdown', e => { if (!this._active || this._paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
@@ -283,21 +347,71 @@ export class World {
     }
   }
 
-  private terrain() {
-    const islands: { cx: number; cz: number; w: number; d: number; grassColor: number; soilColor?: number }[] = [
-      // 1. Starter Village
-      { cx: -9, cz: 0, w: 26, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d },
-      // 2. Flower Garden (Vườn Hoa Tri Thức)
-      { cx: 22, cz: 0, w: 24, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d },
-      // 3. Archimedes Gatehouse Hub (Đền Cổng Archimedes)
-      { cx: 60, cz: 0, w: 22, d: 22, grassColor: 0x85c158, soilColor: 0x93a388 }
-    ];
+  private getOrCreateZoneGroup(zoneId: number): THREE.Group {
+    let group = this.zoneRegionGroups.get(zoneId);
+    if (!group) {
+      group = new THREE.Group();
+      group.name = `Region_Zone_${zoneId}`;
+      this.zoneRegionGroups.set(zoneId, group);
+    }
+    return group;
+  }
 
-    for (const isl of islands) {
-      this.createSingleIsland(isl);
+  getActiveRegionId(): string {
+    return this.activeRegionId;
+  }
+
+  private updateShadowBoundsForRegion(regionId: string) {
+    let cx = 6;
+    let cz = 0;
+    let halfW = 36;
+    let halfH = 28;
+
+    if (regionId === 'hub') {
+      cx = 60;
+      cz = 0;
+      halfW = 24;
+      halfH = 24;
+    } else if (regionId.startsWith('zone:')) {
+      const zoneId = Number(regionId.slice(5));
+      const dynZone = this.dynamicZoneById.get(zoneId);
+      const staticLake = STATIC_LAKE_SANCTUARIES.find((s) => s.id === zoneId);
+      if (dynZone) {
+        cx = dynZone.center.x;
+        cz = dynZone.center.z;
+        const radius = dynZone.template === 'FARM_SANCTUARY' ? 38 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
+        halfW = radius;
+        halfH = radius;
+      } else if (staticLake) {
+        cx = staticLake.center.x;
+        cz = staticLake.center.z;
+        halfW = 26;
+        halfH = 26;
+      }
     }
 
-    // 5 Sanctuaries (Cozy Lake fallback discs until glTF loads)
+    this.sun.target.position.set(cx, 0, cz);
+    this.sun.position.set(cx - 24, 45, cz + 12);
+    Object.assign(this.sun.shadow.camera, {
+      left: -halfW,
+      right: halfW,
+      top: halfH,
+      bottom: -halfH,
+      near: 1,
+      far: 160
+    });
+    this.sun.shadow.camera.updateProjectionMatrix();
+    this.sun.target.updateMatrixWorld();
+  }
+
+  private terrain() {
+    // 1. Starter Village & 2. Flower Garden -> Core Region
+    this.createSingleIsland({ cx: -9, cz: 0, w: 26, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d }, this.coreRegionGroup);
+    this.createSingleIsland({ cx: 22, cz: 0, w: 24, d: 40, grassColor: 0x8ec963, soilColor: 0xb7976d }, this.coreRegionGroup);
+    // 3. Archimedes Gatehouse Hub -> Hub Region
+    this.createSingleIsland({ cx: 60, cz: 0, w: 22, d: 22, grassColor: 0x85c158, soilColor: 0x93a388 }, this.hubRegionGroup);
+
+    // 5 Sanctuaries (Cozy Lake fallback discs until region is visited & glTF loads)
     const sanctuaryFallbacks = [
       { id: 1, cx: 110, cz: -60, color: 0x94c973 },
       { id: 2, cx: 150, cz: -60, color: 0x82c47c },
@@ -306,30 +420,30 @@ export class World {
       { id: 5, cx: 190, cz: 0, color: 0x6aa85b }
     ];
     for (const s of sanctuaryFallbacks) {
-      this.createLakeFallback(s.id, s.cx, s.cz, s.color);
+      this.createLakeFallback(s.id, s.cx, s.cz, s.color, this.getOrCreateZoneGroup(s.id));
     }
 
     // Paths in starter village
-    this.box(this.scene, -7, .055, 1, 21, .08, 3.2, 0xead5a3);
-    this.box(this.scene, -10, .055, -4, 3.1, .08, 20, 0xead5a3);
-    const plaza = this.cylinder(this.scene, -6, .07, 5, 4.5, 4.5, .1, 0xead5a3, 24);
+    this.box(this.coreRegionGroup, -7, .055, 1, 21, .08, 3.2, 0xead5a3);
+    this.box(this.coreRegionGroup, -10, .055, -4, 3.1, .08, 20, 0xead5a3);
+    const plaza = this.cylinder(this.coreRegionGroup, -6, .07, 5, 4.5, 4.5, .1, 0xead5a3, 24);
     plaza.receiveShadow = true;
 
     // Paths in Vườn Hoa Tri Thức (new land)
-    this.box(this.scene, 21.5, .055, 0, 23, .08, 3.2, 0xead5a3);
-    this.box(this.scene, 22, .055, 0, 3.2, .08, 18, 0xead5a3);
-    const gardenPlaza = this.cylinder(this.scene, 22, .07, 0, 4.5, 4.5, .1, 0xead5a3, 24);
+    this.box(this.coreRegionGroup, 21.5, .055, 0, 23, .08, 3.2, 0xead5a3);
+    this.box(this.coreRegionGroup, 22, .055, 0, 3.2, .08, 18, 0xead5a3);
+    const gardenPlaza = this.cylinder(this.coreRegionGroup, 22, .07, 0, 4.5, 4.5, .1, 0xead5a3, 24);
     gardenPlaza.receiveShadow = true;
 
     for (let i = 0; i < 15; i++) {
-      const stone = this.box(this.scene, -16 + i * 1.3, .12, 1 + Math.sin(i) * .8, .65, .08, .4, 0xf5e9ca);
+      const stone = this.box(this.coreRegionGroup, -16 + i * 1.3, .12, 1 + Math.sin(i) * .8, .65, .08, .4, 0xf5e9ca);
       stone.rotation.y = i;
     }
 
     // Đền Cổng Archimedes (Gatehouse Hub at x: 60, z: 0)
-    const hubPlaza = this.cylinder(this.scene, 60, .07, 0, 7.5, 7.5, .1, 0xdfd6c0, 24);
+    const hubPlaza = this.cylinder(this.hubRegionGroup, 60, .07, 0, 7.5, 7.5, .1, 0xdfd6c0, 24);
     hubPlaza.receiveShadow = true;
-    this.cylinder(this.scene, 60, .14, 0, 5.5, 5.5, .06, 0x93a388, 8);
+    this.cylinder(this.hubRegionGroup, 60, .14, 0, 5.5, 5.5, .06, 0x93a388, 8);
 
     // Central Compass Monument at x: 60, z: 0
     const monument = new THREE.Group();
@@ -342,43 +456,43 @@ export class World {
       const ring = this.box(monument, 0, 3.6, 0, 1.5, 0.08, 1.5, 0x38bdf8);
       ring.rotation.x = a * Math.PI / 4;
     }
-    this.scene.add(monument);
+    this.hubRegionGroup.add(monument);
     this.obstacles.push({ x: 60, z: 0, radius: 1.5 });
 
     // Paths connecting Hub center to portals
-    this.box(this.scene, 56, .055, 0, 8, .08, 2.8, 0xd5cbb2);
+    this.box(this.hubRegionGroup, 56, .055, 0, 8, .08, 2.8, 0xd5cbb2);
     const trail1 = new THREE.Group();
     this.createStoneTrail(60, 0, 68, -8, 5, trail1);
-    this.scene.add(trail1);
+    this.hubRegionGroup.add(trail1);
     this.hubTrailGroups.set(1, trail1);
 
     const trail2 = new THREE.Group();
     this.createStoneTrail(60, 0, 70, -4, 5, trail2);
-    this.scene.add(trail2);
+    this.hubRegionGroup.add(trail2);
     this.hubTrailGroups.set(2, trail2);
 
     const trail3 = new THREE.Group();
     this.createStoneTrail(60, 0, 70, 0, 5, trail3);
-    this.scene.add(trail3);
+    this.hubRegionGroup.add(trail3);
     this.hubTrailGroups.set(3, trail3);
 
     const trail4 = new THREE.Group();
     this.createStoneTrail(60, 0, 70, 4, 5, trail4);
-    this.scene.add(trail4);
+    this.hubRegionGroup.add(trail4);
     this.hubTrailGroups.set(4, trail4);
 
     const trail5 = new THREE.Group();
     this.createStoneTrail(60, 0, 68, 8, 5, trail5);
-    this.scene.add(trail5);
+    this.hubRegionGroup.add(trail5);
     this.hubTrailGroups.set(5, trail5);
 
-    // Landmarks and Paving for 5 Sanctuaries:
+    // Landmarks and Paving for 5 Sanctuaries (mounted inside their dedicated zone groups):
     // 1. Zone 1: Thung Lũng Tính Toán (x: 110, z: -60)
     const z1Group = new THREE.Group();
     this.cylinder(z1Group, 110, .07, -60, 4.5, 4.5, .1, 0xecd9b5, 16);
     this.cylinder(z1Group, 110, 1.6, -60, 0.7, 0.9, 3.2, 0xc49a6c, 6);
     this.box(z1Group, 113, 0.6, -58, 1.4, 1.2, 1.4, 0x9a7b56);
-    this.scene.add(z1Group);
+    this.getOrCreateZoneGroup(1).add(z1Group);
     this.sanctuaryLandmarkGroups.set(1, z1Group);
     this.obstacles.push({ x: 110, z: -60, radius: 1.3 });
 
@@ -389,7 +503,7 @@ export class World {
       this.cylinder(z2Group, 144 + s * 4, 0.1 + s * 0.04, -60, 0.75, 0.75, 0.12, 0xf8fafc, 8);
     }
     this.cylinder(z2Group, 154, 1.5, -55, 0.1, 0.5, 2.8, 0x7dd3fc, 5);
-    this.scene.add(z2Group);
+    this.getOrCreateZoneGroup(2).add(z2Group);
     this.sanctuaryLandmarkGroups.set(2, z2Group);
     this.obstacles.push({ x: 154, z: -55, radius: 1.0 });
 
@@ -403,7 +517,7 @@ export class World {
       const a = h * Math.PI / 6;
       this.box(z3Group, 110 + Math.cos(a) * 1.8, 0.45, 60 + Math.sin(a) * 1.8, 0.25, 0.08, 0.25, 0xf59e0b);
     }
-    this.scene.add(z3Group);
+    this.getOrCreateZoneGroup(3).add(z3Group);
     this.sanctuaryLandmarkGroups.set(3, z3Group);
     this.obstacles.push({ x: 110, z: 60, radius: 2.3 });
 
@@ -413,7 +527,7 @@ export class World {
     this.cylinder(z4Group, 150, 1.8, 56, 0, 1.6, 3.5, 0x10b981, 4);
     this.box(z4Group, 146, 1.0, 64, 1.8, 1.8, 1.8, 0x059669);
     this.sphere(z4Group, 154, 1.5, 64, 1.1, 0x34d399);
-    this.scene.add(z4Group);
+    this.getOrCreateZoneGroup(4).add(z4Group);
     this.sanctuaryLandmarkGroups.set(4, z4Group);
     this.obstacles.push({ x: 150, z: 56, radius: 1.6 });
 
@@ -427,11 +541,11 @@ export class World {
       const a = s * Math.PI / 2;
       this.sphere(z5Group, 190 + Math.cos(a) * 2.2, 1.2, Math.sin(a) * 2.2, 0.3, 0x67e8f9);
     }
-    this.scene.add(z5Group);
+    this.getOrCreateZoneGroup(5).add(z5Group);
     this.sanctuaryLandmarkGroups.set(5, z5Group);
     this.obstacles.push({ x: 190, z: 0, radius: 1.5 });
 
-    // Celestial Sea of Clouds under void between islands
+    // Celestial Sea of Clouds under void around Hub
     const cloudSea = new THREE.Group();
     const sanctuaryFootprints = [
       { cx: 110, cz: -60 },
@@ -449,10 +563,13 @@ export class World {
         cloud.scale.set(1.4, 0.6, 1.4);
       }
     }
-    this.scene.add(cloudSea);
+    this.hubRegionGroup.add(cloudSea);
   }
 
-  public createSingleIsland(isl: { cx: number; cz: number; w: number; d: number; grassColor: number; soilColor?: number }): THREE.Group {
+  public createSingleIsland(
+    isl: { cx: number; cz: number; w: number; d: number; grassColor: number; soilColor?: number },
+    parent: THREE.Object3D = this.coreRegionGroup
+  ): THREE.Group {
     const group = new THREE.Group();
     const shape = new THREE.Shape();
     const left = -isl.w / 2, right = isl.w / 2, t = -isl.d / 2, b = isl.d / 2, r = 2;
@@ -469,7 +586,8 @@ export class World {
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.5, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .35, bevelThickness: .2 });
     geo.rotateX(-Math.PI / 2);
     const soil = new THREE.Mesh(geo, [this.material(isl.cx > 35 ? (isl.soilColor || 0x6e964b) : 0x88bb52), this.material(isl.soilColor || 0xb7976d)]);
-    soil.position.set(isl.cx, -2.5, isl.cz);
+    // Bevel dày 0.2 ở hai đầu đẩy đỉnh khối lên +2.7 -> đặt y = -2.7 để mặt trên nằm đúng y = 0 bên dưới lớp cỏ
+    soil.position.set(isl.cx, -2.7, isl.cz);
     soil.receiveShadow = true;
     soil.castShadow = true;
     group.add(soil);
@@ -481,11 +599,11 @@ export class World {
     top.receiveShadow = true;
     group.add(top);
 
-    this.scene.add(group);
+    parent.add(group);
     return group;
   }
 
-  private house(x: number, z: number, color: number, size = 1, rotate = 0, isShop = false) {
+  private house(x: number, z: number, color: number, size = 1, rotate = 0, isShop = false, parent: THREE.Object3D = this.coreRegionGroup) {
     const h = new THREE.Group(); h.position.set(x, 0, z); h.scale.setScalar(size); h.rotation.y = rotate;
     this.box(h, 0, 1.5, 0, 3.6, 3, 3, 0xfff0ce);
     const roof = this.cylinder(h, 0, 3.5, 0, 0, 3.1, 2, color, 4); roof.rotation.y = Math.PI / 4; roof.scale.z = .95;
@@ -529,10 +647,10 @@ export class World {
       this.shopBeacon = shopBeacon;
     }
 
-    this.scene.add(h); this.obstacles.push({ x, z, radius: 2.35 * size });
+    parent.add(h); this.obstacles.push({ x, z, radius: 2.35 * size });
   }
 
-  private tree(x: number, z: number, size: number, variant = 0) {
+  private tree(x: number, z: number, size: number, variant = 0, parent: THREE.Object3D = this.coreRegionGroup) {
     const tree = new THREE.Group(); tree.position.set(x, 0, z); tree.scale.setScalar(size);
     this.cylinder(tree, 0, 1.1, 0, .18, .26, 2.2, 0x946b43);
     const greens = [0x3c9360, 0x56a45d, 0x76b351];
@@ -542,7 +660,7 @@ export class World {
       this.sphere(tree, 0, 2.7, 0, 1.35, greens[variant % 3]); this.sphere(tree, -.7, 2.25, .25, .9, greens[(variant + 1) % 3]); this.sphere(tree, .6, 2.7, .3, .8, 0x81bf62);
       if (variant % 4 === 0) for (let i = 0; i < 4; i++) this.sphere(tree, Math.cos(i * 2) * .8, 2.4 + Math.sin(i) * .4, .85, .17, 0xf3a444);
     }
-    this.scene.add(tree); this.obstacles.push({ x, z, radius: .45 * size });
+    parent.add(tree); this.obstacles.push({ x, z, radius: .45 * size });
   }
 
   private village() {
@@ -551,7 +669,7 @@ export class World {
     this.cylinder(mill, 0, 2, 0, 1.2, 1.6, 4, 0xf1dfb3); this.cylinder(mill, 0, 4.7, 0, 0, 1.8, 1.9, 0x53918d);
     this.windmill.position.set(0, 3.2, 1.65);
     for (let i = 0; i < 4; i++) { const sail = new THREE.Group(); sail.rotation.z = i * Math.PI / 2; this.box(sail, 0, 1.6, 0, .18, 3, .18, 0x8c7049); this.box(sail, .4, 1.85, 0, .75, 1.7, .12, 0xfff1cb); this.windmill.add(sail); }
-    this.sphere(this.windmill, 0, 0, .1, .25, 0xeab65b); mill.add(this.windmill); this.scene.add(mill); this.obstacles.push({ x: -15, z: -14, radius: 1.8 });
+    this.sphere(this.windmill, 0, 0, .1, .25, 0xeab65b); mill.add(this.windmill); this.coreRegionGroup.add(mill); this.obstacles.push({ x: -15, z: -14, radius: 1.8 });
 
     // Trees encircling village and flower garden perimeter
     [
@@ -571,7 +689,7 @@ export class World {
       this.sphere(arch, 0, 3.8 + Math.sin(s * 2) * .12, s, .16, 0x5aab59);
       this.sphere(arch, .15, 3.9 + Math.sin(s * 3) * .1, s, .12, 0xf48fb1);
     }
-    this.scene.add(arch);
+    this.coreRegionGroup.add(arch);
     this.obstacles.push({ x: 11.2, z: -2.2, radius: .5 }, { x: 11.2, z: 2.2, radius: .5 });
 
     // 2. Central Fountain of Knowledge at x = 22, z = 0
@@ -582,27 +700,27 @@ export class World {
     this.cylinder(fountain, 0, 1.8, 0, 1.1, 1.2, .35, 0xcfc2a3, 16);
     this.cylinder(fountain, 0, 1.9, 0, .95, .95, .1, 0x81d4fa, 16);
     this.sphere(fountain, 0, 2.3, 0, .28, 0xffd54f);
-    this.scene.add(fountain);
+    this.coreRegionGroup.add(fountain);
     this.obstacles.push({ x: 22, z: 0, radius: 2.3 });
 
     // 3. Garden Benches around Fountain
     [[-2.5, -2.5], [-2.5, 2.5], [2.5, -2.5], [2.5, 2.5]].forEach(([bx, bz]) => {
       const bxW = 22 + bx, bzW = bz;
-      this.box(this.scene, bxW, .35, bzW, 1.6, .1, .55, 0xdcd1b8);
-      this.box(this.scene, bxW - .55, .17, bzW, .15, .35, .45, 0x9e8a6d);
-      this.box(this.scene, bxW + .55, .17, bzW, .15, .35, .45, 0x9e8a6d);
+      this.box(this.coreRegionGroup, bxW, .35, bzW, 1.6, .1, .55, 0xdcd1b8);
+      this.box(this.coreRegionGroup, bxW - .55, .17, bzW, .15, .35, .45, 0x9e8a6d);
+      this.box(this.coreRegionGroup, bxW + .55, .17, bzW, .15, .35, .45, 0x9e8a6d);
       this.obstacles.push({ x: bxW, z: bzW, radius: .7 });
     });
 
     // 4. Lantern posts in the garden
     [[14.5, -2.5], [14.5, 2.5], [29.5, -2.5], [29.5, 2.5]].forEach(([lx, lz]) => {
-      this.cylinder(this.scene, lx, 1.5, lz, .06, .08, 3.0, 0x615243);
-      this.box(this.scene, lx, 3.1, lz, .36, .45, .36, 0xffdf80);
-      this.cylinder(this.scene, lx, 3.45, lz, 0, .3, .25, 0x4a3b2c, 4);
+      this.cylinder(this.coreRegionGroup, lx, 1.5, lz, .06, .08, 3.0, 0x615243);
+      this.box(this.coreRegionGroup, lx, 3.1, lz, .36, .45, .36, 0xffdf80);
+      this.cylinder(this.coreRegionGroup, lx, 3.45, lz, 0, .3, .25, 0x4a3b2c, 4);
       this.obstacles.push({ x: lx, z: lz, radius: .3 });
     });
 
-    const sign = new THREE.Group(); sign.position.set(.4, 0, 3.4); this.box(sign, 0, .7, 0, .17, 1.4, .17, 0x8c6947); this.box(sign, 0, 1.45, 0, 1.5, .65, .2, 0xb78a54); this.scene.add(sign);
+    const sign = new THREE.Group(); sign.position.set(.4, 0, 3.4); this.box(sign, 0, .7, 0, .17, 1.4, .17, 0x8c6947); this.box(sign, 0, 1.45, 0, 1.5, .65, .2, 0xb78a54); this.coreRegionGroup.add(sign);
   }
 
   private createFlowers() {
@@ -663,7 +781,7 @@ export class World {
       }
       group.add(bloom);
 
-      this.scene.add(group);
+      this.coreRegionGroup.add(group);
       this.obstacles.push({ x, z, radius: 1.15 });
 
       this.flowers.push({
@@ -680,17 +798,28 @@ export class World {
     });
   }
 
-  createPortalArch(x: number, z: number, color: number, rotationY = 0) {
-    return this.archimedes.createPortalArch(x, z, color, rotationY);
+  createPortalArch(x: number, z: number, color: number, rotationY = 0, parent: THREE.Object3D = this.scene) {
+    return this.archimedes.createPortalArch(x, z, color, rotationY, parent);
   }
 
-  public createMonolithEntity(id: number | string, x: number, z: number, color: number, title?: string): MonolithItem {
-    return this.archimedes.createMonolithEntity(id, x, z, color, title);
+  public createMonolithEntity(
+    id: number | string,
+    x: number,
+    z: number,
+    color: number,
+    title?: string,
+    parent: THREE.Object3D = this.scene
+  ): MonolithItem {
+    return this.archimedes.createMonolithEntity(id, x, z, color, title, parent);
   }
 
   private dynamicIslandIds = new Set<number>();
   private dynamicObstacles: Obstacle[] = [];
   private dynamicIslandPortals = new Map<number, PortalLink[]>();
+  private occupiedHubPortalPositions = new Map<number, { x: number; z: number }>();
+  private zoneObstaclesMap = new Map<number, Obstacle[]>();
+  private parkTreesByZone = new Map<number, ParkTreeEntity[]>();
+  private parkTreePositionsByZone = new Map<number, { x: number; z: number }[]>();
 
   private createIslandScenery(z: {
     id: number;
@@ -701,7 +830,7 @@ export class World {
     width: number;
     depth: number;
     color: number;
-  }): { decorGroup: THREE.Group; obstacles: Obstacle[] } {
+  }, parent: THREE.Object3D = this.scene): { decorGroup: THREE.Group; obstacles: Obstacle[] } {
     const obstacles: Obstacle[] = [];
     const theme = (z.theme || 'RUINS').toUpperCase();
     const density = (z.decorDensity || 'MEDIUM').toUpperCase();
@@ -711,6 +840,8 @@ export class World {
     const halfD = z.depth / 2;
     const cx = z.center.x;
     const cz = z.center.z;
+    const portalAnchor = { x: cx - halfW + 3, z: cz };
+    const arrivalAnchor = { x: portalAnchor.x + 2.5, z: cz };
 
     const decorGroup = new THREE.Group();
     decorGroup.position.set(cx, 0, cz);
@@ -733,6 +864,7 @@ export class World {
         const angle = (i / flowerCount) * Math.PI * 2;
         const fx = Math.cos(angle) * (halfW - 2.5);
         const fz = Math.sin(angle) * (halfD - 2.5);
+        if (isWithinPortalKeepOut(cx + fx, cz + fz, portalAnchor, arrivalAnchor)) continue;
         const col = flowerColors[i % flowerColors.length];
         this.sphere(decorGroup, fx, .2, fz, .35, col);
         this.sphere(decorGroup, fx, .1, fz, .45, 0x22c55e);
@@ -746,6 +878,7 @@ export class World {
         [halfW - 3.5, halfD - 3.5]
       ];
       colCorners.forEach(([ox, oz]) => {
+        if (isWithinPortalKeepOut(cx + ox, cz + oz, portalAnchor, arrivalAnchor)) return;
         const pillar = new THREE.Group();
         pillar.position.set(ox, 0, oz);
         this.cylinder(pillar, 0, .2, 0, .9, 1.0, .35, 0x94a3b8, 10);
@@ -762,6 +895,7 @@ export class World {
         const angle = (i / rockCount) * Math.PI * 2 + 0.3;
         const rx = Math.cos(angle) * (halfW - 3);
         const rz = Math.sin(angle) * (halfD - 3);
+        if (isWithinPortalKeepOut(cx + rx, cz + rz, portalAnchor, arrivalAnchor)) continue;
         const stone = this.box(decorGroup, rx, .4, rz, 1.4, .8, 1.1, 0x64748b);
         stone.rotation.y = angle;
         obstacles.push({ x: cx + rx, z: cz + rz, radius: .9 });
@@ -773,7 +907,8 @@ export class World {
         const angle = (i / treeCount) * Math.PI * 2;
         const tx = Math.cos(angle) * (halfW - 3.0);
         const tz = Math.sin(angle) * (halfD - 3.0);
-        this.tree(cx + tx, cz + tz, 1.2, i);
+        if (isWithinPortalKeepOut(cx + tx, cz + tz, portalAnchor, arrivalAnchor)) continue;
+        this.tree(cx + tx, cz + tz, 1.2, i, parent);
         obstacles.push({ x: cx + tx, z: cz + tz, radius: .6 });
       }
 
@@ -784,6 +919,7 @@ export class World {
         const angle = (i / shroomCount) * Math.PI * 2 + 0.4;
         const sx = Math.cos(angle) * (halfW * 0.6);
         const sz = Math.sin(angle) * (halfD * 0.6);
+        if (isWithinPortalKeepOut(cx + sx, cz + sz, portalAnchor, arrivalAnchor)) continue;
         this.cylinder(decorGroup, sx, .2, sz, .08, .12, .4, 0xf1f5f9, 6);
         this.sphere(decorGroup, sx, .45, sz, .28, shroomColors[i % shroomColors.length]);
       }
@@ -795,6 +931,7 @@ export class World {
         const angle = (i / crystalCount) * Math.PI * 2;
         const kx = Math.cos(angle) * (halfW - 3.2);
         const kz = Math.sin(angle) * (halfD - 3.2);
+        if (isWithinPortalKeepOut(cx + kx, cz + kz, portalAnchor, arrivalAnchor)) continue;
         const cCol = crystalColors[i % crystalColors.length];
 
         const cGroup = new THREE.Group();
@@ -809,22 +946,233 @@ export class World {
       // 1. Nhà gỗ nhỏ ở góc đảo
       const hx = -halfW + 5.5;
       const hz = -halfD + 5.5;
-      this.house(cx + hx, cz + hz, 0xd97706, 0.85);
-      obstacles.push({ x: cx + hx, z: cz + hz, radius: 2.0 });
+      if (!isWithinPortalKeepOut(cx + hx, cz + hz, portalAnchor, arrivalAnchor)) {
+        this.house(cx + hx, cz + hz, 0xd97706, 0.85, 0, false, parent);
+        obstacles.push({ x: cx + hx, z: cz + hz, radius: 2.0 });
+      }
 
       // 2. Hàng rào gỗ
       const fenceCount = Math.round(5 * countMult);
       for (let i = 0; i < fenceCount; i++) {
         const fx = halfW - 3;
         const fz = -halfD + 4 + i * 2.5;
+        if (isWithinPortalKeepOut(cx + fx, cz + fz, portalAnchor, arrivalAnchor)) continue;
         this.box(decorGroup, fx, .5, fz, .15, .8, 2.2, 0x854d0e);
         this.box(decorGroup, fx, .3, fz, .2, .15, 2.4, 0xa16207);
         obstacles.push({ x: cx + fx, z: cz + fz, radius: .5 });
       }
     }
 
-    this.scene.add(decorGroup);
+    parent.add(decorGroup);
     return { decorGroup, obstacles };
+  }
+
+  private getStaticCenterpieceObstacles(zoneId: number): Obstacle[] {
+    switch (zoneId) {
+      case 1: return [{ x: 110, z: -60, radius: 1.35 }];
+      case 2: return [{ x: 154, z: -55, radius: 1.0 }, { x: 150, z: -60, radius: 1.2 }];
+      case 3: return [{ x: 110, z: 60, radius: 2.3 }];
+      case 4: return [{ x: 150, z: 56, radius: 1.6 }];
+      case 5: return [{ x: 190, z: 0, radius: 1.5 }];
+      default: return [];
+    }
+  }
+
+
+  private createZoneMonoliths(zoneId: number, zoneGroup: THREE.Group): Obstacle[] {
+    const addedObs: Obstacle[] = [];
+    const existingIds = new Set(this.monoliths.map((m) => String(m.id)));
+    const dynZone = this.dynamicZoneById.get(zoneId);
+    for (const pm of this.pendingMonoliths) {
+      if (!pm.position || pm.id === undefined || pm.id === null) continue;
+      if (this.spatial.resolveRegionForPoint(pm.position.x, pm.position.z) !== `zone:${zoneId}`) continue;
+      const strId = String(pm.id);
+      if (!existingIds.has(strId)) {
+        const pos = dynZone ? sanitizeZoneEntityPosition(dynZone, pm.position) : pm.position;
+        pm.position = pos;
+        this.createMonolithEntity(pm.id, pos.x, pos.z, pm.color || 0x38bdf8, pm.title, zoneGroup);
+        existingIds.add(strId);
+        addedObs.push({ x: pos.x, z: pos.z, radius: 1.35 });
+      }
+    }
+    if (this.monolithActivationChecker) {
+      this.archimedes.setMonolithsActivated(this.monolithActivationChecker);
+    }
+    return addedObs;
+  }
+
+  private async ensureZoneRegionLoaded(zoneId: number): Promise<void> {
+    if (this.loadedZoneRegions.has(zoneId)) return;
+    const inflight = this.pendingZoneLoads.get(zoneId);
+    if (inflight) {
+      await inflight;
+      return;
+    }
+
+    const loadTask = (async () => {
+      const zoneGroup = this.getOrCreateZoneGroup(zoneId);
+      const zoneObs: Obstacle[] = [...this.getStaticCenterpieceObstacles(zoneId)];
+      const dynZone = this.dynamicZoneById.get(zoneId);
+      const staticLake = STATIC_LAKE_SANCTUARIES.find((s) => s.id === zoneId);
+
+      if (dynZone?.template === 'PARK_SANCTUARY') {
+        const parkQuestions = this.dynamicQuestionsBySheet[dynZone.sheetName];
+        const obs = await this.loadParkMap(dynZone, parkQuestions, zoneGroup);
+        zoneObs.push(...obs);
+        const retX = dynZone.center.x + 14;
+        const retZ = dynZone.center.z;
+        this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
+        zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
+      } else if (dynZone?.template === 'FARM_SANCTUARY') {
+        const farmQuestions = this.dynamicQuestionsBySheet[dynZone.sheetName];
+        const obs = await this.loadFarmMap(dynZone, farmQuestions, zoneGroup);
+        zoneObs.push(...obs);
+        const retX = dynZone.center.x - 8;
+        const retZ = dynZone.center.z + 14;
+        this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
+        zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
+      } else if (dynZone?.template === 'PROCEDURAL_SANCTUARY') {
+        const res = await proceduralLandBuilder.buildLand(dynZone, this.assets);
+        zoneGroup.add(res.group);
+        this.dynamicIslandGroups.set(zoneId, [res.group]);
+        this.dynamicObstacles.push(...res.obstacles);
+        zoneObs.push(...res.obstacles);
+
+        const retArch = this.createPortalArch(
+          res.portalAnchors.returnPortal.x,
+          res.portalAnchors.returnPortal.z,
+          0x38bdf8,
+          res.portalAnchors.returnPortal.rotationY,
+          zoneGroup
+        );
+        const existingArches = this.dynamicPortalArches.get(zoneId) ?? [];
+        existingArches.push(retArch);
+        this.dynamicPortalArches.set(zoneId, existingArches);
+        zoneObs.push(
+          ...computePortalPillarObstacles(
+            res.portalAnchors.returnPortal.x,
+            res.portalAnchors.returnPortal.z,
+            res.portalAnchors.returnPortal.rotationY
+          )
+        );
+      } else if (staticLake || usesLakeTerrain(dynZone?.template)) {
+        const targetZone = dynZone ?? {
+          id: staticLake!.id,
+          center: staticLake!.center,
+          template: staticLake!.template
+        };
+        if (dynZone && dynZone.id > 5 && !this.lakeFallbackDiscs.has(dynZone.id) && !this.lakeModels.has(dynZone.id)) {
+          const disc = this.createLakeFallback(dynZone.id, dynZone.center.x, dynZone.center.z, dynZone.color, zoneGroup);
+          this.dynamicIslandGroups.set(dynZone.id, [disc]);
+        }
+        const lakeObs = await this.loadLakeMap(targetZone, zoneGroup);
+        zoneObs.push(...lakeObs);
+        const anchors = computeLakeAnchors(targetZone.center);
+        if (targetZone.id > 5) {
+          const retArch = this.createPortalArch(
+            anchors.returnPortal.x,
+            anchors.returnPortal.z,
+            0x38bdf8,
+            anchors.returnPortal.rotationY,
+            zoneGroup
+          );
+          const existingArches = this.dynamicPortalArches.get(zoneId) ?? [];
+          existingArches.push(retArch);
+          this.dynamicPortalArches.set(zoneId, existingArches);
+        }
+        zoneObs.push(
+          ...computePortalPillarObstacles(
+            anchors.returnPortal.x,
+            anchors.returnPortal.z,
+            anchors.returnPortal.rotationY
+          )
+        );
+      } else if (dynZone) {
+        const islandGroup = this.createSingleIsland({
+          cx: dynZone.center.x,
+          cz: dynZone.center.z,
+          w: dynZone.width,
+          d: dynZone.depth,
+          grassColor: dynZone.color,
+          soilColor: 0x93a388
+        }, zoneGroup);
+        const { decorGroup, obstacles: islandObs } = this.createIslandScenery(dynZone, zoneGroup);
+        this.dynamicObstacles.push(...islandObs);
+        this.dynamicIslandGroups.set(zoneId, [islandGroup, decorGroup]);
+        zoneObs.push(...islandObs);
+
+        const retX = dynZone.center.x - dynZone.width / 2 + 3;
+        const retZ = dynZone.center.z;
+        const retArch = this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
+        const existingArches = this.dynamicPortalArches.get(zoneId) ?? [];
+        existingArches.push(retArch);
+        this.dynamicPortalArches.set(zoneId, existingArches);
+        zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
+      }
+
+      const monolithObs = this.createZoneMonoliths(zoneId, zoneGroup);
+      zoneObs.push(...monolithObs);
+
+      this.zoneObstaclesMap.set(zoneId, zoneObs);
+      this.spatial.setRegionObstacles(`zone:${zoneId}`, zoneObs);
+      this.loadedZoneRegions.add(zoneId);
+    })();
+
+    this.pendingZoneLoads.set(zoneId, loadTask);
+    try {
+      await loadTask;
+    } finally {
+      this.pendingZoneLoads.delete(zoneId);
+    }
+  }
+
+  public async activateRegionAt(x: number, z: number): Promise<string> {
+    const regionId = this.spatial.resolveRegionForPoint(x, z);
+
+    if (regionId.startsWith('zone:')) {
+      const zoneId = Number(regionId.slice(5));
+      if (!Number.isNaN(zoneId)) {
+        await this.ensureZoneRegionLoaded(zoneId);
+        const dynZone = this.dynamicZoneById.get(zoneId);
+        if (dynZone?.template === 'PARK_SANCTUARY') {
+          const cachedTrees = this.parkTreesByZone.get(zoneId);
+          const cachedPositions = this.parkTreePositionsByZone.get(zoneId);
+          if (cachedTrees) {
+            this.parkTrees.splice(0, this.parkTrees.length, ...cachedTrees);
+          }
+          if (cachedPositions) {
+            this.spatial.setParkTreePositions(cachedPositions);
+          }
+        }
+      }
+    }
+
+    let nextGroup: THREE.Group = this.coreRegionGroup;
+    if (regionId === 'hub') {
+      nextGroup = this.hubRegionGroup;
+    } else if (regionId.startsWith('zone:')) {
+      const zoneId = Number(regionId.slice(5));
+      nextGroup = this.getOrCreateZoneGroup(zoneId);
+    }
+
+    if (nextGroup !== this.activeMountedGroup) {
+      if (typeof this.renderer.compileAsync === 'function') {
+        try {
+          await this.renderer.compileAsync(nextGroup, this.camera, this.scene);
+        } catch {
+          // Safe fallback in headless or restricted WebGL contexts
+        }
+      }
+      this.scene.remove(this.activeMountedGroup);
+      this.scene.add(nextGroup);
+      this.activeMountedGroup = nextGroup;
+    }
+
+    this.activeRegionId = regionId;
+    this.spatial.setActiveRegion(regionId);
+    this.updateShadowBoundsForRegion(regionId);
+    this.requestIdleRender();
+    return regionId;
   }
 
   public async renderDynamicZones(
@@ -832,9 +1180,12 @@ export class World {
     positionedMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = [],
     questionsBySheet?: Record<string, RemoteProblem[]>
   ): Promise<void> {
+    this.dynamicZones = zones;
+    this.dynamicZoneById = new Map(zones.map((z) => [z.id, z]));
+    this.dynamicQuestionsBySheet = questionsBySheet ?? {};
+    this.pendingMonoliths = positionedMonoliths;
+
     const customPortals: PortalLink[] = [];
-    const proceduralTasks: Promise<void>[] = [];
-    const mapTasks: Promise<void>[] = [];
 
     // 0. Đồng bộ trạng thái hiển thị cho các Đền Cổng và Vùng Đất Archimedes 1-5
     const activeZoneIds = new Set(zones.map((z) => z.id));
@@ -853,7 +1204,7 @@ export class World {
       if (fallback) fallback.visible = visible;
     }
 
-    // 1. Dựng các vùng đất Công Viên (PARK_SANCTUARY) kết nối từ bờ tây Làng Khởi Đầu
+    // 1. Đăng ký các vùng đất Công Viên (PARK_SANCTUARY) kết nối từ bờ tây Làng Khởi Đầu (nạp GLB lười khi vào vùng)
     const parkZones = zones.filter((z) => z.template === 'PARK_SANCTUARY');
     const hasPark = parkZones.length > 0;
     if (this.villageParkPortalArch) {
@@ -861,7 +1212,7 @@ export class World {
     }
     this.parkModels.forEach((m) => (m.visible = hasPark));
     this.parkTrees.forEach((t) => {
-      if (t.beacon) t.beacon.visible = hasPark;
+      if (t.beacon) t.beacon.visible = hasPark && t.hasQuestion && !t.awakened;
     });
     if (!hasPark) {
       this.spatial.setParkZones([]);
@@ -873,18 +1224,21 @@ export class World {
           -19.5,
           0,
           parkZones.length === 1 ? (parkZones[0].color || 0x10b981) : 0x10b981,
-          0
+          0,
+          this.coreRegionGroup
         );
+        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(-19.5, 0, 0));
       }
 
       if (parkZones.length === 1) {
         const pz = parkZones[0];
         customPortals.push({
           id: 'village_to_park',
-          name: 'Cổng dịch chuyển',
+          name: pz.name ? `Đến ${pz.name}` : 'Cổng dịch chuyển',
           source: { x: -19.5, z: 0 },
           target: { x: pz.center.x + 11.5, z: pz.center.z },
-          triggerRadius: 1.5
+          triggerRadius: 1.85,
+          targetRegionId: `zone:${pz.id}`
         });
       } else {
         customPortals.push({
@@ -892,7 +1246,7 @@ export class World {
           name: 'Cổng dịch chuyển',
           source: { x: -19.5, z: 0 },
           target: { x: -19.5, z: 0 },
-          triggerRadius: 1.5,
+          triggerRadius: 1.85,
           requiresSelection: true
         });
       }
@@ -909,31 +1263,24 @@ export class World {
 
       parkZones.forEach((z) => {
         const parkQuestions = questionsBySheet?.[z.sheetName];
-        if (!this.dynamicIslandIds.has(z.id)) {
-          this.dynamicIslandIds.add(z.id);
-          mapTasks.push(this.loadParkMap(z, parkQuestions));
-
-          // Cổng quay về từ Công Viên về Làng Khởi Đầu (đặt ở lối vào phía Đông của công viên)
-          const retX = z.center.x + 14;
-          const retZ = z.center.z;
-          this.createPortalArch(retX, retZ, 0x38bdf8, 0);
-        } else if (parkQuestions && parkQuestions.length > 0) {
-          this.syncParkQuestions(parkQuestions, z.color);
+        if (this.loadedZoneRegions.has(z.id) && parkQuestions && parkQuestions.length > 0) {
+          this.syncParkQuestions(parkQuestions, z.color, z.id);
         }
 
         const retX = z.center.x + 14;
         const retZ = z.center.z;
         customPortals.push({
           id: `z${z.id}_to_village`,
-          name: 'Cổng dịch chuyển',
+          name: 'Về Làng Khởi Đầu',
           source: { x: retX, z: retZ },
           target: { x: -17.5, z: 0 },
-          triggerRadius: 1.5
+          triggerRadius: 1.85,
+          targetRegionId: 'core'
         });
       });
     }
 
-    // 1b. Dựng các vùng đất Nông Trại (FARM_SANCTUARY) kết nối từ bờ sông Làng Khởi Đầu (gần cối xay gió)
+    // 1b. Đăng ký các vùng đất Nông Trại (FARM_SANCTUARY) kết nối từ bờ sông Làng Khởi Đầu
     const farmZones = zones.filter((z) => z.template === 'FARM_SANCTUARY');
     const hasFarm = farmZones.length > 0;
     if (this.villageFarmPortalArch) {
@@ -948,13 +1295,14 @@ export class World {
 
     if (farmZones.length > 0) {
       if (!this.villageFarmPortalArch) {
-        // Cổng Gỗ Đồng Quê bên bờ sông Làng Khởi Đầu (X = -8, Z = 14)
         this.villageFarmPortalArch = this.createPortalArch(
           -8,
           14,
           farmZones.length === 1 ? (farmZones[0].color || 0x84cc16) : 0x84cc16,
-          0
+          0,
+          this.coreRegionGroup
         );
+        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(-8, 14, 0));
       }
 
       customPortals.push(...buildFarmPortalLinks(farmZones));
@@ -962,167 +1310,55 @@ export class World {
       farmZones.forEach((z) => {
         const farmQuestions = questionsBySheet?.[z.sheetName];
         this.latestFarmQuestions = farmQuestions;
-        if (!this.dynamicIslandIds.has(z.id)) {
-          this.dynamicIslandIds.add(z.id);
-          mapTasks.push(this.loadFarmMap(z, farmQuestions));
-
-          // Cổng quay về từ Nông Trại về bờ sông Làng Khởi Đầu (đặt cạnh cổng chuồng)
-          const retX = z.center.x - 8;
-          const retZ = z.center.z + 14;
-          this.createPortalArch(retX, retZ, 0x38bdf8, 0);
-        } else if (this.farmSanctuary && farmQuestions && farmQuestions.length > 0) {
+        if (this.loadedZoneRegions.has(z.id) && this.farmSanctuary && farmQuestions && farmQuestions.length > 0) {
           this.farmSanctuary.syncQuestions(farmQuestions);
         }
       });
     }
 
-    // 2. Dựng các hòn đảo động tùy biến khác (nối với Đền Cổng Archimedes)
+    // 2. Đăng ký metadata cổng cho các hòn đảo động khác (chỉ dựng đảo 3D khi người chơi dịch chuyển tới)
     const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY' && z.template !== 'FARM_SANCTUARY');
     otherZones.forEach((z) => {
       if (!this.dynamicIslandIds.has(z.id)) {
         this.dynamicIslandIds.add(z.id);
 
-        if (z.template === 'PROCEDURAL_SANCTUARY') {
-          const task = proceduralLandBuilder.buildLand(z, this.assets).then((res) => {
-            this.scene.add(res.group);
-            this.dynamicIslandGroups.set(z.id, [res.group]);
-            this.dynamicObstacles.push(...res.obstacles);
-            this.spatial.addObstacles(res.obstacles);
+        const hubSlot = allocateDynamicHubPortalSlot(
+          this.dynamicHubPortalCount++,
+          Array.from(this.occupiedHubPortalPositions.values())
+        );
+        this.occupiedHubPortalPositions.set(z.id, { x: hubSlot.x, z: hubSlot.z });
 
-            // Cổng kết nối từ Hub tới đảo mới
-            const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
-            const hubX = 60 + Math.cos(angle) * 8.5;
-            const hubZ = Math.sin(angle) * 8.5;
-            const hubArch = this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
+        const hubArch = this.createPortalArch(hubSlot.x, hubSlot.z, z.color, hubSlot.rotationY, this.hubRegionGroup);
+        this.spatial.addRegionObstacles('hub', computePortalPillarObstacles(hubSlot.x, hubSlot.z, hubSlot.rotationY));
+        this.dynamicPortalArches.set(z.id, [hubArch]);
 
-            // Cổng quay về từ đảo mới về Hub Archimedes
-            const retArch = this.createPortalArch(
-              res.portalAnchors.returnPortal.x,
-              res.portalAnchors.returnPortal.z,
-              0x38bdf8,
-              res.portalAnchors.returnPortal.rotationY
-            );
-            this.dynamicPortalArches.set(z.id, [hubArch, retArch]);
+        const anchors = computeZonePortalAnchors(z);
 
-            if (this.activeZoneIds && !this.activeZoneIds.has(z.id)) {
-              res.group.visible = false;
-              hubArch.visible = false;
-              retArch.visible = false;
-            }
-
-            this.dynamicIslandPortals.set(z.id, [
-              {
-                id: `hub_to_z${z.id}`,
-                name: `Đến ${z.name}`,
-                source: { x: hubX, z: hubZ },
-                target: { x: res.portalAnchors.arrival.x, z: res.portalAnchors.arrival.z },
-                triggerRadius: 1.5
-              },
-              {
-                id: `z${z.id}_to_hub`,
-                name: 'Về Đền Cổng Archimedes',
-                source: { x: res.portalAnchors.returnPortal.x, z: res.portalAnchors.returnPortal.z },
-                target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
-                triggerRadius: 1.5
-              }
-            ]);
-          });
-          proceduralTasks.push(task);
-        } else if (usesLakeTerrain(z.template)) {
-          const disc = this.createLakeFallback(z.id, z.center.x, z.center.z, z.color);
-          this.dynamicIslandGroups.set(z.id, [disc]);
-          mapTasks.push(this.loadLakeMap(z));
-
-          // Cổng kết nối từ Hub tới đảo mới
-          const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
-          const hubX = 60 + Math.cos(angle) * 8.5;
-          const hubZ = Math.sin(angle) * 8.5;
-          const hubArch = this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
-
-          // Cổng quay về từ đảo hồ về Hub (đặt trên vành bờ hồ phía Tây)
-          const anchors = computeLakeAnchors(z.center);
-          const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
-          this.dynamicPortalArches.set(z.id, [hubArch, retArch]);
-
-          if (this.activeZoneIds && !this.activeZoneIds.has(z.id)) {
-            disc.visible = false;
-            hubArch.visible = false;
-            retArch.visible = false;
-          }
-
-          this.dynamicIslandPortals.set(z.id, [
-            {
-              id: `hub_to_z${z.id}`,
-              name: `Đến ${z.name}`,
-              source: { x: hubX, z: hubZ },
-              target: { x: anchors.arrival.x, z: anchors.arrival.z },
-              triggerRadius: 1.5
-            },
-            {
-              id: `z${z.id}_to_hub`,
-              name: 'Về Đền Cổng Archimedes',
-              source: { x: anchors.returnPortal.x, z: anchors.returnPortal.z },
-              target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
-              triggerRadius: 1.5
-            }
-          ]);
-        } else {
-          const islandGroup = this.createSingleIsland({
-            cx: z.center.x,
-            cz: z.center.z,
-            w: z.width,
-            d: z.depth,
-            grassColor: z.color,
-            soilColor: 0x93a388
-          });
-
-          // Sinh cảnh quan theo chủ đề
-          const { decorGroup, obstacles: islandObs } = this.createIslandScenery(z);
-          this.dynamicObstacles.push(...islandObs);
-          this.dynamicIslandGroups.set(z.id, [islandGroup, decorGroup]);
-
-          // Cổng kết nối từ Hub tới đảo mới
-          const angle = ((this.portalGroups.length % 12) / 12) * Math.PI * 2;
-          const hubX = 60 + Math.cos(angle) * 8.5;
-          const hubZ = Math.sin(angle) * 8.5;
-          const hubArch = this.createPortalArch(hubX, hubZ, z.color, angle + Math.PI / 2);
-
-          // Cổng quay về từ đảo mới về Hub
-          const retX = z.center.x - z.width / 2 + 3;
-          const retZ = z.center.z;
-          const retArch = this.createPortalArch(retX, retZ, 0x38bdf8, 0);
-          this.dynamicPortalArches.set(z.id, [hubArch, retArch]);
-
-          if (this.activeZoneIds && !this.activeZoneIds.has(z.id)) {
-            islandGroup.visible = false;
-            decorGroup.visible = false;
-            hubArch.visible = false;
-            retArch.visible = false;
-          }
-
-          this.dynamicIslandPortals.set(z.id, [
-            {
-              id: `hub_to_z${z.id}`,
-              name: `Đến ${z.name}`,
-              source: { x: hubX, z: hubZ },
-              target: { x: retX + 2.5, z: retZ },
-              triggerRadius: 1.5
-            },
-            {
-              id: `z${z.id}_to_hub`,
-              name: 'Về Đền Cổng Archimedes',
-              source: { x: retX, z: retZ },
-              target: { x: hubX - Math.cos(angle) * 2, z: hubZ - Math.sin(angle) * 2 },
-              triggerRadius: 1.5
-            }
-          ]);
+        if (this.activeZoneIds && !this.activeZoneIds.has(z.id)) {
+          hubArch.visible = false;
         }
+
+        this.dynamicIslandPortals.set(z.id, [
+          {
+            id: `hub_to_z${z.id}`,
+            name: `Đến ${z.name}`,
+            source: { x: hubSlot.x, z: hubSlot.z },
+            target: { x: anchors.arrival.x, z: anchors.arrival.z },
+            triggerRadius: 1.85,
+            targetRegionId: `zone:${z.id}`
+          },
+          {
+            id: `z${z.id}_to_hub`,
+            name: 'Về Đền Cổng Archimedes',
+            source: { x: anchors.returnPortal.x, z: anchors.returnPortal.z },
+            target: hubSlot.returnTarget,
+            triggerRadius: 1.85,
+            targetRegionId: 'hub'
+          }
+        ]);
       }
     });
 
-    if (proceduralTasks.length > 0) {
-      await Promise.all(proceduralTasks);
-    }
     otherZones.forEach((z) => {
       const portals = this.dynamicIslandPortals.get(z.id);
       if (portals) {
@@ -1130,7 +1366,7 @@ export class World {
       }
     });
 
-    // Ẩn/hiện các đảo động và cổng kết nối theo activeZoneIds
+    // Ẩn/hiện các đảo động đã nạp và cổng kết nối theo activeZoneIds
     this.dynamicIslandGroups.forEach((objs, id) => {
       const vis = activeZoneIds.has(id);
       objs.forEach((o) => (o.visible = vis));
@@ -1140,45 +1376,23 @@ export class World {
       arches.forEach((a) => (a.visible = vis));
     });
 
-    // Ẩn/hiện bia đá trên các đảo Archimedes không hoạt động
-    const SANCTUARY_CENTERS = [
-      { id: 1, cx: 110, cz: -60 },
-      { id: 2, cx: 150, cz: -60 },
-      { id: 3, cx: 110, cz: 60 },
-      { id: 4, cx: 150, cz: 60 },
-      { id: 5, cx: 190, cz: 0 }
-    ];
-    this.monoliths.forEach((m) => {
-      for (const sc of SANCTUARY_CENTERS) {
-        if (Math.hypot(m.position.x - sc.cx, m.position.z - sc.cz) < 25) {
-          m.group.visible = activeZoneIds.has(sc.id);
-          return;
-        }
-      }
-    });
-
-    // 2. Dọn dẹp bất kỳ bia đá nào bị sinh nhầm trong Vườn Hoa (id 1..10)
+    // Cập nhật bia đá nếu vùng đất chứa bia đá đó đã được nạp trước đó
     this.archimedes.removeGardenMonoliths();
-
-    // 3. Dựng các bia đá mới nếu có
-    const existingIds = new Set(this.monoliths.map((m) => String(m.id)));
-    positionedMonoliths.forEach((pm) => {
-      if (!pm.position || pm.id === undefined || pm.id === null) return;
-      const strId = String(pm.id);
-      if (!existingIds.has(strId)) {
-        this.createMonolithEntity(pm.id, pm.position.x, pm.position.z, pm.color || 0x38bdf8, pm.title);
-        existingIds.add(strId);
+    for (const loadedId of this.loadedZoneRegions) {
+      const zoneGroup = this.getOrCreateZoneGroup(loadedId);
+      const newMonolithObs = this.createZoneMonoliths(loadedId, zoneGroup);
+      if (newMonolithObs.length > 0) {
+        const existingObs = this.zoneObstaclesMap.get(loadedId) ?? [];
+        existingObs.push(...newMonolithObs);
+        this.zoneObstaclesMap.set(loadedId, existingObs);
+        this.spatial.setRegionObstacles(`zone:${loadedId}`, existingObs);
       }
-    });
+    }
 
-    // 4. Đồng bộ hóa sang SpatialWorld
+    // Đồng bộ hóa sang SpatialWorld và chỉ nạp vùng hiện tại đang đứng
     const allPositions = positionedMonoliths.filter((pm) => pm.position).map((pm) => pm.position!);
     this.spatial.setDynamicData(zones, allPositions, customPortals, this.dynamicObstacles);
-    this.ensureLakeSanctuariesLoaded(this.player.position.x);
-
-    if (mapTasks.length > 0) {
-      await Promise.all(mapTasks);
-    }
+    await this.activateRegionAt(this.player.position.x, this.player.position.z);
     this.requestIdleRender();
   }
 
@@ -1216,6 +1430,7 @@ export class World {
       | ((id: number | string, index: number) => boolean)
       | { monoliths?: boolean[]; solvedProblems?: Record<string, boolean> }
   ) {
+    this.monolithActivationChecker = checker;
     this.archimedes.setMonolithsActivated(checker);
   }
 
@@ -1224,20 +1439,26 @@ export class World {
   }
 
   teleport(x: number, z: number) {
+    const targetRegion = this.spatial.resolveRegionForPoint(x, z);
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
-    this.ensureLakeSanctuariesLoaded(x);
+    if (targetRegion !== this.activeRegionId) {
+      void this.activateRegionAt(x, z);
+    }
     this.burst(this.player.position.clone().add(new THREE.Vector3(0, 1, 0)));
     this.requestIdleRender();
     this.onTeleport?.(x, z);
   }
 
   setInitialPosition(x: number, z: number) {
+    const targetRegion = this.spatial.resolveRegionForPoint(x, z);
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.target.set(x, 0, z);
-    this.ensureLakeSanctuariesLoaded(x);
+    if (targetRegion !== this.activeRegionId) {
+      void this.activateRegionAt(x, z);
+    }
     this.resetCamera();
     this.requestIdleRender();
   }
@@ -1266,29 +1487,31 @@ export class World {
       for (const z of [-1.6, 1.6]) { this.box(part, 0, .9, z, .17, 1.3, .17, 0xa98458); this.box(part, 0, 1.35, z, 1.08, .12, .15, 0xbfa479); }
       part.visible = false; this.bridge.add(part);
     }
-    for (const x of [3.6, 10.4]) for (const z of [-1.85, 1.85]) { this.cylinder(this.scene, x, .65, z, .23, .3, 1.3, 0xcac09e); this.sphere(this.scene, x, 1.4, z, .28, 0xf4d37c); }
+    for (const x of [3.6, 10.4]) for (const z of [-1.85, 1.85]) { this.cylinder(this.coreRegionGroup, x, .65, z, .23, .3, 1.3, 0xcac09e); this.sphere(this.coreRegionGroup, x, 1.4, z, .28, 0xf4d37c); }
   }
 
-  private createLakeFallback(id: number, cx: number, cz: number, color = 0x8ec963): THREE.Object3D {
-    const disc = this.cylinder(this.scene, cx, -1.25, cz, LAKE_FALLBACK_RADIUS, LAKE_FALLBACK_RADIUS, 2.5, color, 32);
+  private createLakeFallback(
+    id: number,
+    cx: number,
+    cz: number,
+    color = 0x8ec963,
+    parent: THREE.Object3D = this.getOrCreateZoneGroup(id)
+  ): THREE.Object3D {
+    const disc = this.cylinder(parent, cx, -1.25, cz, LAKE_FALLBACK_RADIUS, LAKE_FALLBACK_RADIUS, 2.5, color, 32);
     disc.receiveShadow = true;
     this.lakeFallbackDiscs.set(id, disc);
     return disc;
   }
 
-  private ensureLakeSanctuariesLoaded(playerX = this.player.position.x) {
-    const pending = selectLakeSanctuariesToLoad(playerX, this.activeZoneIds, new Set(this.lakeModels.keys()));
-    for (const s of pending) {
-      void this.loadLakeMap(s);
-    }
-  }
-
-  private async loadLakeMap(zone: { id: number; center: { x: number; z: number }; template?: string }) {
-    if (this.lakeModels.has(zone.id)) return;
+  private async loadLakeMap(
+    zone: { id: number; center: { x: number; z: number }; template?: string },
+    parent: THREE.Object3D = this.getOrCreateZoneGroup(zone.id)
+  ): Promise<Obstacle[]> {
+    if (this.lakeModels.has(zone.id)) return [];
     const clone = await this.assets.instantiate('map:cozy_lake');
-    if (!clone) return;
+    if (!clone) return [];
 
-    if (this.lakeModels.has(zone.id)) return;
+    if (this.lakeModels.has(zone.id)) return [];
 
     const lakeGroup = new THREE.Group();
     lakeGroup.position.set(zone.center.x, 0, zone.center.z);
@@ -1359,12 +1582,11 @@ export class World {
 
     if (lakeObstacles.length > 0) {
       this.obstacles.push(...lakeObstacles);
-      this.spatial.addObstacles(lakeObstacles);
     }
 
     const fallback = this.lakeFallbackDiscs.get(zone.id);
     if (fallback) {
-      this.scene.remove(fallback);
+      fallback.removeFromParent();
       this.lakeFallbackDiscs.delete(zone.id);
     }
 
@@ -1372,12 +1594,17 @@ export class World {
       lakeGroup.visible = false;
     }
 
-    this.scene.add(lakeGroup);
+    parent.add(lakeGroup);
     this.lakeModels.set(zone.id, lakeGroup);
     this.requestIdleRender();
+    return lakeObstacles;
   }
 
-  private async loadFarmMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
+  private async loadFarmMap(
+    zone: RemoteZoneConfig,
+    questions?: RemoteProblem[],
+    parent: THREE.Object3D = this.getOrCreateZoneGroup(zone.id)
+  ): Promise<Obstacle[]> {
     try {
       if (!this.farmSanctuary) {
         this.farmSanctuary = new FarmSanctuary(this.assets, this.geom);
@@ -1392,11 +1619,11 @@ export class World {
         base.position.set(zone.center.x, 0, zone.center.z);
         this.cylinder(base, 0, 0.05, 0, 32, 32, 0.1, 0x8ec963, 32); // Grass base
         this.cylinder(base, 0, 0.06, 0, 12, 12, 0.1, 0xead5a3, 32); // Dirt path around pen
-        this.scene.add(base);
+        parent.add(base);
         this.farmBaseGroup = base;
       }
 
-      this.scene.add(this.farmSanctuary.group);
+      parent.add(this.farmSanctuary.group);
       if (this.activeZoneIds && !this.activeZoneIds.has(zone.id)) {
         this.farmSanctuary.group.visible = false;
         if (this.farmBaseGroup) this.farmBaseGroup.visible = false;
@@ -1412,18 +1639,23 @@ export class World {
       if (farmObs.length > 0) {
         this.obstacles.push(...farmObs);
         this.dynamicObstacles.push(...farmObs);
-        this.spatial.addObstacles(farmObs);
       }
+      return farmObs;
     } catch (err) {
       console.error('[World] Failed to load farm map:', err);
+      return [];
     }
   }
 
-  private async loadParkMap(zone: RemoteZoneConfig, questions?: RemoteProblem[]) {
-    if (this.parkModels.has(zone.id)) return;
+  private async loadParkMap(
+    zone: RemoteZoneConfig,
+    questions?: RemoteProblem[],
+    parent: THREE.Object3D = this.getOrCreateZoneGroup(zone.id)
+  ): Promise<Obstacle[]> {
+    if (this.parkModels.has(zone.id)) return [];
     const model = await this.assets.instantiate('map:park');
-    if (!model) return;
-    if (this.parkModels.has(zone.id)) return;
+    if (!model) return [];
+    if (this.parkModels.has(zone.id)) return [];
 
     const parkCx = zone.center.x;
     const parkCz = zone.center.z;
@@ -1435,7 +1667,7 @@ export class World {
     initialBox.getSize(initialSize);
     const scaledRadius = Math.max(initialSize.x, initialSize.z) / 2;
 
-    this.scene.add(model);
+    parent.add(model);
     this.parkModels.set(zone.id, model);
     if (this.activeZoneIds && !this.activeZoneIds.has(zone.id)) {
       model.visible = false;
@@ -1481,7 +1713,6 @@ export class World {
     });
 
     this.obstacles.push(...parkObstacles);
-    this.spatial.addObstacles(parkObstacles);
 
     // Sort trees in a circular sequence starting near the eastern entrance
     treeMeshes.sort((a, b) => {
@@ -1492,6 +1723,7 @@ export class World {
 
     const activeQuestions = questions || [];
     const treePositions: { x: number; z: number }[] = [];
+    const zoneTrees: ParkTreeEntity[] = [];
     treeMeshes.forEach((item, idx) => {
       const origMat = item.mesh.material as THREE.Material;
       const grayMat = new THREE.MeshStandardMaterial({
@@ -1521,12 +1753,12 @@ export class World {
       // Overhead guide beacon: chỉ hiển thị cho cây CÓ câu hỏi và ĐANG NGỦ SAY
       let beacon: THREE.Mesh | undefined;
       if (hasQuestion) {
-        beacon = this.sphere(this.scene, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, questionColor);
+        beacon = this.sphere(parent, item.center.x, item.box.max.y + 0.6, item.center.z, 0.32, questionColor);
         beacon.castShadow = false;
         beacon.visible = !isAwakened;
       }
 
-      this.parkTrees.push({
+      zoneTrees.push({
         index: idx,
         id: idx + 1,
         mesh: item.mesh,
@@ -1547,7 +1779,11 @@ export class World {
       }
     });
 
+    this.parkTreesByZone.set(zone.id, zoneTrees);
+    this.parkTreePositionsByZone.set(zone.id, treePositions);
+    this.parkTrees.splice(0, this.parkTrees.length, ...zoneTrees);
     this.spatial.setParkTreePositions(treePositions);
+    return parkObstacles;
   }
 
   wakeParkTree(index: number) {
@@ -1577,9 +1813,11 @@ export class World {
     });
   }
 
-  syncParkQuestions(questions: RemoteProblem[], zoneColor = 0x10b981) {
+  syncParkQuestions(questions: RemoteProblem[], zoneColor = 0x10b981, zoneId?: number) {
     const activePositions: { x: number; z: number }[] = [];
-    this.parkTrees.forEach((tree, idx) => {
+    const targetTrees = zoneId !== undefined ? (this.parkTreesByZone.get(zoneId) ?? this.parkTrees) : this.parkTrees;
+    const beaconParent = zoneId !== undefined ? this.getOrCreateZoneGroup(zoneId) : this.activeMountedGroup;
+    targetTrees.forEach((tree, idx) => {
       const q = idx < questions.length ? questions[idx] : null;
       const hasQuestion = q !== null;
       const qColor = q?.color || zoneColor;
@@ -1605,7 +1843,7 @@ export class World {
         tree.awakened = isAwakened;
         tree.mesh.material = isAwakened ? (tree.coloredMaterial || tree.originalMaterial) : tree.grayMaterial;
         if (!tree.beacon) {
-          tree.beacon = this.sphere(this.scene, tree.position.x, tree.topY, tree.position.z, 0.32, qColor);
+          tree.beacon = this.sphere(beaconParent, tree.position.x, tree.topY, tree.position.z, 0.32, qColor);
           tree.beacon.castShadow = false;
         } else {
           (tree.beacon.material as THREE.MeshStandardMaterial).color.set(qColor);
@@ -1615,7 +1853,12 @@ export class World {
       }
     });
 
-    this.spatial.setParkTreePositions(activePositions);
+    if (zoneId !== undefined) {
+      this.parkTreePositionsByZone.set(zoneId, activePositions);
+    }
+    if (zoneId === undefined || this.activeRegionId === `zone:${zoneId}`) {
+      this.spatial.setParkTreePositions(activePositions);
+    }
   }
 
   setBridge(count: number, animate = false) {
@@ -1636,13 +1879,13 @@ export class World {
       dummy.position.y = .39; dummy.updateMatrix(); flowers.setMatrixAt(n, dummy.matrix);
       flowers.setColorAt(n, new THREE.Color([0xffe4a3, 0xf5f0d7, 0xe9a98e, 0xbdabe0][n % 4])); n++;
     }
-    this.scene.add(flowers, stems);
+    this.coreRegionGroup.add(flowers, stems);
     for (let i = 0; i < 10; i++) {
       const cloud = new THREE.Group(); cloud.position.set(-36 + i * 8, 10 + (i % 3) * 2, -27 - (i % 2) * 7);
       for (let j = 0; j < 4; j++) { const ball = this.sphere(cloud, j * 1.1, Math.sin(j) * .35, 0, .95 + (j % 2) * .4, 0xf4fcf5); ball.scale.set(1.4, .65, 1); ball.castShadow = false; }
-      this.scene.add(cloud); this.clouds.push(cloud);
+      this.coreRegionGroup.add(cloud); this.clouds.push(cloud);
     }
-    for (let i = 0; i < 9; i++) { const rock = this.sphere(this.scene, -20 + i * 5, -2.4, 21, .8, 0xb9ac8e); rock.scale.set(1.3, .7, .9); }
+    for (let i = 0; i < 9; i++) { const rock = this.sphere(this.coreRegionGroup, -20 + i * 5, -2.4, 21, .8, 0xb9ac8e); rock.scale.set(1.3, .7, .9); }
   }
 
   private resize() {
@@ -1665,8 +1908,10 @@ export class World {
     );
     this.scratchRay.setFromCamera(this.scratchPointer, this.camera);
 
+    const isFarmMounted = Boolean(this.farmSanctuary && this.farmSanctuary.group.visible && this.farmSanctuary.group.parent === this.activeMountedGroup);
+
     // 1. Direct 3D raycast on farm animals
-    if (this.farmSanctuary && this.farmSanctuary.group.visible) {
+    if (isFarmMounted && this.farmSanctuary) {
       const animalHit = this.farmSanctuary.findAnimalAtRay(this.scratchRay);
       if (animalHit) {
         this.onFarmAnimalClick?.(animalHit.id);
@@ -1677,7 +1922,7 @@ export class World {
     const hit = this.scratchHit;
     if (this.scratchRay.ray.intersectPlane(this.scratchRayPlane, hit)) {
       // 2. Click near farm animal on ground plane
-      if (this.farmSanctuary && this.farmSanctuary.group.visible) {
+      if (isFarmMounted && this.farmSanctuary) {
         this.scratchLocalHit.copy(hit).sub(this.farmSanctuary.group.position);
         const nearAnimal = this.farmSanctuary.findAnimalNearPoint(this.scratchLocalHit, 2.5);
         if (nearAnimal) {
@@ -1748,9 +1993,8 @@ export class World {
     this.player.position.set(pose.x, pose.y, pose.z);
     this.player.rotation.y = pose.rotation;
     this.avatar.updateWalkAnimation(this.time, pose.moving);
-    this.ensureLakeSanctuariesLoaded(pose.x);
 
-    const transit = this.spatial.checkPortalTransit(dt);
+    const transit = this.spatial.checkPortalTransit(dt, { deferTeleport: true });
     if (transit && !this.pendingPortalTransit) {
       this.pendingPortalTransit = transit;
     }
@@ -1829,13 +2073,15 @@ export class World {
   private renderFrame(rawDt: number): void {
     this.time += rawDt;
 
+    const isFarmRegionActive = Boolean(this.farmSanctuary && this.farmSanctuary.group.parent === this.activeMountedGroup && this.farmSanctuary.group.visible);
+
     // Fixed-step simulation: physics & movement update at a constant 60Hz rate
     this.accumulator += rawDt;
     let steps = 0;
     while (this.accumulator >= this.FIXED_DT && steps < this.MAX_SUB_STEPS) {
       if (this._active && !this._paused) {
         this.movement(this.FIXED_DT);
-        if (this.farmSanctuary) {
+        if (isFarmRegionActive && this.farmSanctuary) {
           this.farmSanctuary.update(this.FIXED_DT, this.player.position);
         }
       }
@@ -1861,56 +2107,62 @@ export class World {
     const distance = this._active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
     this.camera.position.set(this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, this.target.y + Math.sin(this.pitch) * distance, this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance);
     this.camera.lookAt(this.target);
-    this.windmill.rotation.z -= rawDt * .25;
-    this.bridge.children.forEach(p => p.position.y = Math.max(0, p.position.y - rawDt * 5));
-    this.clouds.forEach((c, i) => { c.position.x += rawDt * .12; if (c.position.x > 50) c.position.x = -50; c.position.y = 11 + (i % 3) * 2 + Math.sin(this.time * .2 + i) * .3; });
-    this.milo.children.forEach(o => { if (o.userData.beacon) o.position.y = 3 + Math.sin(this.time * 2) * .15; });
 
-    // Animate the 10 flowers
-    this.flowers.forEach((f, i) => {
-      if (f.beacon) {
-        f.beacon.position.y = .75 + Math.sin(this.time * 2.5 + i) * .12;
-        f.beacon.visible = !f.bloomed;
-      }
-      if (f.animating) {
-        f.bloomAnim = Math.min(1, f.bloomAnim + rawDt * 2.0);
-        if (f.bloomAnim >= 1) {
-          f.bloomAnim = 1;
-          f.animating = false;
+    if (this.activeRegionId === 'core') {
+      this.windmill.rotation.z -= rawDt * .25;
+      this.bridge.children.forEach(p => p.position.y = Math.max(0, p.position.y - rawDt * 5));
+      this.clouds.forEach((c, i) => { c.position.x += rawDt * .12; if (c.position.x > 50) c.position.x = -50; c.position.y = 11 + (i % 3) * 2 + Math.sin(this.time * .2 + i) * .3; });
+      this.milo.children.forEach(o => { if (o.userData.beacon) o.position.y = 3 + Math.sin(this.time * 2) * .15; });
+
+      // Animate the 10 flowers
+      this.flowers.forEach((f, i) => {
+        if (f.beacon) {
+          f.beacon.position.y = .75 + Math.sin(this.time * 2.5 + i) * .12;
+          f.beacon.visible = !f.bloomed;
         }
-        const s = THREE.MathUtils.lerp(0.001, 1.0, f.bloomAnim);
-        f.bloom.scale.setScalar(s);
-        f.bud.scale.setScalar(Math.max(0.001, 1 - f.bloomAnim));
-        if (Math.random() < 0.25) {
-          this.geom.emitBurst(f.position.x, 2.0, f.position.z);
+        if (f.animating) {
+          f.bloomAnim = Math.min(1, f.bloomAnim + rawDt * 2.0);
+          if (f.bloomAnim >= 1) {
+            f.bloomAnim = 1;
+            f.animating = false;
+          }
+          const s = THREE.MathUtils.lerp(0.001, 1.0, f.bloomAnim);
+          f.bloom.scale.setScalar(s);
+          f.bud.scale.setScalar(Math.max(0.001, 1 - f.bloomAnim));
+          if (Math.random() < 0.25) {
+            this.geom.emitBurst(f.position.x, 2.0, f.position.z);
+          }
         }
-      }
-      if (f.bloomed) {
-        f.bloom.rotation.y += rawDt * 0.35;
-      }
-    });
+        if (f.bloomed) {
+          f.bloom.rotation.y += rawDt * 0.35;
+        }
+      });
 
-    // Animate park tree beacons
-    this.parkTrees.forEach((t) => {
-      if (t.beacon && t.beacon.visible) {
-        t.beacon.position.y = t.topY + Math.sin(this.time * 2.5 + t.index) * 0.15;
+      if (this.shopBeacon) {
+        this.shopBeacon.rotation.z += rawDt * 1.5;
       }
-    });
 
-    if (this.shopBeacon) {
-      this.shopBeacon.rotation.z += rawDt * 1.5;
+      for (let i = 0; i < this.ripples.length; i++) {
+        const r = this.ripples[i];
+        r.position.z += rawDt * .25;
+        if (r.position.z > 19) r.position.z = -19;
+      }
+    }
+
+    // Animate park tree beacons only when inside a park region
+    if (this.activeRegionId.startsWith('zone:')) {
+      this.parkTrees.forEach((t) => {
+        if (t.beacon && t.beacon.visible) {
+          t.beacon.position.y = t.topY + Math.sin(this.time * 2.5 + t.index) * 0.15;
+        }
+      });
     }
 
     this.archimedes.updateAnimations(rawDt, this.time);
     this.geom.updateEffects(rawDt);
 
-    for (let i = 0; i < this.ripples.length; i++) {
-      const r = this.ripples[i];
-      r.position.z += rawDt * .25;
-      if (r.position.z > 19) r.position.z = -19;
-    }
     let nearFarmId: string | null = null;
-    if (this.farmSanctuary) {
+    if (isFarmRegionActive && this.farmSanctuary) {
       const px = this.player.position.x;
       const pz = this.player.position.z;
       const farmX = this.farmSanctuary.group.position.x;
@@ -1928,7 +2180,17 @@ export class World {
 
     const nearPortal = this.spatial.getNearPortal();
     if (nearPortal) {
-      this.assets.prefetchForPortal(nearPortal.id);
+      const targetRegion = (nearPortal as PortalLink).targetRegionId ?? this.spatial.resolveRegionForPoint(nearPortal.source.x, nearPortal.source.z);
+      let targetTemplate: string | undefined;
+      if (!nearPortal.requiresSelection && 'target' in nearPortal && (nearPortal as PortalLink).target) {
+        const destRegion = this.spatial.resolveRegionForPoint((nearPortal as PortalLink).target.x, (nearPortal as PortalLink).target.z);
+        if (destRegion.startsWith('zone:')) {
+          const zId = Number(destRegion.slice(5));
+          targetTemplate = this.dynamicZoneById.get(zId)?.template ?? STATIC_LAKE_SANCTUARIES.find((s) => s.id === zId)?.template;
+        }
+      }
+      void targetRegion;
+      this.assets.prefetchForPortal(nearPortal.id, targetTemplate);
     }
 
     const transit = this.pendingPortalTransit;
@@ -1981,6 +2243,9 @@ export class World {
       document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     }
     this.observer.disconnect();
+    this.zoneRegionGroups.clear();
+    this.loadedZoneRegions.clear();
+    this.pendingZoneLoads.clear();
     this.avatar.dispose();
     this.farmSanctuary?.dispose();
     this.geom.dispose();

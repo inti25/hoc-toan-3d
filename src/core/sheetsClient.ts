@@ -1,6 +1,7 @@
 import {
   computeProceduralEntityPositions,
   computeArchipelagoOrbitalPosition,
+  sanitizeZoneEntityPosition,
   type RemoteZoneConfig,
   type RemoteProblem,
   type ExplorerProfile,
@@ -512,7 +513,11 @@ export function resolveZoneProblemsWithPositions(
     if (finalPos && isLake && !isValidLakePosition(zone.center, finalPos)) {
       finalPos = null;
     }
-    finalPos = finalPos || proceduralCoords[idx] || { x: zone.center.x, z: zone.center.z };
+    finalPos = sanitizeZoneEntityPosition(
+      zone,
+      finalPos || proceduralCoords[idx] || { x: zone.center.x, z: zone.center.z },
+      proceduralCoords[idx]
+    );
 
     return {
       ...prob,

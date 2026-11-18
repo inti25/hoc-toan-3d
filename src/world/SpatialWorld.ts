@@ -35,7 +35,16 @@ export interface PortalLink {
   target: { x: number; z: number };
   triggerRadius: number;
   requiresSelection?: boolean;
+  targetRegionId?: string;
 }
+
+const DEFAULT_LAKE_SANCTUARIES = [
+  { id: 1, cx: 110, cz: -60 },
+  { id: 2, cx: 150, cz: -60 },
+  { id: 3, cx: 110, cz: 60 },
+  { id: 4, cx: 150, cz: 60 },
+  { id: 5, cx: 190, cz: 0 }
+] as const;
 
 const z1Anchors = computeLakeAnchors({ x: 110, z: -60 });
 const z2Anchors = computeLakeAnchors({ x: 150, z: -60 });
@@ -45,28 +54,28 @@ const z5Anchors = computeLakeAnchors({ x: 190, z: 0 });
 
 export const PORTAL_LINKS: PortalLink[] = [
   // Garden <-> Hub
-  { id: 'garden_to_hub', name: 'Đến Đền Cổng Archimedes', source: { x: 32, z: 0 }, target: { x: 55, z: 0 }, triggerRadius: 1.5 },
-  { id: 'hub_to_garden', name: 'Về Vườn Hoa Tri Thức', source: { x: 52, z: 0 }, target: { x: 30, z: 0 }, triggerRadius: 1.5 },
+  { id: 'garden_to_hub', name: 'Đến Đền Cổng Archimedes', source: { x: 32, z: 0 }, target: { x: 55, z: 0 }, triggerRadius: 1.85 },
+  { id: 'hub_to_garden', name: 'Về Vườn Hoa Tri Thức', source: { x: 52, z: 0 }, target: { x: 30, z: 0 }, triggerRadius: 1.85 },
 
   // Hub <-> Zone 1 (Thung Lũng Tính Toán)
-  { id: 'hub_to_z1', name: 'Đến Thung Lũng Tính Toán', source: { x: 68, z: -8 }, target: z1Anchors.arrival, triggerRadius: 1.5 },
-  { id: 'z1_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z1Anchors.returnPortal.x, z: z1Anchors.returnPortal.z }, target: { x: 65, z: -8 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z1', name: 'Đến Thung Lũng Tính Toán', source: { x: 68, z: -8 }, target: z1Anchors.arrival, triggerRadius: 1.85 },
+  { id: 'z1_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z1Anchors.returnPortal.x, z: z1Anchors.returnPortal.z }, target: { x: 65, z: -8 }, triggerRadius: 1.85 },
 
   // Hub <-> Zone 2 (Suối Nguồn Dãy Số)
-  { id: 'hub_to_z2', name: 'Đến Suối Nguồn Dãy Số', source: { x: 70, z: -4 }, target: z2Anchors.arrival, triggerRadius: 1.5 },
-  { id: 'z2_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z2Anchors.returnPortal.x, z: z2Anchors.returnPortal.z }, target: { x: 67, z: -4 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z2', name: 'Đến Suối Nguồn Dãy Số', source: { x: 70, z: -4 }, target: z2Anchors.arrival, triggerRadius: 1.85 },
+  { id: 'z2_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z2Anchors.returnPortal.x, z: z2Anchors.returnPortal.z }, target: { x: 67, z: -4 }, triggerRadius: 1.85 },
 
   // Hub <-> Zone 3 (Đồi Thời Gian)
-  { id: 'hub_to_z3', name: 'Đến Đồi Thời Gian', source: { x: 70, z: 0 }, target: z3Anchors.arrival, triggerRadius: 1.5 },
-  { id: 'z3_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z3Anchors.returnPortal.x, z: z3Anchors.returnPortal.z }, target: { x: 67, z: 0 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z3', name: 'Đến Đồi Thời Gian', source: { x: 70, z: 0 }, target: z3Anchors.arrival, triggerRadius: 1.85 },
+  { id: 'z3_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z3Anchors.returnPortal.x, z: z3Anchors.returnPortal.z }, target: { x: 67, z: 0 }, triggerRadius: 1.85 },
 
   // Hub <-> Zone 4 (Rừng Hình Học)
-  { id: 'hub_to_z4', name: 'Đến Rừng Hình Học', source: { x: 70, z: 4 }, target: z4Anchors.arrival, triggerRadius: 1.5 },
-  { id: 'z4_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z4Anchors.returnPortal.x, z: z4Anchors.returnPortal.z }, target: { x: 67, z: 4 }, triggerRadius: 1.5 },
+  { id: 'hub_to_z4', name: 'Đến Rừng Hình Học', source: { x: 70, z: 4 }, target: z4Anchors.arrival, triggerRadius: 1.85 },
+  { id: 'z4_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z4Anchors.returnPortal.x, z: z4Anchors.returnPortal.z }, target: { x: 67, z: 4 }, triggerRadius: 1.85 },
 
   // Hub <-> Zone 5 (Đỉnh Núi Tư Duy Sao)
-  { id: 'hub_to_z5', name: 'Đến Đỉnh Núi Tư Duy Sao', source: { x: 68, z: 8 }, target: z5Anchors.arrival, triggerRadius: 1.5 },
-  { id: 'z5_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z5Anchors.returnPortal.x, z: z5Anchors.returnPortal.z }, target: { x: 65, z: 8 }, triggerRadius: 1.5 }
+  { id: 'hub_to_z5', name: 'Đến Đỉnh Núi Tư Duy Sao', source: { x: 68, z: 8 }, target: z5Anchors.arrival, triggerRadius: 1.85 },
+  { id: 'z5_to_hub', name: 'Về Đền Cổng Archimedes', source: { x: z5Anchors.returnPortal.x, z: z5Anchors.returnPortal.z }, target: { x: 65, z: 8 }, triggerRadius: 1.85 }
 ];
 
 export const FLOWER_COORDS: [number, number][] = [
@@ -84,6 +93,9 @@ export class SpatialWorld {
   private portalCooldown = 0;
   private obstacles: Obstacle[] = [];
   private activeZoneIds: Set<number> = new Set([1, 2, 3, 4, 5]);
+  private regionScopingEnabled = false;
+  private activeRegionId = 'core';
+  private regionObstacles = new Map<string, Obstacle[]>();
   readonly miloPos = { x: -3, z: 1.5 };
   readonly shopPos = { x: -12.4, z: -3.5 };
 
@@ -94,44 +106,74 @@ export class SpatialWorld {
   }
 
   private initDefaultObstacles() {
-    this.obstacles.push({ x: -3, z: 1.5, radius: .85 }); // Milo
-    this.obstacles.push({ x: -12, z: -6, radius: 2.35 * 1.25 }); // House 1
-    this.obstacles.push({ x: -17, z: 6, radius: 2.35 * .9 }); // House 2
-    this.obstacles.push({ x: -4, z: -11, radius: 2.35 }); // House 3
-    this.obstacles.push({ x: -15, z: -14, radius: 1.8 }); // Mill
+    const coreObs: Obstacle[] = [
+      { x: -3, z: 1.5, radius: .85 }, // Milo
+      { x: -12, z: -6, radius: 2.35 * 1.25 }, // House 1
+      { x: -17, z: 6, radius: 2.35 * .9 }, // House 2
+      { x: -4, z: -11, radius: 2.35 }, // House 3
+      { x: -15, z: -14, radius: 1.8 } // Mill
+    ];
 
     // Trees
     [
       [-20,-14,1.3],[-20,-8,1],[-20,-3.8,1.1],[-20,3.8,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
       [13,-15,1.3],[18,-17,1.5],[25,-16,1.2],[32,-12,1.3],[33,-5,1.1],[33,5,1.1],[32,12,1.3],[25,16,1.2],[18,17,1.5],[13,15,1.3]
     ].forEach(([tx, tz, s]) => {
-      this.obstacles.push({ x: tx, z: tz, radius: .45 * s });
+      coreObs.push({ x: tx, z: tz, radius: .45 * s });
     });
 
-    // Arch
-    this.obstacles.push({ x: 11.2, z: -2.2, radius: .5 }, { x: 11.2, z: 2.2, radius: .5 });
-    // Fountain
-    this.obstacles.push({ x: 22, z: 0, radius: 2.3 });
-    // Benches
+    // Arch, Fountain, Benches, Lanterns, Flowers
+    coreObs.push({ x: 11.2, z: -2.2, radius: .5 }, { x: 11.2, z: 2.2, radius: .5 });
+    coreObs.push({ x: 22, z: 0, radius: 2.3 });
     [[-2.5, -2.5], [-2.5, 2.5], [2.5, -2.5], [2.5, 2.5]].forEach(([bx, bz]) => {
-      this.obstacles.push({ x: 22 + bx, z: bz, radius: .7 });
+      coreObs.push({ x: 22 + bx, z: bz, radius: .7 });
     });
-    // Lanterns
     [[14.5, -2.5], [14.5, 2.5], [29.5, -2.5], [29.5, 2.5]].forEach(([lx, lz]) => {
-      this.obstacles.push({ x: lx, z: lz, radius: .3 });
+      coreObs.push({ x: lx, z: lz, radius: .3 });
     });
-    // Flowers
     FLOWER_COORDS.forEach(([fx, fz]) => {
-      this.obstacles.push({ x: fx, z: fz, radius: 1.15 });
+      coreObs.push({ x: fx, z: fz, radius: 1.15 });
     });
+
+    this.regionObstacles.set('core', [...coreObs]);
 
     // 5 Archimedes Sanctuaries Physical Center Monuments & Fountains
-    this.obstacles.push({ x: 110, z: -60, radius: 1.35 }); // Zone 1 monument
-    this.obstacles.push({ x: 154, z: -55, radius: 1.0 });  // Zone 2 stepped pillar
-    this.obstacles.push({ x: 150, z: -60, radius: 1.2 });  // Zone 2 fountain center
-    this.obstacles.push({ x: 110, z: 60, radius: 2.3 });   // Zone 3 sundial
-    this.obstacles.push({ x: 150, z: 56, radius: 1.6 });   // Zone 4 polyhedron
-    this.obstacles.push({ x: 190, z: 0, radius: 1.5 });    // Zone 5 star summit monument
+    const zone1Obs: Obstacle[] = [{ x: 110, z: -60, radius: 1.35 }];
+    const zone2Obs: Obstacle[] = [{ x: 154, z: -55, radius: 1.0 }, { x: 150, z: -60, radius: 1.2 }];
+    const zone3Obs: Obstacle[] = [{ x: 110, z: 60, radius: 2.3 }];
+    const zone4Obs: Obstacle[] = [{ x: 150, z: 56, radius: 1.6 }];
+    const zone5Obs: Obstacle[] = [{ x: 190, z: 0, radius: 1.5 }];
+    this.regionObstacles.set('zone:1', zone1Obs);
+    this.regionObstacles.set('zone:2', zone2Obs);
+    this.regionObstacles.set('zone:3', zone3Obs);
+    this.regionObstacles.set('zone:4', zone4Obs);
+    this.regionObstacles.set('zone:5', zone5Obs);
+    this.regionObstacles.set('hub', [{ x: 60, z: 0, radius: 1.5 }]);
+
+    this.obstacles.push(...coreObs, ...zone1Obs, ...zone2Obs, ...zone3Obs, ...zone4Obs, ...zone5Obs);
+  }
+
+  enableRegionScoping() {
+    this.regionScopingEnabled = true;
+  }
+
+  setActiveRegion(regionId: string) {
+    this.regionScopingEnabled = true;
+    this.activeRegionId = regionId;
+  }
+
+  getActiveRegion(): string {
+    return this.activeRegionId;
+  }
+
+  setRegionObstacles(regionId: string, obstacles: Obstacle[]) {
+    this.regionObstacles.set(regionId, [...obstacles]);
+  }
+
+  addRegionObstacles(regionId: string, obstacles: Obstacle[]) {
+    const existing = this.regionObstacles.get(regionId) ?? [];
+    existing.push(...obstacles);
+    this.regionObstacles.set(regionId, existing);
   }
 
   setBridgeBuilt(count: number) {
@@ -172,7 +214,7 @@ export class SpatialWorld {
     return -1;
   }
 
-  private dynamicIslands: { cx: number; cz: number; w: number; d: number; name?: string; template?: string }[] = [];
+  private dynamicIslands: { id: number; cx: number; cz: number; w: number; d: number; name?: string; template?: string }[] = [];
   private dynamicPortals: PortalLink[] = [];
   private dynamicMonoliths: { x: number; z: number }[] = [];
   private dynamicObstacles: Obstacle[] = [];
@@ -188,7 +230,8 @@ export class SpatialWorld {
         .map((z, idx) => (typeof z.id === 'number' ? z.id : idx + 1))
         .filter((id): id is number => typeof id === 'number')
     );
-    this.dynamicIslands = zones.map((z) => ({
+    this.dynamicIslands = zones.map((z, idx) => ({
+      id: typeof z.id === 'number' ? z.id : idx + 1,
       cx: z.center.x,
       cz: z.center.z,
       w: z.width,
@@ -203,6 +246,64 @@ export class SpatialWorld {
     if (obstacles !== undefined) {
       this.dynamicObstacles = obstacles;
     }
+  }
+
+  resolveRegionForPoint(x: number, z: number): string {
+    for (const pz of this.parkZones) {
+      if (Math.hypot(x - pz.cx, z - pz.cz) <= pz.radius + 2.0) {
+        return `zone:${pz.id}`;
+      }
+    }
+
+    if (x >= -22 && x <= 35 && Math.abs(z) <= 19.5) {
+      return 'core';
+    }
+
+    if (x >= 48 && x <= 72 && Math.abs(z) <= 12) {
+      return 'hub';
+    }
+
+    for (const s of DEFAULT_LAKE_SANCTUARIES) {
+      if (this.activeZoneIds.has(s.id)) {
+        if (Math.hypot(x - s.cx, z - s.cz) <= LAKE_WALK_OUTER + 2.0) {
+          return `zone:${s.id}`;
+        }
+      }
+    }
+
+    for (const isl of this.dynamicIslands) {
+      const isStaticGarden =
+        isl.id === 6 ||
+        (isl.template === 'FLOWER_BEDS' && isl.cx >= 10 && isl.cx <= 34 && Math.abs(isl.cz) <= 19);
+      if (isStaticGarden) continue;
+      if (isl.template === 'PARK_SANCTUARY') {
+        if (Math.hypot(x - isl.cx, z - isl.cz) <= Math.max(20, Math.max(isl.w, isl.d) / 2 + 4)) {
+          return `zone:${isl.id}`;
+        }
+      } else if (isl.template === 'FARM_SANCTUARY') {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= Math.max(34, Math.max(isl.w, isl.d) / 2 + 18) + 2.0) {
+          return `zone:${isl.id}`;
+        }
+      } else if (usesLakeTerrain(isl.template)) {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= LAKE_WALK_OUTER + 2.0) {
+          return `zone:${isl.id}`;
+        }
+      } else if (isl.template === 'PROCEDURAL_SANCTUARY') {
+        if (Math.hypot(x - isl.cx, z - isl.cz) <= Math.max(isl.w, isl.d) / 2 + 2.0) {
+          return `zone:${isl.id}`;
+        }
+      } else {
+        const halfW = isl.w / 2 + 2;
+        const halfD = isl.d / 2 + 2;
+        if (x >= isl.cx - halfW && x <= isl.cx + halfW && z >= isl.cz - halfD && z <= isl.cz + halfD) {
+          return `zone:${isl.id}`;
+        }
+      }
+    }
+
+    return 'core';
   }
 
   isWithinLand(x: number, z: number): boolean {
@@ -221,14 +322,7 @@ export class SpatialWorld {
     if (x >= 49 && x <= 71 && Math.abs(z) <= 11) return true;
 
     // 5. 5 Ốc Đảo Chuyên Đề Archimedes (Địa Hình Hồ Yên Bình - Cozy Lake Terrain)
-    const STATIC_LAKE_SANCTUARIES = [
-      { id: 1, cx: 110, cz: -60 },
-      { id: 2, cx: 150, cz: -60 },
-      { id: 3, cx: 110, cz: 60 },
-      { id: 4, cx: 150, cz: 60 },
-      { id: 5, cx: 190, cz: 0 }
-    ];
-    for (const s of STATIC_LAKE_SANCTUARIES) {
+    for (const s of DEFAULT_LAKE_SANCTUARIES) {
       if (this.activeZoneIds.has(s.id)) {
         const d = Math.hypot(x - s.cx, z - s.cz);
         if (d <= LAKE_WALK_OUTER) return true;
@@ -243,6 +337,9 @@ export class SpatialWorld {
       } else if (usesLakeTerrain(isl.template)) {
         const d = Math.hypot(x - isl.cx, z - isl.cz);
         if (d <= LAKE_WALK_OUTER) return true;
+      } else if (isl.template === 'PROCEDURAL_SANCTUARY') {
+        const d = Math.hypot(x - isl.cx, z - isl.cz);
+        if (d <= Math.max(isl.w, isl.d) / 2 + 1) return true;
       } else {
         const halfW = isl.w / 2 + 1;
         const halfD = isl.d / 2 + 1;
@@ -255,11 +352,21 @@ export class SpatialWorld {
     return false;
   }
 
+  private findBlockingObstacle(x: number, z: number): Obstacle | null {
+    const candidates = this.regionScopingEnabled
+      ? (this.regionObstacles.get(this.activeRegionId) ?? [])
+      : [...this.obstacles, ...this.dynamicObstacles];
+    for (const o of candidates) {
+      if (Math.hypot(x - o.x, z - o.z) < o.radius + .35) {
+        return o;
+      }
+    }
+    return null;
+  }
+
   canMove(x: number, z: number): boolean {
     if (!this.isWithinLand(x, z)) return false;
-    const hitDefault = this.obstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
-    if (hitDefault) return false;
-    return !this.dynamicObstacles.some(o => Math.hypot(x - o.x, z - o.z) < o.radius + .35);
+    return this.findBlockingObstacle(x, z) === null;
   }
 
   resolveSafeSpawn(x: number, z: number): { x: number; z: number } | null {
@@ -267,14 +374,7 @@ export class SpatialWorld {
       return { x, z };
     }
 
-    const STATIC_LAKE_SANCTUARIES = [
-      { id: 1, cx: 110, cz: -60 },
-      { id: 2, cx: 150, cz: -60 },
-      { id: 3, cx: 110, cz: 60 },
-      { id: 4, cx: 150, cz: 60 },
-      { id: 5, cx: 190, cz: 0 }
-    ];
-    for (const s of STATIC_LAKE_SANCTUARIES) {
+    for (const s of DEFAULT_LAKE_SANCTUARIES) {
       if (!this.activeZoneIds.has(s.id)) continue;
       const d = Math.hypot(x - s.cx, z - s.cz);
       if (d <= LAKE_WALK_OUTER + 2.0) {
@@ -427,7 +527,7 @@ export class SpatialWorld {
     return [...staticPortals, ...this.dynamicPortals];
   }
 
-  checkPortalTransit(dt = 0): PortalLink | null {
+  checkPortalTransit(dt = 0, options?: { deferTeleport?: boolean }): PortalLink | null {
     if (this.portalCooldown > 0) {
       this.portalCooldown = Math.max(0, this.portalCooldown - dt);
       if (this.portalCooldown > 0) return null;
@@ -438,10 +538,13 @@ export class SpatialWorld {
     for (const portal of allPortals) {
       const dist = Math.hypot(this.x - portal.source.x, this.z - portal.source.z);
       if (dist <= portal.triggerRadius) {
-        if (!portal.requiresSelection) {
+        const sourceRegion = this.resolveRegionForPoint(this.x, this.z);
+        const targetRegion = portal.targetRegionId ?? this.resolveRegionForPoint(portal.target.x, portal.target.z);
+        const shouldDefer = Boolean(options?.deferTeleport && !portal.requiresSelection && sourceRegion !== targetRegion);
+        if (!portal.requiresSelection && !shouldDefer) {
           this.teleport(portal.target.x, portal.target.z);
         }
-        this.portalCooldown = portal.requiresSelection ? 2.5 : 1.2;
+        this.portalCooldown = portal.requiresSelection ? 2.5 : (shouldDefer ? 2.0 : 1.2);
         return portal;
       }
     }
@@ -508,13 +611,79 @@ export class SpatialWorld {
       const nz = this.z + vz * speed;
 
       let moved = false;
-      if (this.canMove(nx, this.z)) {
+      if (this.canMove(nx, nz)) {
         this.x = nx;
-        moved = true;
-      }
-      if (this.canMove(this.x, nz)) {
         this.z = nz;
         moved = true;
+      } else {
+        const blocker = this.findBlockingObstacle(nx, nz);
+        if (blocker) {
+          const dxB = this.x - blocker.x;
+          const dzB = this.z - blocker.z;
+          const bDist = Math.hypot(dxB, dzB);
+          if (bDist > 1e-4) {
+            const normX = dxB / bDist;
+            const normZ = dzB / bDist;
+            const dotVN = vx * normX + vz * normZ;
+            let tx = vx - dotVN * normX;
+            let tz = vz - dotVN * normZ;
+            const tLen = Math.hypot(tx, tz);
+            if (tLen < 0.08) {
+              // Tiến trực diện tâm vật cản: rẽ ngang theo hướng pháp tuyến xoay 90°
+              tx = -normZ;
+              tz = normX;
+            } else {
+              tx = (tx / tLen) + normX * 0.08;
+              tz = (tz / tLen) + normZ * 0.08;
+            }
+            const slideLen = Math.hypot(tx, tz);
+            if (slideLen > 1e-4) {
+              const sdx = (tx / slideLen) * speed;
+              const sdz = (tz / slideLen) * speed;
+              if (this.canMove(this.x + sdx, this.z + sdz)) {
+                this.x += sdx;
+                this.z += sdz;
+                moved = true;
+              } else if (this.canMove(this.x - sdx, this.z - sdz)) {
+                this.x -= sdx;
+                this.z -= sdz;
+                moved = true;
+              } else if (this.canMove(this.x + sdx * 0.5, this.z + sdz * 0.5)) {
+                this.x += sdx * 0.5;
+                this.z += sdz * 0.5;
+                moved = true;
+              } else if (this.canMove(this.x - sdx * 0.5, this.z - sdz * 0.5)) {
+                this.x -= sdx * 0.5;
+                this.z -= sdz * 0.5;
+                moved = true;
+              }
+            }
+          }
+        }
+        if (!moved) {
+          if (this.canMove(nx, this.z)) {
+            this.x = nx;
+            moved = true;
+          }
+          if (this.canMove(this.x, nz)) {
+            this.z = nz;
+            moved = true;
+          }
+        }
+        // Thoát kẹt nếu vị trí hiện tại đang chạm nhẹ vào vật cản/biên
+        if (!moved && !this.canMove(this.x, this.z)) {
+          for (let a = 0; a < 8; a++) {
+            const ang = (a / 8) * Math.PI * 2;
+            const ex = this.x + Math.cos(ang) * Math.max(speed, 0.35);
+            const ez = this.z + Math.sin(ang) * Math.max(speed, 0.35);
+            if (this.canMove(ex, ez)) {
+              this.x = ex;
+              this.z = ez;
+              moved = true;
+              break;
+            }
+          }
+        }
       }
       if (!moved && input.destination) {
         input.destination = undefined;

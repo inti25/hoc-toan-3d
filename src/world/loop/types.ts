@@ -9,6 +9,8 @@ export interface PortalSummary {
   name: string;
   requiresSelection?: boolean;
   source?: { x: number; z: number };
+  target?: { x: number; z: number };
+  targetRegionId?: string;
 }
 
 export interface WorldFrameSnapshot {

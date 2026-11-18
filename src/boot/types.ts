@@ -28,11 +28,12 @@ export interface WorldHandle {
   readonly portalPos: { x: number; y: number; z: number };
   readonly spatial: {
     resolveSafeSpawn(x: number, z: number): { x: number; z: number } | null;
+    resolveRegionForPoint?(x: number, z: number): string;
     getCurrentLocationName(): string;
-    getNearPortal(): { id: string; name: string; requiresSelection?: boolean; source: { x: number; z: number } } | null;
+    getNearPortal(): { id: string; name: string; requiresSelection?: boolean; source: { x: number; z: number }; target?: { x: number; z: number } } | null;
   };
   readonly assets: {
-    prefetchForPortal(portalId: string): void;
+    prefetchForPortal(portalId: string, targetTemplate?: string): void;
   };
   readonly farmSanctuary?: {
     animals: Array<{ id: string; kind: string; state: string; root: { position: { x: number; y: number; z: number } } }>;
@@ -55,6 +56,8 @@ export interface WorldHandle {
   setEquippedTrail(trailId: string): void;
   setInitialPosition(x: number, z: number): void;
   teleport(x: number, z: number): void;
+  activateRegionAt?(x: number, z: number): Promise<string>;
+  getActiveRegionId?(): string;
   renderDynamicZones(
     zones: RemoteZoneConfig[],
     positionedMonoliths?: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }>,

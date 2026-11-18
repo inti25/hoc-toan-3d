@@ -14,6 +14,26 @@ export interface ProceduralLandResult {
   monolithPositions: { x: number; z: number }[];
 }
 
+export function computeProceduralPortalAnchors(zone: Pick<RemoteZoneConfig, 'center' | 'width' | 'depth'>): {
+  returnPortal: { x: number; z: number; rotationY: number };
+  arrival: { x: number; z: number };
+} {
+  const radius = Math.max(zone.width, zone.depth) / 2;
+  const cx = zone.center.x;
+  const cz = zone.center.z;
+  const portalDist = Math.max(8, radius - 3.2);
+  const returnPortal = {
+    x: Math.round((cx - portalDist) * 10) / 10,
+    z: cz,
+    rotationY: 0 // Mặt cổng mở hướng vào tâm đảo (+X)
+  };
+  const arrival = {
+    x: Math.round((returnPortal.x + 2.6) * 10) / 10,
+    z: cz
+  };
+  return { returnPortal, arrival };
+}
+
 /**
  * Bộ Xây Dựng Vùng Đất Tùy Biến (Procedural Land Builder).
  *
@@ -41,16 +61,7 @@ export class ProceduralLandBuilder {
     group.add(terrainGroup);
 
     // 2. Tính toán vị trí Cổng Dịch Chuyển quay về (ở mép phía Tây của đảo)
-    const portalDist = Math.max(8, radius - 3.2);
-    const returnPortal = {
-      x: Math.round((cx - portalDist) * 10) / 10,
-      z: cz,
-      rotationY: 0 // Mặt cổng mở hướng vào tâm đảo (+X)
-    };
-    const arrival = {
-      x: Math.round((returnPortal.x + 2.6) * 10) / 10,
-      z: cz
-    };
+    const { returnPortal, arrival } = computeProceduralPortalAnchors(zone);
 
     // 3. Tính toán vị trí các Bia Đá Tri Thức (Monoliths)
     const monolithPositions = computeProceduralEntityPositions(
@@ -104,8 +115,9 @@ export class ProceduralLandBuilder {
       const randScale = 0.85 + prng() * 0.35; // 0.85 - 1.2
 
       try {
+        // Group cha đã đặt tại (cx, 0, cz), nên mesh con đặt theo tọa độ cục bộ (wx - cx, wz - cz)
         const res = await assets.instantiatePrefab(prefabId, {
-          position: { x: wx, y: 0, z: wz },
+          position: { x: wx - cx, y: 0, z: wz - cz },
           rotationY: randRotY,
           scale: randScale
         });
@@ -113,7 +125,11 @@ export class ProceduralLandBuilder {
         if (res && res.group) {
           group.add(res.group);
           if (res.obstacle) {
-            obstacles.push(res.obstacle);
+            obstacles.push({
+              x: Number(wx.toFixed(2)),
+              z: Number(wz.toFixed(2)),
+              radius: res.obstacle.radius
+            });
             placedLargeProps.push({ x: wx, z: wz });
           }
         }

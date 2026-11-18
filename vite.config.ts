@@ -52,7 +52,7 @@ export default defineConfig({
             options: {
               cacheName: '3d-models-cache',
               expiration: {
-                maxEntries: 50,
+                maxEntries: 200,
                 maxAgeSeconds: 60 * 60 * 24 * 365
               },
               cacheableResponse: {

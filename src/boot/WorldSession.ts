@@ -263,6 +263,7 @@ export class WorldSession {
     if (options.initialPosition) {
       const safe = world.spatial.resolveSafeSpawn(options.initialPosition.x, options.initialPosition.z);
       if (safe) {
+        await world.activateRegionAt?.(safe.x, safe.z);
         world.setInitialPosition(safe.x, safe.z);
         if (safe.x !== options.initialPosition.x || safe.z !== options.initialPosition.z) {
           this.ports.adventure.savePosition(safe.x, safe.z);
@@ -276,7 +277,7 @@ export class WorldSession {
     this._world = world;
 
     if (this._zones.length > 0) {
-      void this.syncPayloadIntoWorld(world);
+      await this.syncPayloadIntoWorld(world);
     }
 
     return world;
@@ -310,6 +311,7 @@ export class WorldSession {
     if (this.deferredSpawnPosition) {
       const safe = world.spatial.resolveSafeSpawn(this.deferredSpawnPosition.x, this.deferredSpawnPosition.z);
       if (safe) {
+        await world.activateRegionAt?.(safe.x, safe.z);
         world.teleport(safe.x, safe.z);
         this.ports.adventure.savePosition(safe.x, safe.z);
         this.deferredSpawnPosition = null;

@@ -61,7 +61,7 @@ export interface AssetRepositorySeam {
   ): Promise<PrefabInstanceResult | null>;
 
   /** Automatic proximity prefetching when approaching a portal */
-  prefetchForPortal(portalId: string): void;
+  prefetchForPortal(portalId: string, targetTemplate?: string): void;
 
   /** Checks if asset is already cached */
   has(key: AssetKey): boolean;

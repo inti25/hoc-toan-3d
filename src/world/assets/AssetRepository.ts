@@ -187,21 +187,47 @@ export class AssetRepository implements AssetRepositorySeam {
     };
   }
 
-  prefetchForPortal(portalId: string): void {
-    if (portalId.includes('park') || portalId.includes('village')) {
+  prefetchForPortal(portalId: string, targetTemplate?: string): void {
+    const id = portalId.toLowerCase();
+    const tpl = targetTemplate?.toUpperCase();
+
+    if (tpl === 'PARK_SANCTUARY' || (!tpl && (id.includes('to_park') || id.includes('to_multi_park') || id === 'village_to_park'))) {
       if (!this.has('map:park')) {
         void this.preload('map:park');
       }
+      return;
     }
-    if (portalId.includes('lake')) {
+
+    if (
+      tpl === 'GRID_SANCTUARY' ||
+      tpl === 'CIRCLE_SANCTUARY' ||
+      (!tpl && (id.includes('lake') || /^hub_to_z[1-5]$/.test(id)))
+    ) {
       if (!this.has('map:cozy_lake')) {
         void this.preload('map:cozy_lake');
       }
+      return;
     }
-    if (portalId.includes('farm')) {
-      if (!this.has('map:farm')) {
-        void this.preload('map:farm');
+
+    if (tpl === 'FARM_SANCTUARY' || (!tpl && (id.includes('to_farm') || id.includes('to_multi_farm')))) {
+      const farmKeys: AssetKey[] = [
+        'map:farm',
+        'prefab:park_grass002',
+        'prefab:park_grass003',
+        'prefab:park_flowers002',
+        'prefab:park_flowers003',
+        'prefab:park_bush002'
+      ];
+      for (const key of farmKeys) {
+        if (!this.has(key)) {
+          void this.preload(key);
+        }
       }
+      return;
+    }
+
+    if (tpl === 'PROCEDURAL_SANCTUARY') {
+      void this.ensureCatalogLoaded();
     }
   }
 

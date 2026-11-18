@@ -22,6 +22,133 @@ export interface MonolithItem {
   glowAnim: number;
 }
 
+export interface HubPortalSlot {
+  x: number;
+  z: number;
+  rotationY: number;
+  returnTarget: { x: number; z: number };
+}
+
+export const STATIC_HUB_PORTAL_POSITIONS: ReadonlyArray<{ id: string; x: number; z: number }> = [
+  { id: 'hub_to_garden', x: 52, z: 0 },
+  { id: 'hub_to_z1', x: 68, z: -8 },
+  { id: 'hub_to_z2', x: 70, z: -4 },
+  { id: 'hub_to_z3', x: 70, z: 0 },
+  { id: 'hub_to_z4', x: 70, z: 4 },
+  { id: 'hub_to_z5', x: 68, z: 8 }
+];
+
+const DYNAMIC_HUB_CANDIDATE_COORDS: ReadonlyArray<{ x: number; z: number }> = [
+  // Hàng rìa Bắc / Nam / Tây-Bắc / Tây-Nam của Đền Cổng Archimedes (tất cả cách >= 4m với cổng tĩnh)
+  { x: 60, z: -9.3 },
+  { x: 60, z: 9.3 },
+  { x: 56, z: -9.3 },
+  { x: 56, z: 9.3 },
+  { x: 64, z: -9.3 },
+  { x: 64, z: 9.3 },
+  { x: 52.5, z: -6.2 },
+  { x: 52.5, z: 6.2 },
+  // Vòng đệm bên trong (khi có > 8 vùng đất động)
+  { x: 55.5, z: -4.0 },
+  { x: 55.5, z: 4.0 },
+  { x: 64.5, z: -4.0 },
+  { x: 64.5, z: 4.0 },
+  { x: 60, z: -5.0 },
+  { x: 60, z: 5.0 }
+];
+
+const HUB_CENTER_X = 60;
+const HUB_CENTER_Z = 0;
+const MIN_HUB_PORTAL_SEPARATION = 3.6;
+
+/**
+ * Computes world-space pillar collision circles matching Three.js `rotation.y` (`x' = z*sin, z' = z*cos`).
+ */
+export function computePortalPillarObstacles(x: number, z: number, rotationY = 0): Obstacle[] {
+  const cos = Math.cos(rotationY);
+  const sin = Math.sin(rotationY);
+  return [
+    { x: Number((x + (-1.5) * sin).toFixed(3)), z: Number((z + (-1.5) * cos).toFixed(3)), radius: 0.22 },
+    { x: Number((x + 1.5 * sin).toFixed(3)), z: Number((z + 1.5 * cos).toFixed(3)), radius: 0.22 }
+  ];
+}
+
+/**
+ * Checks whether a point sits too close to an island's return portal or arrival anchor.
+ */
+export function isWithinPortalKeepOut(
+  x: number,
+  z: number,
+  portal: { x: number; z: number },
+  arrival?: { x: number; z: number },
+  portalRadius = 3.4,
+  arrivalRadius = 2.5
+): boolean {
+  if (Math.hypot(x - portal.x, z - portal.z) < portalRadius) return true;
+  if (arrival && Math.hypot(x - arrival.x, z - arrival.z) < arrivalRadius) return true;
+  return false;
+}
+
+/**
+ * Allocates a non-overlapping Hub portal slot around Đền Cổng Archimedes (60, 0).
+ */
+export function allocateDynamicHubPortalSlot(
+  slotIndex: number,
+  occupied: ReadonlyArray<{ x: number; z: number }> = []
+): HubPortalSlot {
+  const blockers: Array<{ x: number; z: number; minSep: number }> = [
+    { x: HUB_CENTER_X, z: HUB_CENTER_Z, minSep: 3.6 },
+    ...STATIC_HUB_PORTAL_POSITIONS.map((p) => ({ x: p.x, z: p.z, minSep: MIN_HUB_PORTAL_SEPARATION })),
+    ...occupied.map((p) => ({ x: p.x, z: p.z, minSep: MIN_HUB_PORTAL_SEPARATION }))
+  ];
+
+  const isFree = (cx: number, cz: number) =>
+    blockers.every((b) => Math.hypot(cx - b.x, cz - b.z) >= b.minSep);
+
+  let chosen: { x: number; z: number } | null = null;
+  const totalCurated = DYNAMIC_HUB_CANDIDATE_COORDS.length;
+  for (let offset = 0; offset < totalCurated; offset++) {
+    const candidate = DYNAMIC_HUB_CANDIDATE_COORDS[(slotIndex + offset) % totalCurated];
+    if (isFree(candidate.x, candidate.z)) {
+      chosen = candidate;
+      break;
+    }
+  }
+
+  // Fallback spiral scan if > 14 dynamic portals exist simultaneously
+  if (!chosen) {
+    for (let ring = 0; ring < 3 && !chosen; ring++) {
+      const r = 9.4 - ring * 2.4;
+      for (let step = 0; step < 24; step++) {
+        const angle = (step / 24) * Math.PI * 2;
+        const cx = Number((HUB_CENTER_X + Math.cos(angle) * r).toFixed(2));
+        const cz = Number((HUB_CENTER_Z + Math.sin(angle) * r).toFixed(2));
+        if (isFree(cx, cz)) {
+          chosen = { x: cx, z: cz };
+          break;
+        }
+      }
+    }
+  }
+
+  const finalPos = chosen ?? {
+    x: Number((HUB_CENTER_X + Math.cos(slotIndex * 0.8) * 9.0).toFixed(2)),
+    z: Number((HUB_CENTER_Z + Math.sin(slotIndex * 0.8) * 9.0).toFixed(2))
+  };
+
+  const angle = Math.atan2(finalPos.z - HUB_CENTER_Z, finalPos.x - HUB_CENTER_X);
+  return {
+    x: finalPos.x,
+    z: finalPos.z,
+    // Mở cổng hướng thẳng về tượng đài trung tâm (60, 0)
+    rotationY: -angle,
+    returnTarget: {
+      x: Number((finalPos.x - Math.cos(angle) * 2.6).toFixed(2)),
+      z: Number((finalPos.z - Math.sin(angle) * 2.6).toFixed(2))
+    }
+  };
+}
+
 /**
  * Deep module encapsulating the Archimedes Realm structures:
  * - Grand portal arches and dynamic dimension gates
@@ -39,7 +166,13 @@ export class ArchimedesZoneBuilder {
     private obstacles: Obstacle[]
   ) {}
 
-  createPortalArch(x: number, z: number, color: number, rotationY = 0): THREE.Group {
+  createPortalArch(
+    x: number,
+    z: number,
+    color: number,
+    rotationY = 0,
+    parent: THREE.Object3D = this.scene
+  ): THREE.Group {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
     group.rotation.y = rotationY;
@@ -64,38 +197,42 @@ export class ArchimedesZoneBuilder {
     const portalEnergy = this.geom.box(group, 0, 1.8, 0, .05, 3.0, 2.7, color);
     portalEnergy.userData.portalEnergy = true;
 
-    this.scene.add(group);
+    parent.add(group);
     this.portalGroups.push(group);
 
-    const cos = Math.cos(rotationY);
-    const sin = Math.sin(rotationY);
-    this.obstacles.push({ x: x - (-1.5) * sin, z: z + (-1.5) * cos, radius: .45 });
-    this.obstacles.push({ x: x - 1.5 * sin, z: z + 1.5 * cos, radius: .45 });
+    this.obstacles.push(...computePortalPillarObstacles(x, z, rotationY));
 
     return group;
   }
 
-  createArchimedesPortals(): void {
+  createArchimedesPortals(targets?: {
+    coreParent?: THREE.Object3D;
+    hubParent?: THREE.Object3D;
+    getZoneParent?: (zoneId: number) => THREE.Object3D;
+  }): void {
+    const coreParent = targets?.coreParent ?? this.scene;
+    const hubParent = targets?.hubParent ?? this.scene;
+
     // 1. Garden -> Hub Portal
-    this.createPortalArch(32, 0, 0x38bdf8, 0);
+    this.createPortalArch(32, 0, 0x38bdf8, 0, coreParent);
 
     // 2. Hub -> Garden Return Portal
-    this.createPortalArch(52, 0, 0x22c55e, 0);
+    this.createPortalArch(52, 0, 0x22c55e, 0, hubParent);
 
     // 3. Hub -> Zone 1 (Thung Lũng Tính Toán)
-    const z1Hub = this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4);
+    const z1Hub = this.createPortalArch(68, -8, 0xf59e0b, Math.PI / 4, hubParent);
 
     // 4. Hub -> Zone 2 (Suối Nguồn Dãy Số)
-    const z2Hub = this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6);
+    const z2Hub = this.createPortalArch(70, -4, 0x06b6d4, Math.PI / 6, hubParent);
 
     // 5. Hub -> Zone 3 (Đồi Thời Gian)
-    const z3Hub = this.createPortalArch(70, 0, 0x8b5cf6, 0);
+    const z3Hub = this.createPortalArch(70, 0, 0x8b5cf6, 0, hubParent);
 
     // 6. Hub -> Zone 4 (Rừng Hình Học)
-    const z4Hub = this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6);
+    const z4Hub = this.createPortalArch(70, 4, 0x10b981, -Math.PI / 6, hubParent);
 
     // 7. Hub -> Zone 5 (Đỉnh Núi Tư Duy Sao)
-    const z5Hub = this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4);
+    const z5Hub = this.createPortalArch(68, 8, 0xec4899, -Math.PI / 4, hubParent);
 
     const hubArches = [z1Hub, z2Hub, z3Hub, z4Hub, z5Hub];
 
@@ -109,7 +246,14 @@ export class ArchimedesZoneBuilder {
     ];
     STATIC_SANCTUARIES.forEach((c, idx) => {
       const anchors = computeLakeAnchors(c);
-      const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, anchors.returnPortal.rotationY);
+      const zoneParent = targets?.getZoneParent ? targets.getZoneParent(c.id) : this.scene;
+      const retArch = this.createPortalArch(
+        anchors.returnPortal.x,
+        anchors.returnPortal.z,
+        0x38bdf8,
+        anchors.returnPortal.rotationY,
+        zoneParent
+      );
       this.sanctuaryPortals.set(c.id, {
         hubArch: hubArches[idx],
         returnArch: retArch
@@ -125,7 +269,14 @@ export class ArchimedesZoneBuilder {
     });
   }
 
-  createMonolithEntity(id: number | string, x: number, z: number, color: number, title?: string): MonolithItem {
+  createMonolithEntity(
+    id: number | string,
+    x: number,
+    z: number,
+    color: number,
+    title?: string,
+    parent: THREE.Object3D = this.scene
+  ): MonolithItem {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
 
@@ -171,7 +322,7 @@ export class ArchimedesZoneBuilder {
     beam.visible = false;
     group.add(beam);
 
-    this.scene.add(group);
+    parent.add(group);
     this.obstacles.push({ x, z, radius: 1.35 });
 
     const finalId = id !== undefined && id !== null ? id : (306 + this.monoliths.length);
@@ -201,7 +352,7 @@ export class ArchimedesZoneBuilder {
     for (let i = this.monoliths.length - 1; i >= 0; i--) {
       const m = this.monoliths[i];
       if (typeof m.id === 'number' && m.id <= 10) {
-        this.scene.remove(m.group);
+        m.group.removeFromParent();
         this.monoliths.splice(i, 1);
       }
     }
@@ -260,8 +411,19 @@ export class ArchimedesZoneBuilder {
     });
   }
 
+  private isAttachedToScene(obj: THREE.Object3D): boolean {
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      if (!cur.visible) return false;
+      if (cur === this.scene) return true;
+      cur = cur.parent;
+    }
+    return false;
+  }
+
   updateAnimations(dt: number, time: number): void {
     this.monoliths.forEach((m) => {
+      if (!this.isAttachedToScene(m.group)) return;
       const phase = typeof m.id === 'number' ? m.id : (m.id.charCodeAt(0) || 0);
       if (m.activated) {
         m.crystal.rotation.y += dt * 2.8;
@@ -275,6 +437,7 @@ export class ArchimedesZoneBuilder {
     });
 
     this.portalGroups.forEach((pg) => {
+      if (!this.isAttachedToScene(pg)) return;
       pg.children.forEach((o) => {
         if (o.userData.portalCrystal) {
           o.rotation.y += dt * 1.5;

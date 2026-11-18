@@ -1224,6 +1224,11 @@ dialog.image-lightbox::backdrop {
   object-fit: contain;
   display: block;
 }
+.loading-sub {
+  font-size: 13px;
+  color: #4f6f62;
+  margin-top: -10px;
+}
 .toast.interactive {
   cursor: pointer;
   pointer-events: auto;
