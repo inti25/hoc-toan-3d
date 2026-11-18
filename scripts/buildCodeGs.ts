@@ -413,7 +413,7 @@ function handleSavePlayerProgress(ss, payload) {
     const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     const nickname = escapeSheetsText(payload.nickname || payload.explorerName || 'Dũng Sĩ');
     const className = escapeSheetsText(payload.className || 'Tự do');
-    const avatar = escapeSheetsText(payload.avatar || 'boy');
+    const avatar = escapeSheetsText(payload.avatar || 'baochau');
     const level = Number(payload.level) || 1;
     const totalXP = Number(payload.xp !== undefined ? payload.xp : payload.totalXP) || 0;
     const totalCoins = Number(payload.coins !== undefined ? payload.coins : payload.totalCoins) || 0;

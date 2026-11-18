@@ -1,14 +1,14 @@
 {
   "version": "1.0.0",
   "generatedAt": "2026-10-04T09:29:02.057Z",
-  "sourceCount": 7,
-  "totalItems": 181,
+  "sourceCount": 8,
+  "totalItems": 182,
   "byCategory": {
     "TERRAIN": 4,
     "FOLIAGE": 136,
     "PROP": 27,
     "OBSTACLE": 6,
-    "CHARACTER": 5,
+    "CHARACTER": 6,
     "ENVIRONMENT": 3
   },
   "sources": [
@@ -66,6 +66,14 @@
       "fileSizeBytes": 40413,
       "meshCount": 17,
       "nodeCount": 42,
+      "extractedItemsCount": 1
+    },
+    {
+      "filePath": "public/3dmodel/vanillish/scene.gltf",
+      "format": "gltf",
+      "fileSizeBytes": 11837,
+      "meshCount": 6,
+      "nodeCount": 9,
       "extractedItemsCount": 1
     }
   ],
@@ -14774,6 +14782,103 @@
         "interactive"
       ],
       "prefabPath": "3dmodel/prefabs/char_mymelody.glb"
+    },
+    {
+      "id": "char_vanillish",
+      "name": "vanillish",
+      "sourceFile": "public/3dmodel/vanillish/scene.gltf",
+      "category": "CHARACTER",
+      "subCategory": "companion",
+      "nodePath": [
+        "Root",
+        "vanillish"
+      ],
+      "meshNames": [
+        "Object_0",
+        "Object_1",
+        "Object_2",
+        "Object_3",
+        "Object_4",
+        "Object_5"
+      ],
+      "primitiveCount": 6,
+      "vertexCount": 902,
+      "triangleCount": 1004,
+      "bounds": {
+        "min": [
+          -0.304,
+          -0.005,
+          -0.318
+        ],
+        "max": [
+          0.304,
+          1.159,
+          0.318
+        ],
+        "center": [
+          0,
+          0.577,
+          0
+        ],
+        "size": [
+          0.608,
+          1.164,
+          0.636
+        ]
+      },
+      "normalizedBounds": {
+        "min": [
+          -0.304,
+          0,
+          -0.318
+        ],
+        "max": [
+          0.304,
+          1.164,
+          0.318
+        ],
+        "center": [
+          0,
+          0.582,
+          0
+        ],
+        "size": [
+          0.608,
+          1.164,
+          0.636
+        ]
+      },
+      "obstacleRadius": 0.4,
+      "isObstacle": true,
+      "materials": [
+        {
+          "name": "body_mat",
+          "baseColorHex": "#ffffff",
+          "hasTexture": true,
+          "roughness": 0.6,
+          "metallic": 0
+        },
+        {
+          "name": "eye_mat",
+          "baseColorHex": "#ffffff",
+          "hasTexture": true,
+          "roughness": 0.6,
+          "metallic": 0
+        },
+        {
+          "name": "mouth_mat",
+          "baseColorHex": "#ffffff",
+          "hasTexture": true,
+          "roughness": 0.6,
+          "metallic": 0
+        }
+      ],
+      "tags": [
+        "character",
+        "companion",
+        "interactive"
+      ],
+      "prefabPath": "3dmodel/prefabs/char_vanillish.glb"
     }
   ]
 }

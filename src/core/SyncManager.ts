@@ -1,5 +1,6 @@
 import type { SaveState, QuestionStat } from './state';
 import { sanitizeSaveState } from './state';
+import { DEFAULT_AVATAR_ID } from '../data/characters';
 import { BRIDGE_PARTS, getLevel } from '../data/config';
 import type { Adventure } from './adventure';
 import { profileManager, ExplorerProfileManager, defaultStorage, type StorageLike } from './profile';
@@ -29,7 +30,7 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
   const questComplete = Boolean(local.questComplete || remote.questComplete || bridge >= BRIDGE_PARTS);
   const combo = Math.max(local.combo || 0, remote.combo || 0);
   const started = Boolean(local.started || remote.started);
-  const avatar = local.avatar || remote.avatar || 'boy';
+  const avatar = local.avatar || remote.avatar || DEFAULT_AVATAR_ID;
   const table = local.table !== undefined ? local.table : (remote.table || 0);
   const sound = local.sound !== undefined ? local.sound : (remote.sound !== undefined ? remote.sound : true);
   const music = local.music !== undefined ? local.music : (remote.music !== undefined ? remote.music : false);
@@ -336,7 +337,7 @@ export class SyncManager {
         passcode: profile.passcode || '',
         nickname: profile.nickname || 'Dũng Sĩ Tí Hon',
         className: profile.className || 'Lớp 2',
-        avatar: profile.avatar || state.avatar || 'boy',
+        avatar: profile.avatar || state.avatar || DEFAULT_AVATAR_ID,
         level: getLevel(state.xp),
         totalXP: state.xp,
         totalCoins: state.coins,

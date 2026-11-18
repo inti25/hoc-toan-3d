@@ -102,6 +102,15 @@ test('AssetRepository normalizes 3D companion avatars via char_*.glb and attache
   const cinnamoroll = await repo.instantiate('avatar:cinnamoroll');
   assert.ok(cinnamoroll);
   assert.equal(cinnamoroll.children.length, 2, 'Cinnamoroll wrapper should contain model + faceGroup');
+
+  // 5. Vanillish (Kem): unified char_vanillish.glb, height normalized to 2.2m, grounded at Y=0
+  const vanillish = await repo.instantiate('avatar:vanillish');
+  assert.ok(vanillish);
+  assert.equal(loadedUrls[4], '/3dmodel/prefabs/char_vanillish.glb');
+  const vanillishBox = new THREE.Box3().setFromObject(vanillish);
+  const vanillishSize = vanillishBox.getSize(new THREE.Vector3());
+  assert.ok(Math.abs(vanillishSize.y - 2.2) < 0.05, `Expected Vanillish height ~2.2, got ${vanillishSize.y}`);
+  assert.ok(Math.abs(vanillishBox.min.y) < 0.05, `Expected Vanillish grounded at Y=0, got ${vanillishBox.min.y}`);
 });
 
 test('AssetRepository hides embedded lights/cameras on map:farm and disposes all GPU resources cleanly', async () => {

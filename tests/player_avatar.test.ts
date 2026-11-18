@@ -6,14 +6,14 @@ import { PlayerAvatar } from '../src/world/PlayerAvatar';
 test('PlayerAvatar builds procedural avatars with forward features facing +Z', () => {
   const avatar = new PlayerAvatar();
 
-  // Test boy
-  avatar.setAvatar('boy');
-  assert.equal(avatar.activeAvatar, 'boy');
+  // Default avatar is baochau
+  assert.equal(avatar.activeAvatar, 'baochau');
   assert.ok(avatar.group.children.length > 0);
 
-  // Test girl
-  avatar.setAvatar('girl');
-  assert.equal(avatar.activeAvatar, 'girl');
+  // Test vanillish (Kem)
+  avatar.setAvatar('vanillish');
+  assert.equal(avatar.activeAvatar, 'vanillish');
+  assert.ok(avatar.group.children.length > 0);
 
   // Test procedural fallback for mymelody
   avatar.setAvatar('mymelody');
@@ -34,7 +34,7 @@ test('PlayerAvatar builds procedural avatars with forward features facing +Z', (
 
 test('PlayerAvatar locomotion animation updates walk cycle smoothly', () => {
   const avatar = new PlayerAvatar();
-  avatar.setAvatar('boy');
+  avatar.setAvatar('baochau');
 
   // Should run walk animation without throwing
   avatar.updateWalkAnimation(0.5, true);
@@ -90,6 +90,49 @@ test('PlayerAvatar builds avatar mesh when Bao Chau is selected', () => {
   assert.ok(forwardCount >= 3, 'Bao Chau procedural face features must be oriented towards +Z');
 
   // Verify walk animation runs smoothly
+  avatar.updateWalkAnimation(0.5, true);
+  avatar.updateWalkAnimation(1.0, false);
+});
+
+test('PlayerAvatar builds avatar mesh and loads char_vanillish.glb when Vanillish (Kem) is selected', async () => {
+  const { AssetRepository } = await import('../src/world/assets/AssetRepository');
+  const requestedUrls: string[] = [];
+  const loadedIds: string[] = [];
+
+  const repo = new AssetRepository({
+    baseUrl: '/',
+    transport: {
+      loadGLTF: async (url: string) => {
+        requestedUrls.push(url);
+        const group = new THREE.Group();
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.2, 0.6), new THREE.MeshStandardMaterial()));
+        return group;
+      }
+    }
+  });
+
+  const avatar = new PlayerAvatar({
+    assets: repo,
+    onModelLoaded: (id) => loadedIds.push(id)
+  });
+
+  avatar.setAvatar('vanillish');
+  assert.equal(avatar.activeAvatar, 'vanillish');
+  assert.ok(avatar.group.children.length > 0, 'Vanillish procedural fallback mesh must be created immediately');
+
+  // Verify forward features (eyes, blush, mouth) face +Z
+  const zPositions: number[] = [];
+  avatar.group.traverse(child => {
+    if ((child as THREE.Mesh).isMesh) {
+      zPositions.push(child.position.z);
+    }
+  });
+  assert.ok(zPositions.filter(z => z > 0.2).length >= 3, 'Vanillish procedural face features must be oriented towards +Z');
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(requestedUrls, ['/3dmodel/prefabs/char_vanillish.glb']);
+  assert.deepEqual(loadedIds, ['vanillish']);
+
   avatar.updateWalkAnimation(0.5, true);
   avatar.updateWalkAnimation(1.0, false);
 });

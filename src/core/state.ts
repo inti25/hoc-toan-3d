@@ -1,5 +1,5 @@
 import { BRIDGE_PARTS, SAVE_KEY, TABLES, type Table } from '../data/config';
-import { ALL_AVATAR_IDS, type AvatarId } from '../data/characters';
+import { ALL_AVATAR_IDS, DEFAULT_AVATAR_ID, type AvatarId } from '../data/characters';
 export interface QuestionStat { attempts: number; correct: number; wrong: number; lastAnsweredAt: string; responseTime: number }
 export interface SaveState {
   version: 1; xp: number; coins: number; bridge: number; questAccepted: boolean; questComplete: boolean;
@@ -23,7 +23,7 @@ export const freshState = (): SaveState => ({
   bridge: 0,
   questAccepted: false,
   questComplete: false,
-  avatar: 'boy',
+  avatar: DEFAULT_AVATAR_ID,
   table: 0,
   sound: true,
   music: false,
@@ -52,7 +52,7 @@ export function parseSave(raw: string | null): SaveState {
     base.xp = positive(d.xp); base.coins = positive(d.coins); base.bridge = positive(d.bridge, BRIDGE_PARTS);
     base.questAccepted = d.questAccepted === true || base.bridge > 0;
     base.questComplete = d.questComplete === true && base.bridge === BRIDGE_PARTS;
-    base.avatar = ALL_AVATAR_IDS.includes(d.avatar as AvatarId) ? d.avatar as AvatarId : 'boy';
+    base.avatar = ALL_AVATAR_IDS.includes(d.avatar as AvatarId) ? d.avatar as AvatarId : DEFAULT_AVATAR_ID;
     base.table = TABLES.includes(d.table as Table) ? d.table as Table : 0;
     base.sound = d.sound !== false; base.music = d.music === true; base.started = d.started === true;
     base.combo = positive(d.combo, 10000);

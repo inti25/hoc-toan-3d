@@ -91,7 +91,7 @@ test('ExplorerProfileManager preserves and updates passcode during profile save 
   const restored = manager.saveProfile({
     nickname: 'Hổ Con',
     className: '3B',
-    avatar: 'girl',
+    avatar: 'vanillish',
     explorerId: 'exp_cloud_777',
     passcode: 'mth-777',
     isAnonymous: false
@@ -99,7 +99,7 @@ test('ExplorerProfileManager preserves and updates passcode during profile save 
   assert.equal(restored.nickname, 'Hổ Con');
   assert.equal(restored.explorerId, 'exp_cloud_777');
   assert.equal(restored.passcode, 'MTH-777');
-  assert.equal(restored.avatar, 'girl');
+  assert.equal(restored.avatar, 'vanillish');
 });
 
 test('Adventure.restoreState and sanitizeSaveState correctly reconstitute game world progress', () => {

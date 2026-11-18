@@ -5,7 +5,7 @@ import { HudPresenter } from './world/loop/HudPresenter';
 import type { WorldFrameSnapshot } from './world/loop/types';
 import { Adventure, getArchimedesSolvedCount } from './core/adventure';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
-import { CHARACTERS, getCharacter } from './data/characters';
+import { CHARACTERS, DEFAULT_AVATAR_ID, getCharacter } from './data/characters';
 import { ARCHIMEDES_ZONES } from './data/archimedesTrialMap';
 import { AudioManager } from './audio/audio';
 import {
@@ -140,7 +140,7 @@ app.innerHTML = `
       <p>Mỗi phép nhân, một điều kỳ diệu.<br>Cùng Milo xây cầu và khám phá Vườn Hoa Tri Thức!</p>
       <div class="choose-label">Chọn người bạn đồng hành</div>
       <div class="avatar-options" role="group" aria-label="Chọn nhân vật">${CHARACTERS.map(c =>
-  `<button id="avatar-${c.id}" class="avatar-option" aria-pressed="${c.id === 'boy'}" data-avatar="${c.id}"><span>${c.emoji}</span>${c.label}</button>`
+  `<button id="avatar-${c.id}" class="avatar-option" aria-pressed="${c.id === DEFAULT_AVATAR_ID}" data-avatar="${c.id}"><span>${c.emoji}</span>${c.label}</button>`
 ).join('')}</div>
       <div class="welcome-profile-inputs">
         <div class="welcome-input-col name-col">
@@ -160,7 +160,7 @@ app.innerHTML = `
     <div id="world-caption" class="world-caption"><span>01</span><div>Làng Khởi Đầu<small>Bảng cửu chương ×1 – ×10 & Vườn Hoa</small></div></div>
     <div id="hud" class="hud" hidden>
       <div class="player-card" title="Chạm để mở Cài đặt & Hồ sơ">
-        <span id="avatar-face" class="avatar-face">👦</span>
+        <span id="avatar-face" class="avatar-face">${CHARACTERS[0].emoji}</span>
         <div class="player-info">
           <strong id="player-name" class="player-name">Dũng Sĩ Tí Hon</strong>
           <div class="player-meta">
@@ -1453,7 +1453,7 @@ function openRestorePasscodeDialog() {
     }
 
     const player = res.player;
-    const playerChar = getCharacter((player.avatar as any) || 'boy');
+    const playerChar = getCharacter((player.avatar as any) || DEFAULT_AVATAR_ID);
     const flowerText = `${player.flowersBloomed || 0}/10 hoa nở`;
     const bridgeText = `${player.bridgeParts || 0}/6 nhịp cầu`;
     const monolithText = `${player.monolithsActivated || 0} bia đá`;

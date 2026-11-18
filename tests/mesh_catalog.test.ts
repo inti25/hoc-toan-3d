@@ -16,6 +16,11 @@ test('classifyMeshSemantic classifies characters accurately', () => {
   assert.equal(kuromi.category, 'CHARACTER');
   assert.equal(kuromi.subCategory, 'companion');
   assert.equal(kuromi.isObstacle, true);
+
+  const vanillish = classifyMeshSemantic('vanillish', 'public/3dmodel/vanillish/scene.gltf', [0.6, 1.2, 0.6]);
+  assert.equal(vanillish.category, 'CHARACTER');
+  assert.equal(vanillish.subCategory, 'companion');
+  assert.equal(vanillish.isObstacle, true);
 });
 
 test('classifyMeshSemantic classifies terrain and environment correctly', () => {

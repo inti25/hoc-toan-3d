@@ -15,6 +15,20 @@ import type {
 
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 
+const CHARACTER_MODEL_FOLDERS = [
+  'elsa',
+  'cinnamoroll',
+  'hellokitty',
+  'kuromi',
+  'mymelody',
+  'vanillish',
+  'character'
+];
+
+function isCharacterModelPath(normPath: string): boolean {
+  return CHARACTER_MODEL_FOLDERS.some((folder) => normPath.includes(folder));
+}
+
 export interface ScanOptions {
   modelDir: string;
   outputPath?: string;
@@ -41,13 +55,7 @@ export function classifyMeshSemantic(
   const maxFootprint = Math.max(width, depth);
 
   // 1. Kiểm tra nhân vật
-  const isCharFolder =
-    normPath.includes('elsa') ||
-    normPath.includes('cinnamoroll') ||
-    normPath.includes('hellokitty') ||
-    normPath.includes('kuromi') ||
-    normPath.includes('mymelody') ||
-    normPath.includes('character');
+  const isCharFolder = isCharacterModelPath(normPath);
 
   if (isCharFolder || lowerName.includes('character') || lowerName.includes('hero') || lowerName.includes('avatar')) {
     return {
@@ -257,13 +265,7 @@ function identifyEntitiesInDocument(doc: Document, sourceFile: string): EntityTa
   const dirName = path.basename(path.dirname(sourceFile)).toLowerCase();
 
   // Kiểm tra mô hình nhân vật
-  const isCharacter =
-    normPath.includes('elsa') ||
-    normPath.includes('cinnamoroll') ||
-    normPath.includes('hellokitty') ||
-    normPath.includes('kuromi') ||
-    normPath.includes('mymelody') ||
-    normPath.includes('character');
+  const isCharacter = isCharacterModelPath(normPath);
 
   if (isCharacter) {
     const charName = dirName !== '3dmodel' ? dirName : baseName;

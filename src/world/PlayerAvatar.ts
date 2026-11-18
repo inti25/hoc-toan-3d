@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import type { AvatarId } from '../data/characters';
+import { DEFAULT_AVATAR_ID, type AvatarId } from '../data/characters';
 import { SceneBatchPool } from './SceneBatchPool';
 import { AssetRepository } from './assets/AssetRepository';
 import type { AssetRepositorySeam } from './assets/types';
 
-export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa' | 'baochau';
+export type Avatar3DId = 'kuromi' | 'hellokitty' | 'mymelody' | 'cinnamoroll' | 'elsa' | 'baochau' | 'vanillish';
 
 interface ElsaArmRig {
   leftUpperArm: THREE.Bone;
@@ -49,12 +49,12 @@ export class PlayerAvatar {
   private elsaArmRig?: ElsaArmRig;
   private baoChauRig?: BaoChauRig;
   private gltfActiveModel?: THREE.Group;
-  private currentAvatar: AvatarId = 'boy';
+  private currentAvatar: AvatarId = DEFAULT_AVATAR_ID;
   private avatarRequestToken = 0;
 
   constructor(private readonly options?: PlayerAvatarOptions) {
     this.assets = options?.assets ?? new AssetRepository();
-    this.buildBoyMesh();
+    this.buildBaoChauMesh();
   }
 
   get activeAvatar(): AvatarId {
@@ -71,14 +71,13 @@ export class PlayerAvatar {
     this.clearMesh();
 
     switch (avatarId) {
-      case 'boy': this.buildBoyMesh(); break;
-      case 'girl': this.buildGirlMesh(); break;
       case 'kuromi': this.applyOrLoadGLTF('kuromi', () => this.buildKuromiMesh(), requestToken); break;
       case 'hellokitty': this.applyOrLoadGLTF('hellokitty', () => this.buildHelloKittyMesh(), requestToken); break;
       case 'mymelody': this.applyOrLoadGLTF('mymelody', () => this.buildMyMelodyMesh(), requestToken); break;
       case 'cinnamoroll': this.applyOrLoadGLTF('cinnamoroll', () => this.buildCinnamorollMesh(), requestToken); break;
       case 'elsa': this.applyOrLoadGLTF('elsa', () => this.buildElsaMesh(), requestToken); break;
       case 'baochau': this.applyOrLoadGLTF('baochau', () => this.buildBaoChauMesh(), requestToken); break;
+      case 'vanillish': this.applyOrLoadGLTF('vanillish', () => this.buildVanillishMesh(), requestToken); break;
     }
   }
 
@@ -268,39 +267,33 @@ export class PlayerAvatar {
 
   // ─── Private: Procedural Character Builders ───────────────────────────────
 
-  private buildBoyMesh(): void {
+  private buildVanillishMesh(): void {
     const root = this.group;
-    this.box(root, 0, 0.93, 0, 0.7, 0.8, 0.47, 0xebae42);
-    this.sphere(root, 0, 1.67, 0, 0.45, 0xffd5ae);
-    const hair = this.sphere(root, 0, 1.93, -0.035, 0.43, 0x513c32);
-    hair.scale.y = 0.65;
-    for (const x of [-0.16, 0.16]) {
-      const leg = this.box(root, x, 0.3, 0, 0.25, 0.55, 0.28, 0x425f70);
-      this.box(leg, 0, -0.19, 0.08, 0.29, 0.16, 0.4, 0xfaf2d6);
-      this.legs.push(leg);
-    }
-    this.box(root, -0.48, 0.94, 0, 0.2, 0.65, 0.23, 0xffd5ae);
-    this.box(root, 0.48, 0.94, 0, 0.2, 0.65, 0.23, 0xffd5ae);
-    this.box(root, 0, 1.0, -0.36, 0.52, 0.65, 0.3, 0x599989);
-    this.box(root, 0, 1.0, -0.54, 0.32, 0.25, 0.1, 0xf0cd76);
-  }
-
-  private buildGirlMesh(): void {
-    const root = this.group;
-    this.box(root, 0, 0.93, 0, 0.7, 0.8, 0.47, 0x9774b8);
-    this.sphere(root, 0, 1.67, 0, 0.45, 0xffd5ae);
-    const hair = this.sphere(root, 0, 1.93, -0.035, 0.43, 0x513c32);
-    hair.scale.y = 0.65;
-    this.sphere(root, 0, 1.66, -0.39, 0.25, 0x513c32); // ponytail
-    for (const x of [-0.16, 0.16]) {
-      const leg = this.box(root, x, 0.3, 0, 0.25, 0.55, 0.28, 0x425f70);
-      this.box(leg, 0, -0.19, 0.08, 0.29, 0.16, 0.4, 0xfaf2d6);
-      this.legs.push(leg);
-    }
-    this.box(root, -0.48, 0.94, 0, 0.2, 0.65, 0.23, 0xffd5ae);
-    this.box(root, 0.48, 0.94, 0, 0.2, 0.65, 0.23, 0xffd5ae);
-    this.box(root, 0, 1.0, -0.36, 0.52, 0.65, 0.3, 0x9774b8);
-    this.box(root, 0, 1.0, -0.54, 0.32, 0.25, 0.1, 0xf0cd76);
+    // Icy cone body grounded at Y = 0
+    this.cylinder(root, 0, 0.56, 0, 0.38, 0.08, 1.12, 0x93c5fd, 10);
+    // Frosted collar
+    this.cylinder(root, 0, 1.12, 0, 0.44, 0.36, 0.18, 0xe0f2fe, 10);
+    // Fluffy snow-white ice cream scoop head
+    this.sphere(root, 0, 1.48, 0, 0.48, 0xffffff);
+    const swirl = this.sphere(root, 0, 1.92, 0, 0.28, 0xf0f9ff);
+    swirl.scale.set(1.0, 0.85, 1.0);
+    this.cylinder(root, 0, 2.16, 0, 0.03, 0.14, 0.22, 0xffffff, 8);
+    // Cute side snow tufts
+    this.sphere(root, -0.44, 1.40, 0.04, 0.12, 0xe0f2fe);
+    this.sphere(root, 0.44, 1.40, 0.04, 0.12, 0xe0f2fe);
+    // Forward-facing (+Z) eyes, eye shines, blush, and smile
+    const leftEye = this.sphere(root, -0.15, 1.52, 0.43, 0.075, 0x1e3a8a);
+    leftEye.scale.set(0.75, 1.15, 0.45);
+    const rightEye = this.sphere(root, 0.15, 1.52, 0.43, 0.075, 0x1e3a8a);
+    rightEye.scale.set(0.75, 1.15, 0.45);
+    this.sphere(root, -0.12, 1.55, 0.46, 0.026, 0xffffff);
+    this.sphere(root, 0.18, 1.55, 0.46, 0.026, 0xffffff);
+    const leftBlush = this.sphere(root, -0.27, 1.40, 0.39, 0.08, 0xfbcfe8);
+    leftBlush.scale.set(1.2, 0.65, 0.35);
+    const rightBlush = this.sphere(root, 0.27, 1.40, 0.39, 0.08, 0xfbcfe8);
+    rightBlush.scale.set(1.2, 0.65, 0.35);
+    const mouth = this.sphere(root, 0, 1.38, 0.45, 0.045, 0x0284c7);
+    mouth.scale.set(1.3, 0.7, 0.4);
   }
 
   private buildBaoChauMesh(): void {
