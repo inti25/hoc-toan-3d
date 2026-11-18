@@ -15,7 +15,7 @@ import type {
   WorldSessionPorts
 } from './types';
 
-export type ZoneTemplateKind = 'flower' | 'park' | 'farm' | 'monolith';
+export type ZoneTemplateKind = 'flower' | 'park' | 'farm' | 'qhmj' | 'monolith';
 
 /**
  * Single source of truth classifying how a zone renders its challenges.
@@ -30,6 +30,9 @@ export function classifyZoneTemplate(zone: Pick<RemoteZoneConfig, 'id' | 'templa
   if (zone.template === 'FARM_SANCTUARY') {
     return 'farm';
   }
+  if (zone.template === 'QHMJ_SANCTUARY') {
+    return 'qhmj';
+  }
   return 'monolith';
 }
 
@@ -38,7 +41,9 @@ export function zoneSpawnsMonoliths(zone: Pick<RemoteZoneConfig, 'id' | 'templat
 }
 
 export function zoneCountsForBadges(zone: Pick<RemoteZoneConfig, 'id' | 'template' | 'sheetName'>): boolean {
-  return classifyZoneTemplate(zone) !== 'flower';
+  // Phase 1: QHMJ has no challenges yet, so it is excluded from the badge total (re-enable in phase 2).
+  const kind = classifyZoneTemplate(zone);
+  return kind !== 'flower' && kind !== 'qhmj';
 }
 
 /**

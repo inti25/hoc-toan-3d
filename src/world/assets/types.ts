@@ -5,6 +5,7 @@ export type AssetKey =
   | 'map:park'
   | 'map:cozy_lake'
   | 'map:farm'
+  | 'map:qhmj'
   | `avatar:${string}`
   | `prefab:${string}`;
 

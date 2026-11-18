@@ -191,6 +191,13 @@ export class AssetRepository implements AssetRepositorySeam {
     const id = portalId.toLowerCase();
     const tpl = targetTemplate?.toUpperCase();
 
+    if (tpl === 'QHMJ_SANCTUARY' || (!tpl && id.includes('to_qhmj'))) {
+      if (!this.has('map:qhmj')) {
+        void this.preload('map:qhmj');
+      }
+      return;
+    }
+
     if (tpl === 'PARK_SANCTUARY' || (!tpl && (id.includes('to_park') || id.includes('to_multi_park') || id === 'village_to_park'))) {
       if (!this.has('map:park')) {
         void this.preload('map:park');
@@ -324,6 +331,17 @@ export class AssetRepository implements AssetRepositorySeam {
           hideLightsAndCameras: true,
           enableShadows: true,
           isSkinned: false
+        }
+      };
+    }
+
+    if (key === 'map:qhmj') {
+      return {
+        path: '3dmodel/maps/map_qhmj.glb',
+        options: {
+          hideLightsAndCameras: true,
+          enableShadows: true,
+          isSkinned: true
         }
       };
     }

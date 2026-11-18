@@ -1,5 +1,8 @@
 import { BRIDGE_PARTS, WORLD } from '../data/config';
 import { ARCHIMEDES_MONOLITHS } from '../data/archimedesTrialMap';
+import { QHMJ_SPEED } from '../data/qhmjMap';
+import { RoadSurface } from './qhmj/RoadSurface';
+import { evalJumpArc, type JumpLink } from './qhmj/JumpLinks';
 import {
   LAKE_WALK_INNER,
   LAKE_WALK_OUTER,
@@ -82,6 +85,23 @@ export const FLOWER_COORDS: [number, number][] = [
   [14, -6.0], [18, -6.0], [22, -8.5], [26, -6.0], [30, -6.0],
   [14, 6.0], [18, 6.0], [22, 8.5], [26, 6.0], [30, 6.0]
 ];
+
+export interface QhmjZoneState {
+  id: number;
+  name: string;
+  cx: number;
+  cz: number;
+  radius: number;
+  spawn: { x: number; y: number; z: number };
+  surface: RoadSurface | null;
+  links: JumpLink[];
+}
+
+/** Cửa sổ độ cao khi bám mặt đường: bước lên tối đa / xuống tối đa so với độ cao hiện tại. */
+const ROAD_STEP_UP = 1.3;
+const ROAD_STEP_DOWN = 3.5;
+/** Các góc lệch thử khi đi chéo ra rìa đường để trượt dọc mép. */
+const ROAD_SLIDE_ANGLES = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4];
 
 export class SpatialWorld {
   private x: number;
@@ -188,6 +208,46 @@ export class SpatialWorld {
     this.obstacles.push(...obstacles);
   }
 
+  private qhmjZones: QhmjZoneState[] = [];
+  private launch: { link: JumpLink; t: number } | null = null;
+  private padArmed = true;
+  private padCooldown = 0;
+  private lastRoadSafe: { x: number; y: number; z: number } | null = null;
+
+  /** Đăng ký vùng QHMJ (giữ lại bề mặt đường đã nạp nếu cùng mã vùng). */
+  setQhmjZones(zones: { id: number; name: string; cx: number; cz: number; radius: number; spawn: { x: number; y: number; z: number } }[]) {
+    const prev = new Map(this.qhmjZones.map((z) => [z.id, z]));
+    this.qhmjZones = zones.map((z) => ({
+      ...z,
+      surface: prev.get(z.id)?.surface ?? null,
+      links: prev.get(z.id)?.links ?? []
+    }));
+  }
+
+  setQhmjRoad(id: number, surface: RoadSurface, links: JumpLink[]) {
+    const zone = this.qhmjZones.find((z) => z.id === id);
+    if (zone) {
+      zone.surface = surface;
+      zone.links = links;
+    }
+  }
+
+  getQhmjZones(): ReadonlyArray<QhmjZoneState> {
+    return this.qhmjZones;
+  }
+
+  /** Vùng QHMJ (đã nạp mặt đường) chứa điểm (x, z), nếu có. */
+  private qhmjAt(x: number, z: number): QhmjZoneState | null {
+    for (const q of this.qhmjZones) {
+      if (q.surface && Math.hypot(x - q.cx, z - q.cz) <= q.radius) return q;
+    }
+    return null;
+  }
+
+  isLaunching(): boolean {
+    return this.launch !== null;
+  }
+
   public parkZones: { id: number; name: string; cx: number; cz: number; radius: number }[] = [];
 
   setParkZones(zones: { id: number; name: string; cx: number; cz: number; radius: number }[]) {
@@ -255,6 +315,12 @@ export class SpatialWorld {
       }
     }
 
+    for (const qz of this.qhmjZones) {
+      if (Math.hypot(x - qz.cx, z - qz.cz) <= qz.radius) {
+        return `zone:${qz.id}`;
+      }
+    }
+
     if (x >= -22 && x <= 35 && Math.abs(z) <= 19.5) {
       return 'core';
     }
@@ -276,6 +342,7 @@ export class SpatialWorld {
         isl.id === 6 ||
         (isl.template === 'FLOWER_BEDS' && isl.cx >= 10 && isl.cx <= 34 && Math.abs(isl.cz) <= 19);
       if (isStaticGarden) continue;
+      if (isl.template === 'QHMJ_SANCTUARY') continue;
       if (isl.template === 'PARK_SANCTUARY') {
         if (Math.hypot(x - isl.cx, z - isl.cz) <= Math.max(20, Math.max(isl.w, isl.d) / 2 + 4)) {
           return `zone:${isl.id}`;
@@ -307,6 +374,13 @@ export class SpatialWorld {
   }
 
   isWithinLand(x: number, z: number): boolean {
+    // QHMJ: chỉ đi được trên mặt đường (kiểm tra theo độ cao hiện tại để phân biệt các tầng chồng nhau)
+    for (const qz of this.qhmjZones) {
+      if (Math.hypot(x - qz.cx, z - qz.cz) <= qz.radius) {
+        return qz.surface ? qz.surface.sample(x, z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN) !== null : false;
+      }
+    }
+
     // 0. Park Island(s) (PARK_SANCTUARY loaded dynamically)
     for (const pz of this.parkZones) {
       if (Math.hypot(x - pz.cx, z - pz.cz) <= pz.radius) return true;
@@ -331,6 +405,7 @@ export class SpatialWorld {
 
     // 6. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
     for (const isl of this.dynamicIslands) {
+      if (isl.template === 'QHMJ_SANCTUARY') continue;
       if (isl.template === 'FARM_SANCTUARY') {
         const d = Math.hypot(x - isl.cx, z - isl.cz);
         if (d <= Math.max(34, Math.max(isl.w, isl.d) / 2 + 18)) return true;
@@ -395,6 +470,11 @@ export class SpatialWorld {
   }
 
   getCurrentLocationName(): string {
+    for (const qz of this.qhmjZones) {
+      if (Math.hypot(this.x - qz.cx, this.z - qz.cz) <= qz.radius) {
+        return qz.name || 'Con Đường Bậc Thang';
+      }
+    }
     for (const pz of this.parkZones) {
       if (Math.hypot(this.x - pz.cx, this.z - pz.cz) <= pz.radius + 1.2) {
         return pz.name || 'Công Viên Xanh';
@@ -442,6 +522,10 @@ export class SpatialWorld {
   }
 
   floorHeight(): number {
+    const q = this.qhmjAt(this.x, this.z);
+    if (q) {
+      return q.surface!.sample(this.x, this.z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN)?.y ?? this.y;
+    }
     return this.bridgeCount === BRIDGE_PARTS &&
       this.x >= 4 &&
       this.x <= 10 &&
@@ -462,7 +546,16 @@ export class SpatialWorld {
   teleport(x: number, z: number) {
     this.x = x;
     this.z = z;
-    this.y = this.floorHeight();
+    this.launch = null;
+    this.padArmed = false;
+    this.padCooldown = 0.8;
+    const qz = this.qhmjZones.find((q) => Math.hypot(x - q.cx, z - q.cz) <= q.radius);
+    if (qz) {
+      this.y = qz.surface?.sampleNearest(x, z, qz.spawn.y)?.y ?? qz.spawn.y;
+      this.lastRoadSafe = { x, y: this.y, z };
+    } else {
+      this.y = this.floorHeight();
+    }
     this.jumpVelocity = 0;
   }
 
@@ -572,7 +665,119 @@ export class SpatialWorld {
     return this.x > 35;
   }
 
+  /**
+   * Di chuyển trên mặt đường 3D của vùng QHMJ: bám tầng theo độ cao hiện tại, trượt dọc mép đường,
+   * và tự bật nhảy khi bước lên bệ nhảy.
+   */
+  private tickRoad(dt: number, input: SpatialInput, cameraYaw: number, q: QhmjZoneState): PlayerPose {
+    const surface = q.surface!;
+    if (this.portalCooldown > 0) this.portalCooldown = Math.max(0, this.portalCooldown - dt);
+    if (this.padCooldown > 0) this.padCooldown = Math.max(0, this.padCooldown - dt);
+
+    // Đang bay trên quỹ đạo bệ nhảy: bỏ qua điều khiển cho tới khi đáp.
+    if (this.launch) {
+      const l = this.launch;
+      l.t += dt;
+      const s = Math.min(1, l.t / l.link.duration);
+      const p = evalJumpArc(l.link, s);
+      this.x = p.x;
+      this.y = p.y;
+      this.z = p.z;
+      this.rotation = Math.atan2(l.link.target.x - l.link.pad.x, l.link.target.z - l.link.pad.z);
+      if (s >= 1) {
+        this.launch = null;
+        this.x = l.link.target.x;
+        this.y = l.link.target.y;
+        this.z = l.link.target.z;
+        this.jumpVelocity = 0;
+        this.padArmed = false;
+        this.padCooldown = 0.8;
+        this.lastRoadSafe = { x: this.x, y: this.y, z: this.z };
+      }
+      return { x: this.x, y: this.y, z: this.z, rotation: this.rotation, moving: true, speed: 0 };
+    }
+
+    // Đang đứng ngoài mặt đường (vd. dữ liệu cũ): đưa về điểm an toàn gần nhất
+    if (!surface.sample(this.x, this.z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN)) {
+      const safe = this.lastRoadSafe ?? q.spawn;
+      this.x = safe.x;
+      this.z = safe.z;
+      this.y = safe.y;
+      this.jumpVelocity = 0;
+    }
+
+    const sx =
+      (input.keys.has('d') || input.keys.has('arrowright') ? 1 : 0) -
+      (input.keys.has('a') || input.keys.has('arrowleft') ? 1 : 0) +
+      input.joystick.x;
+    const sy =
+      (input.keys.has('s') || input.keys.has('arrowdown') ? 1 : 0) -
+      (input.keys.has('w') || input.keys.has('arrowup') ? 1 : 0) +
+      input.joystick.y;
+    let vx = sx * Math.cos(cameraYaw) + sy * Math.sin(cameraYaw);
+    let vz = -sx * Math.sin(cameraYaw) + sy * Math.cos(cameraYaw);
+    const length = Math.hypot(vx, vz);
+
+    let moving = false;
+    let speed = 0;
+    if (length > 0.05) {
+      moving = true;
+      vx /= length;
+      vz /= length;
+      speed = QHMJ_SPEED * dt;
+      for (const a of ROAD_SLIDE_ANGLES) {
+        const cos = Math.cos(a);
+        const sin = Math.sin(a);
+        const dx = vx * cos - vz * sin;
+        const dz = vx * sin + vz * cos;
+        const step = a === 0 ? speed : speed * Math.max(0.35, cos);
+        const nx = this.x + dx * step;
+        const nz = this.z + dz * step;
+        if (surface.sample(nx, nz, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN) && !this.findBlockingObstacle(nx, nz)) {
+          this.x = nx;
+          this.z = nz;
+          break;
+        }
+      }
+      this.rotation = Math.atan2(vx, vz);
+    }
+
+    const ground = surface.sample(this.x, this.z, this.y, ROAD_STEP_UP, ROAD_STEP_DOWN);
+    const floor = ground ? ground.y : this.y;
+    if (this.y > floor + 0.01 || this.jumpVelocity > 0) {
+      this.jumpVelocity -= 18 * dt;
+      this.y = Math.max(floor, this.y + this.jumpVelocity * dt);
+      if (this.y === floor) this.jumpVelocity = 0;
+    } else {
+      this.y = floor;
+    }
+    if (ground && this.y <= floor + 0.05) {
+      this.lastRoadSafe = { x: this.x, y: floor, z: this.z };
+    }
+
+    // Bệ bật nhảy: chỉ kích hoạt lại sau khi đã rời khỏi mọi bệ.
+    const onPad = q.links.find(
+      (l) => Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius && Math.abs(this.y - l.pad.y) <= 3
+    );
+    if (!this.padArmed) {
+      const nearAny = q.links.some(
+        (l) => Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius * 1.25
+      );
+      if (!nearAny && this.padCooldown <= 0) this.padArmed = true;
+    } else if (onPad && this.padCooldown <= 0) {
+      this.launch = { link: onPad, t: 0 };
+      this.padArmed = false;
+      this.jumpVelocity = 0;
+    }
+
+    return { x: this.x, y: this.y, z: this.z, rotation: this.rotation, moving, speed };
+  }
+
   tick(dt: number, input: SpatialInput, cameraYaw = 0.57): PlayerPose {
+    const roadZone = this.qhmjAt(this.x, this.z);
+    if (roadZone) {
+      return this.tickRoad(dt, input, cameraYaw, roadZone);
+    }
     if (this.portalCooldown > 0) {
       this.portalCooldown = Math.max(0, this.portalCooldown - dt);
     }

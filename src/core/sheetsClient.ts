@@ -381,7 +381,7 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       : 'MEDIUM';
 
     const rawTemplate = String(z.template ?? z.Template ?? '').trim().toUpperCase();
-    const validTemplate = (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY'].includes(rawTemplate)
+    const validTemplate = (['FLOWER_BEDS', 'CIRCLE_SANCTUARY', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'QHMJ_SANCTUARY'].includes(rawTemplate)
       ? rawTemplate
       : 'GRID_SANCTUARY') as any;
 

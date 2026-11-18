@@ -1,4 +1,4 @@
-export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY' | 'PROCEDURAL_SANCTUARY' | 'FARM_SANCTUARY';
+export type ZoneTemplateType = 'FLOWER_BEDS' | 'CIRCLE_SANCTUARY' | 'GRID_SANCTUARY' | 'PARK_SANCTUARY' | 'PROCEDURAL_SANCTUARY' | 'FARM_SANCTUARY' | 'QHMJ_SANCTUARY';
 export type ZoneThemeType = 'GARDEN' | 'RUINS' | 'FOREST' | 'CRYSTAL' | 'VILLAGE';
 export type DecorDensityType = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -178,7 +178,7 @@ export function sanitizeZoneEntityPosition(
   fallbackPos?: { x: number; z: number }
 ): { x: number; z: number } {
   const candidate = pos ?? fallbackPos ?? { x: zone.center.x, z: zone.center.z };
-  if (zone.template === 'PARK_SANCTUARY' || zone.template === 'FARM_SANCTUARY' || zone.id <= 5) {
+  if (zone.template === 'PARK_SANCTUARY' || zone.template === 'FARM_SANCTUARY' || zone.template === 'QHMJ_SANCTUARY' || zone.id <= 5) {
     return candidate;
   }
 

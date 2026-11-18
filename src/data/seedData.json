@@ -132,6 +132,25 @@
       "color": 1096065,
       "colorHex": "#10b981",
       "badge": "🌳 Mầm Xanh Tri Thức"
+    },
+    {
+      "id": 8,
+      "name": "Con Đường Bậc Thang",
+      "title": "Con Đường Bậc Thang & Bệ Bật Nhảy",
+      "description": "Khám phá thế giới đường bậc thang nhiều tầng, dùng các bệ bật nhảy để vượt qua các cụm đường.",
+      "template": "QHMJ_SANCTUARY",
+      "theme": "RUINS",
+      "decorDensity": "LOW",
+      "sheetName": "QHMJ_Map",
+      "center": {
+        "x": -400,
+        "z": -400
+      },
+      "width": 152,
+      "depth": 109,
+      "color": 15158332,
+      "colorHex": "#e74c3c",
+      "badge": "🗺️ Nhà Thám Hiểm Đường Bậc Thang"
     }
   ],
   "questionsBySheet": {

@@ -32,6 +32,13 @@ import {
 import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 import { FarmSanctuary } from './farm/FarmSanctuary';
 import type { PortalSummary, WorldFrameSnapshot } from './loop/types';
+import { buildQhmjRegion, updateQhmjAnimation, type QhmjRegionBuild } from './qhmj/QhmjRegion';
+import {
+  QHMJ_REGION_RADIUS,
+  QHMJ_VILLAGE_PORTAL,
+  QHMJ_VILLAGE_RETURN_TARGET,
+  computeQhmjAnchors
+} from '../data/qhmjMap';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -221,6 +228,9 @@ export class World {
   private pendingMonoliths: Array<{ id: number | string; position: { x: number; z: number }; color?: number; title?: string }> = [];
   private monolithActivationChecker?: Parameters<ArchimedesZoneBuilder['setMonolithsActivated']>[0];
   private dynamicHubPortalCount = 0;
+  private readonly qhmjBuilds = new Map<number, QhmjRegionBuild>();
+  private villageQhmjPortalArch?: THREE.Group;
+  private inQhmjCamera = false;
   private sun: THREE.DirectionalLight;
 
   get active(): boolean {
@@ -322,10 +332,27 @@ export class World {
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement!); this.resize();
     let pointer = { x: 0, y: 0, moved: false, id: -1 };
     canvas.addEventListener('pointerdown', e => { if (!this._active || this._paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
-    canvas.addEventListener('pointermove', e => { if (pointer.id !== e.pointerId || !this._active || this._paused) return; const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y; if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true; this.yaw -= dx * .006; this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, .45, 1.15); pointer.x = e.clientX; pointer.y = e.clientY; });
+    canvas.addEventListener('pointermove', e => {
+      if (pointer.id !== e.pointerId || !this._active || this._paused) return;
+      const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true;
+      this.yaw -= dx * .006;
+      const minPitch = this.inQhmjCamera ? -0.25 : 0.45;
+      const maxPitch = this.inQhmjCamera ? 0.85 : 1.15;
+      this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, minPitch, maxPitch);
+      pointer.x = e.clientX;
+      pointer.y = e.clientY;
+    });
     canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this._paused) this.interactAtScreen(e.clientX, e.clientY); pointer.id = -1; });
     canvas.addEventListener('pointercancel', () => { pointer.id = -1; });
-    canvas.addEventListener('wheel', e => { if (!this._active || this._paused) return; e.preventDefault(); this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * .025, 23, 60); }, { passive: false });
+    canvas.addEventListener('wheel', e => {
+      if (!this._active || this._paused) return;
+      e.preventDefault();
+      const minDist = this.inQhmjCamera ? 0.35 : 23;
+      const maxDist = this.inQhmjCamera ? 14 : 60;
+      const step = this.inQhmjCamera ? 0.008 : 0.025;
+      this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * step, minDist, maxDist);
+    }, { passive: false });
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.handleVisibilityChange);
     }
@@ -361,11 +388,53 @@ export class World {
     return this.activeRegionId;
   }
 
+  /** Build QHMJ của vùng đang hoạt động (nếu người chơi đang ở vùng QHMJ đã nạp). */
+  private activeQhmjBuild(): QhmjRegionBuild | undefined {
+    if (!this.activeRegionId.startsWith('zone:')) return undefined;
+    return this.qhmjBuilds.get(Number(this.activeRegionId.slice(5)));
+  }
+
+  private isQhmjRegionId(regionId: string): boolean {
+    if (!regionId.startsWith('zone:')) return false;
+    return this.dynamicZoneById.get(Number(regionId.slice(5)))?.template === 'QHMJ_SANCTUARY';
+  }
+
+  /** Đồng bộ cấu hình camera giữa góc nhìn đẳng cự mặc định và góc nhìn gần sát người chơi trong QHMJ. */
+  private syncCameraModeForRegion(regionId: string): void {
+    const nextIsQhmj = this.isQhmjRegionId(regionId);
+    if (nextIsQhmj === this.inQhmjCamera) return;
+    this.inQhmjCamera = nextIsQhmj;
+
+    if (nextIsQhmj) {
+      this.yaw = Math.PI / 2;
+      this.pitch = 0.14;
+      this.distance = 2.4;
+      this.camera.fov = 58;
+      this.camera.far = 700;
+    } else {
+      this.yaw = 0.57;
+      this.pitch = 0.8;
+      this.distance = 48;
+      this.avatar.group.visible = true;
+      this.camera.fov = 42;
+      this.camera.far = 400;
+    }
+    this.camera.updateProjectionMatrix();
+
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (fog) {
+      fog.near = nextIsQhmj ? 170 : 110;
+      fog.far = nextIsQhmj ? 560 : 320;
+    }
+  }
+
   private updateShadowBoundsForRegion(regionId: string) {
     let cx = 6;
     let cz = 0;
     let halfW = 36;
     let halfH = 28;
+    let sunHeight = 45;
+    let shadowFar = 160;
 
     if (regionId === 'hub') {
       cx = 60;
@@ -382,6 +451,14 @@ export class World {
         const radius = dynZone.template === 'FARM_SANCTUARY' ? 38 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
         halfW = radius;
         halfH = radius;
+        if (dynZone.template === 'QHMJ_SANCTUARY') {
+          cx = dynZone.center.x + 4;
+          cz = dynZone.center.z - 10;
+          halfW = 84;
+          halfH = 64;
+          sunHeight = 110;
+          shadowFar = 320;
+        }
       } else if (staticLake) {
         cx = staticLake.center.x;
         cz = staticLake.center.z;
@@ -391,14 +468,14 @@ export class World {
     }
 
     this.sun.target.position.set(cx, 0, cz);
-    this.sun.position.set(cx - 24, 45, cz + 12);
+    this.sun.position.set(cx - 24, sunHeight, cz + 12);
     Object.assign(this.sun.shadow.camera, {
       left: -halfW,
       right: halfW,
       top: halfH,
       bottom: -halfH,
       near: 1,
-      far: 160
+      far: shadowFar
     });
     this.sun.shadow.camera.updateProjectionMatrix();
     this.sun.target.updateMatrixWorld();
@@ -1031,6 +1108,16 @@ export class World {
         const retZ = dynZone.center.z + 14;
         this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
         zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
+      } else if (dynZone?.template === 'QHMJ_SANCTUARY') {
+        const build = await buildQhmjRegion(this.assets, dynZone, zoneGroup);
+        if (build) {
+          this.qhmjBuilds.set(zoneId, build);
+          this.spatial.setQhmjRoad(zoneId, build.surface, build.links);
+        }
+        const anchors = computeQhmjAnchors(dynZone.center);
+        const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, 0, zoneGroup);
+        retArch.position.y = anchors.returnPortal.y;
+        zoneObs.push(...computePortalPillarObstacles(anchors.returnPortal.x, anchors.returnPortal.z, 0));
       } else if (dynZone?.template === 'PROCEDURAL_SANCTUARY') {
         const res = await proceduralLandBuilder.buildLand(dynZone, this.assets);
         zoneGroup.add(res.group);
@@ -1170,6 +1257,7 @@ export class World {
 
     this.activeRegionId = regionId;
     this.spatial.setActiveRegion(regionId);
+    this.syncCameraModeForRegion(regionId);
     this.updateShadowBoundsForRegion(regionId);
     this.requestIdleRender();
     return regionId;
@@ -1316,8 +1404,60 @@ export class World {
       });
     }
 
+    // 1c. Đăng ký vùng QHMJ (map_qhmj.glb): cổng vào đặt tại Làng Khởi Đầu, mặt đường nạp khi dịch chuyển tới
+    const qhmjZones = zones.filter((z) => z.template === 'QHMJ_SANCTUARY');
+    if (this.villageQhmjPortalArch) {
+      this.villageQhmjPortalArch.visible = qhmjZones.length > 0;
+    }
+    this.qhmjBuilds.forEach((b, id) => {
+      b.model.visible = activeZoneIds.has(id);
+    });
+    this.spatial.setQhmjZones(
+      qhmjZones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        cx: z.center.x,
+        cz: z.center.z,
+        radius: QHMJ_REGION_RADIUS,
+        spawn: computeQhmjAnchors(z.center).spawn
+      }))
+    );
+    if (qhmjZones.length > 0) {
+      const first = qhmjZones[0];
+      if (!this.villageQhmjPortalArch) {
+        this.villageQhmjPortalArch = this.createPortalArch(
+          QHMJ_VILLAGE_PORTAL.x,
+          QHMJ_VILLAGE_PORTAL.z,
+          qhmjZones.length === 1 ? (first.color || 0xe74c3c) : 0xe74c3c,
+          0,
+          this.coreRegionGroup
+        );
+        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(QHMJ_VILLAGE_PORTAL.x, QHMJ_VILLAGE_PORTAL.z, 0));
+      }
+      const spawn = computeQhmjAnchors(first.center).spawn;
+      customPortals.push({
+        id: 'village_to_qhmj',
+        name: first.name ? `Đến ${first.name}` : 'Cổng Con Đường Bậc Thang',
+        source: { x: QHMJ_VILLAGE_PORTAL.x, z: QHMJ_VILLAGE_PORTAL.z },
+        target: { x: spawn.x, z: spawn.z },
+        triggerRadius: 1.85,
+        targetRegionId: `zone:${first.id}`
+      });
+      for (const z of qhmjZones) {
+        const ret = computeQhmjAnchors(z.center).returnPortal;
+        customPortals.push({
+          id: `z${z.id}_to_village_qhmj`,
+          name: 'Về Làng Khởi Đầu',
+          source: { x: ret.x, z: ret.z },
+          target: { x: QHMJ_VILLAGE_RETURN_TARGET.x, z: QHMJ_VILLAGE_RETURN_TARGET.z },
+          triggerRadius: 1.85,
+          targetRegionId: 'core'
+        });
+      }
+    }
+
     // 2. Đăng ký metadata cổng cho các hòn đảo động khác (chỉ dựng đảo 3D khi người chơi dịch chuyển tới)
-    const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY' && z.template !== 'FARM_SANCTUARY');
+    const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY' && z.template !== 'FARM_SANCTUARY' && z.template !== 'QHMJ_SANCTUARY');
     otherZones.forEach((z) => {
       if (!this.dynamicIslandIds.has(z.id)) {
         this.dynamicIslandIds.add(z.id);
@@ -1442,7 +1582,9 @@ export class World {
     const targetRegion = this.spatial.resolveRegionForPoint(x, z);
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
-    this.target.set(x, 0, z);
+    this.syncCameraModeForRegion(targetRegion);
+    const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+    this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
       void this.activateRegionAt(x, z);
     }
@@ -1455,7 +1597,9 @@ export class World {
     const targetRegion = this.spatial.resolveRegionForPoint(x, z);
     this.spatial.teleport(x, z);
     this.player.position.set(x, this.spatial.floorHeight(), z);
-    this.target.set(x, 0, z);
+    this.syncCameraModeForRegion(targetRegion);
+    const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+    this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
       void this.activateRegionAt(x, z);
     }
@@ -1898,7 +2042,18 @@ export class World {
   private floorHeight() { return this.spatial.floorHeight(); }
   jump() { if (this.active && !this.paused && this.spatial.jump()) { this.onJump?.(); } }
   clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; }
-  resetCamera() { this.yaw = .57; this.pitch = .8; this.distance = 48; }
+  resetCamera() {
+    if (this.inQhmjCamera) {
+      this.yaw = Math.PI / 2;
+      this.pitch = 0.14;
+      this.distance = 2.4;
+      return;
+    }
+    this.yaw = .57;
+    this.pitch = .8;
+    this.distance = 48;
+    this.avatar.group.visible = true;
+  }
 
   private interactAtScreen(x: number, y: number) {
     const rect = this.canvas.getBoundingClientRect();
@@ -2093,19 +2248,40 @@ export class World {
     }
 
     // Presentation tick: smooth camera lerp & procedural animations using rawDt
-    const wantedY = this.avatar.activeAvatar === 'elsa' ? 0.7 : 0;
+    const qhmjBuild = this.activeQhmjBuild();
+    const isNearFps = this.inQhmjCamera;
+    const wantedY = isNearFps
+      ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85)
+      : (this.avatar.activeAvatar === 'elsa' ? 0.7 : 0);
     if (this._active) {
-      this.scratchWanted.set(this.player.position.x, wantedY, this.player.position.z);
+      this.scratchWanted.set(this.player.position.x, wantedY + (isNearFps ? this.player.position.y : 0), this.player.position.z);
     } else {
       this.scratchWanted.set(-7, 0, 0);
     }
+    const lerpSpeed = isNearFps ? 22 : 3;
     if (rawDt > 0) {
-      this.target.lerp(this.scratchWanted, 1 - Math.exp(-rawDt * 3));
+      this.target.lerp(this.scratchWanted, 1 - Math.exp(-rawDt * lerpSpeed));
     } else {
       this.target.copy(this.scratchWanted);
     }
+    if (qhmjBuild) {
+      updateQhmjAnimation(qhmjBuild, this.time, rawDt);
+    }
     const distance = this._active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
-    this.camera.position.set(this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance, this.target.y + Math.sin(this.pitch) * distance, this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance);
+    if (isNearFps && this._active) {
+      this.avatar.group.visible = distance >= 1.1;
+    } else if (!this.avatar.group.visible) {
+      this.avatar.group.visible = true;
+    }
+    let camY = this.target.y + Math.sin(this.pitch) * distance;
+    if (isNearFps && this._active) {
+      camY = Math.max(camY, this.player.position.y + 0.55);
+    }
+    this.camera.position.set(
+      this.target.x + Math.sin(this.yaw) * Math.cos(this.pitch) * distance,
+      camY,
+      this.target.z + Math.cos(this.yaw) * Math.cos(this.pitch) * distance
+    );
     this.camera.lookAt(this.target);
 
     if (this.activeRegionId === 'core') {
