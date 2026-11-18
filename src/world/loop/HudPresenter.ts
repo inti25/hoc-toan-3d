@@ -29,7 +29,19 @@ export function formatPortalOverlay(
   }
 
   const isFarmPortal = nearPortalObj.id.includes('farm');
-  const isParkPortal = !isFarmPortal && (nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village'));
+  const isQhmjPortal = nearPortalObj.id.includes('qhmj');
+  const isParkPortal = !isFarmPortal && !isQhmjPortal && (nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village'));
+
+  if (isQhmjPortal) {
+    const isReturnToVillage = nearPortalObj.id.includes('_to_village');
+    const portalTitle = nearPortalObj.name || 'Con Đường Bậc Thang';
+    return {
+      interactHtml: `🌀 <b>${portalTitle}</b> (Bấm E để bước qua cổng) ${arrowHtml}`,
+      portalLabelHtml: isReturnToVillage
+        ? `<span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Về Làng Khởi Đầu</small>`
+        : `<span class="milo-dot">🌀</span><strong>${portalTitle}</strong><small>Thế giới Bậc Thang</small>`
+    };
+  }
 
   if (isFarmPortal) {
     const isReturnToVillage = nearPortalObj.id.includes('_to_village');

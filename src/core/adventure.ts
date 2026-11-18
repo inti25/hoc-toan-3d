@@ -127,16 +127,16 @@ export class Adventure {
     this.save();
   }
 
-  savePosition(x: number, z: number): void {
+  savePosition(x: number, z: number, y?: number): void {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-    this.state.position = {
-      x: Math.round(x * 100) / 100,
-      z: Math.round(z * 100) / 100
-    };
+    const roundedY = typeof y === 'number' && Number.isFinite(y) ? Math.round(y * 100) / 100 : undefined;
+    this.state.position = roundedY !== undefined
+      ? { x: Math.round(x * 100) / 100, y: roundedY, z: Math.round(z * 100) / 100 }
+      : { x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100 };
     this.save();
   }
 
-  getPosition(): { x: number; z: number } | undefined {
+  getPosition(): { x: number; y?: number; z: number } | undefined {
     return this.state.position;
   }
 
@@ -524,15 +524,24 @@ export class Adventure {
     }
 
     for (const z of zones) {
+      const sheet = z.sheetName || `Zone_${z.id}_Archimedes`;
+      const qList = questionsBySheet[sheet];
       if (z.id >= 1 && z.id <= 5 && !this.state.zoneBadges[z.id - 1]) {
-        const sheet = z.sheetName || `Zone_${z.id}_Archimedes`;
-        const qList = questionsBySheet[sheet];
         if (Array.isArray(qList) && qList.length > 0) {
           const allSolved = qList.every((q) => this.isProblemSolved(q.id));
           if (allSolved) {
             this.state.zoneBadges[z.id - 1] = true;
             changed = true;
           }
+        }
+      } else if ((z as { template?: string }).template === 'QHMJ_SANCTUARY' && Array.isArray(qList) && qList.length > 0) {
+        const allSolved = qList.every((q) => this.isProblemSolved(`qhmj_${z.id}_${q.id}`));
+        if (allSolved && !this.state.zoneBadges[z.id - 1]) {
+          while (this.state.zoneBadges.length < z.id) {
+            this.state.zoneBadges.push(false);
+          }
+          this.state.zoneBadges[z.id - 1] = true;
+          changed = true;
         }
       }
     }
@@ -541,6 +550,62 @@ export class Adventure {
       this.save();
     }
     return changed;
+  }
+
+  solveQhmjNode(options: {
+    progressKey: string;
+    zoneId: number;
+    allProgressKeys: string[];
+  }): {
+    alreadySolved: boolean;
+    xpGained: number;
+    coinsGained: number;
+    leveledUp: boolean;
+    newLevel: number;
+    zoneCompleted: boolean;
+  } {
+    if (this.state.solvedProblems[options.progressKey] === true) {
+      return {
+        alreadySolved: true,
+        xpGained: 0,
+        coinsGained: 0,
+        leveledUp: false,
+        newLevel: getLevel(this.state.xp),
+        zoneCompleted: Boolean(this.state.zoneBadges[options.zoneId - 1])
+      };
+    }
+
+    const oldLevel = getLevel(this.state.xp);
+    this.state.solvedProblems[options.progressKey] = true;
+    let xpGained = 25;
+    let coinsGained = 10;
+
+    const allSolved = options.allProgressKeys.length > 0 &&
+      options.allProgressKeys.every((k) => this.state.solvedProblems[k] === true);
+    let zoneCompleted = false;
+    if (allSolved && options.zoneId >= 1 && !this.state.zoneBadges[options.zoneId - 1]) {
+      while (this.state.zoneBadges.length < options.zoneId) {
+        this.state.zoneBadges.push(false);
+      }
+      this.state.zoneBadges[options.zoneId - 1] = true;
+      zoneCompleted = true;
+      xpGained += 100;
+      coinsGained += 50;
+    }
+
+    this.state.xp += xpGained;
+    this.state.coins += coinsGained;
+    const newLevel = getLevel(this.state.xp);
+    this.save();
+
+    return {
+      alreadySolved: false,
+      xpGained,
+      coinsGained,
+      leveledUp: newLevel > oldLevel,
+      newLevel,
+      zoneCompleted
+    };
   }
 
   getArchimedesSolvedCount(monolithProblems: { id: number | string }[] = []): number {

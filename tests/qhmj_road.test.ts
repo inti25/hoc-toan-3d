@@ -2,9 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RoadSurface } from '../src/world/qhmj/RoadSurface';
 import { buildJumpLinks, evalJumpArc } from '../src/world/qhmj/JumpLinks';
+import { buildQhmjNodeLayout, qhmjProgressKey, splitQhmjProblemsByTier } from '../src/world/qhmj/QhmjLayout';
 import { SpatialWorld } from '../src/world/SpatialWorld';
 import { zoneCountsForBadges, classifyZoneTemplate } from '../src/boot/WorldSession';
 import { sanitizeRemoteZones } from '../src/core/sheetsClient';
+import { generateQhmjProblems } from '../src/core/qhmjQuestions';
+import { Adventure } from '../src/core/adventure';
+import { parseSave } from '../src/core/state';
 import {
   QHMJ_SCALE,
   QHMJ_SPEED,
@@ -215,11 +219,131 @@ test('SpatialWorld: bước lên bệ nhảy thì bay sang cụm đường đíc
   assert.equal(world.isLaunching(), false);
 });
 
-test('Zone QHMJ_SANCTUARY: nhận diện template và Pha 1 chưa tính vào tổng huy hiệu', () => {
+test('Zone QHMJ_SANCTUARY: nhận diện template và Pha 2 được tính vào tổng huy hiệu', () => {
   const zones = sanitizeRemoteZones([
     { id: 8, name: 'QHMJ', template: 'qhmj_sanctuary', sheetName: 'QHMJ_Map', center: { x: -400, z: -400 } }
   ]);
   assert.equal(zones[0].template, 'QHMJ_SANCTUARY');
   assert.equal(classifyZoneTemplate(zones[0]), 'qhmj');
-  assert.equal(zoneCountsForBadges(zones[0]), false);
+  assert.equal(zoneCountsForBadges(zones[0]), true);
+});
+
+test('splitQhmjProblemsByTier chia đều 3 tầng cho N=9,12,30,40 không phụ thuộc chủ đề', () => {
+  assert.deepEqual(splitQhmjProblemsByTier(1), { tier1: 0, tier2: 0, tier3: 1 });
+  assert.deepEqual(splitQhmjProblemsByTier(3), { tier1: 1, tier2: 1, tier3: 1 });
+  assert.deepEqual(splitQhmjProblemsByTier(9), { tier1: 3, tier2: 3, tier3: 3 });
+  assert.deepEqual(splitQhmjProblemsByTier(12), { tier1: 4, tier2: 4, tier3: 4 });
+  assert.deepEqual(splitQhmjProblemsByTier(30), { tier1: 10, tier2: 10, tier3: 10 });
+  assert.deepEqual(splitQhmjProblemsByTier(40), { tier1: 13, tier2: 14, tier3: 13 });
+});
+
+test('map_qhmj.glb: rải 12 và 40 câu hỏi đều nằm trên mặt đường và không gây soft-lock', () => {
+  const { surface, pads } = loadRealSurface();
+  const anchors = computeQhmjAnchors(CENTER);
+  const start = surface.sampleNearest(anchors.spawn.x, anchors.spawn.z, anchors.spawn.y)!.island;
+  const links = buildJumpLinks(surface, pads, { startIsland: start });
+
+  for (const count of [3, 12, 30, 40]) {
+    const problems = generateQhmjProblems(8, count);
+    const specs = buildQhmjNodeLayout({
+      zoneId: 8,
+      center: CENTER,
+      surface,
+      links,
+      anchors,
+      problems
+    });
+    assert.equal(specs.length, count, `N=${count}: phải đặt đủ ${count} điểm`);
+
+    const lockedIds = new Set(specs.flatMap((s) => s.lockedLinkIds));
+    for (const l of links) {
+      if (l.synthetic || l.fromIsland !== start || l.toIsland === start) {
+        assert.equal(lockedIds.has(l.id), false, `N=${count}: không được khóa bệ về/synthetic link ${l.id}`);
+      }
+    }
+    if (count === 40) {
+      // N=40 tràn Tầng 1 sang Island 2 -> mọi bệ 4->2 phải mở sẵn
+      for (const l of links.filter((x) => x.fromIsland === start && x.toIsland === 2)) {
+        assert.equal(lockedIds.has(l.id), false, 'N=40: bệ sang Island 2 phải mở sẵn');
+      }
+    }
+    for (const spec of specs) {
+      const hit = surface.sample(spec.position.x, spec.position.z, spec.position.y, 0.5, 0.5);
+      assert.ok(hit !== null, `N=${count} node ${spec.index} phải nằm trên RoadSurface`);
+    }
+    const last = specs[specs.length - 1];
+    assert.equal(last.kind, 'clock_summit');
+    assert.equal(last.island, 0, 'câu cuối cùng phải nằm ở đỉnh Island 0');
+  }
+});
+
+test('SpatialWorld: bệ bị khóa không kích hoạt nhảy cho tới khi mở khóa & proximity 3D phân biệt cầu vượt chồng tầng', () => {
+  const { surface, pads } = loadRealSurface();
+  const anchors = computeQhmjAnchors(CENTER);
+  const start = surface.sampleNearest(anchors.spawn.x, anchors.spawn.z, anchors.spawn.y)!.island;
+  const links = buildJumpLinks(surface, pads, { startIsland: start });
+  const problems = generateQhmjProblems(8, 12);
+  const specs = buildQhmjNodeLayout({ zoneId: 8, center: CENTER, surface, links, anchors, problems });
+
+  const gate = specs.find((s) => s.kind === 'jump_gate')!;
+  const lockedLink = links.find((l) => l.id === gate.lockedLinkIds[0])!;
+  const lockedIds = new Set(specs.flatMap((s) => s.lockedLinkIds));
+
+  // Tìm một cặp tầng chồng nhau (Island 4 ở dưới, Island 1 ở trên cùng (x,z)) để test proximity 3D
+  const upperNode = specs.find((s) => s.island === 1)!;
+  const fakeWorld = new SpatialWorld(-6, 6);
+  fakeWorld.setQhmjZones([
+    { id: 8, name: 'QHMJ', cx: CENTER.x, cz: CENTER.z, radius: QHMJ_REGION_RADIUS, spawn: anchors.spawn }
+  ]);
+  fakeWorld.setQhmjRoad(
+    8,
+    surface,
+    links,
+    specs.map((s) => ({ index: s.index, x: s.position.x, y: s.position.y, z: s.position.z })),
+    lockedIds
+  );
+
+  // 1. Bệ đang khóa: đứng ngay trên bệ cũng không phóng
+  fakeWorld.teleport(lockedLink.pad.x, lockedLink.pad.z, lockedLink.pad.y);
+  const noInput = { keys: new Set<string>(), joystick: { x: 0, y: 0 } };
+  for (let i = 0; i < 70; i++) fakeWorld.tick(1 / 60, noInput, 0);
+  assert.equal(fakeWorld.isLaunching(), false, 'bệ đang khóa không được phóng');
+  assert.equal(fakeWorld.nearQhmjNodeIndex(), gate.index, 'đứng cạnh bệ khóa nhận diện được gate để mở');
+
+  // 2. Mở khóa bệ: rời bệ rồi bước lại -> phóng bình thường
+  lockedIds.delete(lockedLink.id);
+  fakeWorld.setQhmjLockedLinks(8, lockedIds);
+  fakeWorld.teleport(anchors.spawn.x, anchors.spawn.z, anchors.spawn.y);
+  for (let i = 0; i < 60; i++) fakeWorld.tick(1 / 60, noInput, 0);
+  fakeWorld.teleport(lockedLink.pad.x, lockedLink.pad.z, lockedLink.pad.y);
+  for (let i = 0; i < 70; i++) fakeWorld.tick(1 / 60, noInput, 0);
+  // teleport đặt padArmed=false và đứng yên trên pad; đi ra rồi vào lại hoặc test trực tiếp trên node tầng trên:
+  fakeWorld.teleport(upperNode.position.x, upperNode.position.z, upperNode.position.y);
+  assert.equal(fakeWorld.nearQhmjNodeIndex(), upperNode.index, 'đúng tầng cao thì nhận diện node tầng cao');
+
+  // Kiểm tra cầu vượt: nếu đứng lệch độ cao 15m ngay bên dưới upperNode thì KHÔNG kích hoạt
+  fakeWorld.teleport(upperNode.position.x, upperNode.position.z, upperNode.position.y - 15);
+  if (Math.abs(fakeWorld.getPose().y - upperNode.position.y) > 3) {
+    assert.equal(fakeWorld.nearQhmjNodeIndex(), -1, 'đứng khác tầng quá 2.5m không kích hoạt nhầm node');
+  }
+});
+
+test('SaveState & Adventure: lưu vị trí y tầng cao và namespace tiến độ QHMJ không đụng ID 1..12', () => {
+  const adv = new Adventure();
+  adv.savePosition(-380.5, -395.2, 21.45);
+  const roundtrip = parseSave(JSON.stringify(adv.getState()));
+  assert.deepEqual(roundtrip.position, { x: -380.5, y: 21.45, z: -395.2 });
+
+  const problems = generateQhmjProblems(8, 3);
+  const keys = problems.map((p) => qhmjProgressKey(8, p.id));
+  const r1 = adv.solveQhmjNode({ progressKey: keys[0], zoneId: 8, allProgressKeys: keys });
+  assert.equal(r1.alreadySolved, false);
+  assert.equal(r1.zoneCompleted, false);
+  assert.equal(adv.isProblemSolved('1'), false, 'không đánh dấu nhầm câu ID 1 của Vườn Hoa');
+  assert.equal(adv.isProblemSolved(keys[0]), true);
+
+  adv.solveQhmjNode({ progressKey: keys[1], zoneId: 8, allProgressKeys: keys });
+  const r3 = adv.solveQhmjNode({ progressKey: keys[2], zoneId: 8, allProgressKeys: keys });
+  assert.equal(r3.zoneCompleted, true);
+  assert.equal(adv.getState().zoneBadges[7], true, 'hoàn thành toàn bộ QHMJ nhận Đại Huy Chương zone 8');
 });

@@ -153,11 +153,12 @@ const ZONE_TEMPLATES = {
   FLOWER_BEDS: { label: 'Vườn hoa luống dọc lối đi', theme: 'GARDEN', questionCount: 10, width: 26, depth: 20, colorHex: '#ec4899' },
   PARK_SANCTUARY: { label: 'Công viên cây tri thức', theme: 'FOREST', questionCount: 20, width: 30, depth: 30, colorHex: '#10b981' },
   PROCEDURAL_SANCTUARY: { label: 'Vùng đất cảnh quan tự dựng', theme: 'FOREST', questionCount: 8, width: 28, depth: 28, colorHex: '#f59e0b' },
-  FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 32, depth: 32, colorHex: '#84cc16' }
+  FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 32, depth: 32, colorHex: '#84cc16' },
+  QHMJ_SANCTUARY: { label: 'Con đường bậc thang & Bệ bật nhảy', theme: 'RUINS', questionCount: 12, width: 152, depth: 109, colorHex: '#e74c3c' }
 };
 const ZONE_TEMPLATE_ORDER = [
   'GRID_SANCTUARY', 'CIRCLE_SANCTUARY', 'FLOWER_BEDS',
-  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY'
+  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'QHMJ_SANCTUARY'
 ];
 
 /**
@@ -408,7 +409,7 @@ function handleSavePlayerProgress(ss, payload) {
     const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     const nickname = escapeSheetsText(payload.nickname || payload.explorerName || 'Dũng Sĩ');
     const className = escapeSheetsText(payload.className || 'Tự do');
-    const avatar = escapeSheetsText(payload.avatar || 'boy');
+    const avatar = escapeSheetsText(payload.avatar || 'baochau');
     const level = Number(payload.level) || 1;
     const totalXP = Number(payload.xp !== undefined ? payload.xp : payload.totalXP) || 0;
     const totalCoins = Number(payload.coins !== undefined ? payload.coins : payload.totalCoins) || 0;
@@ -738,13 +739,16 @@ function fetchQuestionsFromSheet(ss, sheetName) {
 
     if (!problemMap[probId]) {
       const posX = rowObj.PosX !== '' && rowObj.PosX !== undefined ? Number(rowObj.PosX) : null;
+      const posY = rowObj.PosY !== '' && rowObj.PosY !== undefined ? Number(rowObj.PosY) : null;
       const posZ = rowObj.PosZ !== '' && rowObj.PosZ !== undefined ? Number(rowObj.PosZ) : null;
 
       problemMap[probId] = {
         id: isNaN(Number(probId)) ? probId : Number(probId),
         title: String(rowObj.Title || 'Bài ' + probId).trim(),
         subtitle: String(rowObj.Subtitle || '').trim(),
-        position: (posX !== null && posZ !== null) ? { x: posX, z: posZ } : null,
+        position: (posX !== null && posZ !== null)
+          ? (posY !== null && !isNaN(posY) ? { x: posX, y: posY, z: posZ } : { x: posX, z: posZ })
+          : null,
         steps: []
       };
       problemOrder.push(probId);

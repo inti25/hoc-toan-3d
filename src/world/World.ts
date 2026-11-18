@@ -32,7 +32,9 @@ import {
 import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 import { FarmSanctuary } from './farm/FarmSanctuary';
 import type { PortalSummary, WorldFrameSnapshot } from './loop/types';
-import { buildQhmjRegion, updateQhmjAnimation, type QhmjRegionBuild } from './qhmj/QhmjRegion';
+import { buildQhmjRegion, syncQhmjSolvedState, updateQhmjAnimation, type QhmjRegionBuild } from './qhmj/QhmjRegion';
+import type { QhmjNodeSpec } from './qhmj/QhmjLayout';
+import { generateQhmjProblems } from '../core/qhmjQuestions';
 import {
   QHMJ_REGION_RADIUS,
   QHMJ_VILLAGE_PORTAL,
@@ -193,8 +195,10 @@ export class World {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   onTeleport?: (x: number, z: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
+  isQhmjNodeSolved?: (progressKey: string) => boolean;
   private shopBeacon?: THREE.Mesh;
   private trailTimer = 0;
   equippedTrail = '';
@@ -392,6 +396,17 @@ export class World {
   private activeQhmjBuild(): QhmjRegionBuild | undefined {
     if (!this.activeRegionId.startsWith('zone:')) return undefined;
     return this.qhmjBuilds.get(Number(this.activeRegionId.slice(5)));
+  }
+
+  getQhmjNodes(zoneId: number): ReadonlyArray<QhmjNodeSpec> {
+    return this.qhmjBuilds.get(zoneId)?.nodeSpecs ?? [];
+  }
+
+  syncQhmjSolved(zoneId: number): void {
+    const build = this.qhmjBuilds.get(zoneId);
+    if (!build) return;
+    const lockedIds = syncQhmjSolvedState(build, (key) => this.isQhmjNodeSolved?.(key) ?? false);
+    this.spatial.setQhmjLockedLinks(zoneId, lockedIds);
   }
 
   private isQhmjRegionId(regionId: string): boolean {
@@ -1109,10 +1124,27 @@ export class World {
         this.createPortalArch(retX, retZ, 0x38bdf8, 0, zoneGroup);
         zoneObs.push(...computePortalPillarObstacles(retX, retZ, 0));
       } else if (dynZone?.template === 'QHMJ_SANCTUARY') {
-        const build = await buildQhmjRegion(this.assets, dynZone, zoneGroup);
+        const sheetProblems = this.dynamicQuestionsBySheet[dynZone.sheetName];
+        const qhmjProblems = Array.isArray(sheetProblems) && sheetProblems.length > 0
+          ? sheetProblems
+          : generateQhmjProblems(zoneId, 12);
+        const build = await buildQhmjRegion(
+          this.assets,
+          dynZone,
+          zoneGroup,
+          qhmjProblems,
+          (key) => this.isQhmjNodeSolved?.(key) ?? false
+        );
         if (build) {
           this.qhmjBuilds.set(zoneId, build);
-          this.spatial.setQhmjRoad(zoneId, build.surface, build.links);
+          const lockedIds = build.entities.getLockedLinkIds();
+          this.spatial.setQhmjRoad(
+            zoneId,
+            build.surface,
+            build.links,
+            build.nodeSpecs.map((s) => ({ index: s.index, x: s.position.x, y: s.position.y, z: s.position.z })),
+            lockedIds
+          );
         }
         const anchors = computeQhmjAnchors(dynZone.center);
         const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, 0, zoneGroup);
@@ -1444,6 +1476,9 @@ export class World {
         targetRegionId: `zone:${first.id}`
       });
       for (const z of qhmjZones) {
+        if (this.loadedZoneRegions.has(z.id)) {
+          this.syncQhmjSolved(z.id);
+        }
         const ret = computeQhmjAnchors(z.center).returnPortal;
         customPortals.push({
           id: `z${z.id}_to_village_qhmj`,
@@ -1578,9 +1613,9 @@ export class World {
     return this.spatial.nearMonolithIndex();
   }
 
-  teleport(x: number, z: number) {
+  teleport(x: number, z: number, y?: number) {
     const targetRegion = this.spatial.resolveRegionForPoint(x, z);
-    this.spatial.teleport(x, z);
+    this.spatial.teleport(x, z, y);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.syncCameraModeForRegion(targetRegion);
     const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
@@ -1593,9 +1628,9 @@ export class World {
     this.onTeleport?.(x, z);
   }
 
-  setInitialPosition(x: number, z: number) {
+  setInitialPosition(x: number, z: number, y?: number) {
     const targetRegion = this.spatial.resolveRegionForPoint(x, z);
-    this.spatial.teleport(x, z);
+    this.spatial.teleport(x, z, y);
     this.player.position.set(x, this.spatial.floorHeight(), z);
     this.syncCameraModeForRegion(targetRegion);
     const targetY = this.player.position.y + (this.inQhmjCamera ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
@@ -2074,6 +2109,23 @@ export class World {
       }
     }
 
+    // 1b. Direct 3D raycast on QHMJ crystals / jump gates (required for elevated multi-level roads)
+    const qhmjBuild = this.activeQhmjBuild();
+    if (qhmjBuild) {
+      const qhmjHit = qhmjBuild.entities.findNodeAtRay(this.scratchRay);
+      if (qhmjHit) {
+        const horiz = Math.hypot(
+          this.player.position.x - qhmjHit.spec.position.x,
+          this.player.position.z - qhmjHit.spec.position.z
+        );
+        const dy = Math.abs(this.player.position.y - qhmjHit.spec.position.y);
+        if (horiz <= 5.0 && dy <= 2.8) {
+          this.onQhmjNodeClick?.(qhmjBuild.zoneId, qhmjHit.spec.index);
+          return;
+        }
+      }
+    }
+
     const hit = this.scratchHit;
     if (this.scratchRay.ray.intersectPlane(this.scratchRayPlane, hit)) {
       // 2. Click near farm animal on ground plane
@@ -2389,7 +2441,7 @@ export class World {
       active: this._active,
       paused: this._paused,
       fps: 1 / Math.max(rawDt, .001),
-      playerPosition: { x: this.player.position.x, z: this.player.position.z },
+      playerPosition: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
       locationName: this.spatial.getCurrentLocationName(),
       inGarden: this.spatial.isInGarden(),
       inArchimedes: this.spatial.isInArchimedesRealm(),
@@ -2400,6 +2452,7 @@ export class World {
       nearParkTreeIndex: this.spatial.nearParkTreeIndex(),
       nearShop: this.spatial.isNearShop(),
       nearFarmAnimalId: nearFarmId,
+      nearQhmjNodeIndex: this.spatial.nearQhmjNodeIndex(),
       nearPortal,
       portalTransit: transit,
       hudPoses

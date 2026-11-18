@@ -11,7 +11,7 @@ export interface SaveState {
   parkTrees: boolean[];
   farmRescued: Record<string, boolean>;
   solvedProblems: Record<string, boolean>;
-  position?: { x: number; z: number };
+  position?: { x: number; y?: number; z: number };
   inventory: string[];
   equippedTrail: string;
   charms: Record<string, number>;
@@ -129,9 +129,10 @@ export function parseSave(raw: string | null): SaveState {
     if (d.position && typeof d.position === 'object') {
       const p = d.position as Record<string, unknown>;
       const x = typeof p.x === 'number' && Number.isFinite(p.x) ? Math.round(p.x * 100) / 100 : undefined;
+      const y = typeof p.y === 'number' && Number.isFinite(p.y) ? Math.round(p.y * 100) / 100 : undefined;
       const z = typeof p.z === 'number' && Number.isFinite(p.z) ? Math.round(p.z * 100) / 100 : undefined;
       if (x !== undefined && z !== undefined) {
-        base.position = { x, z };
+        base.position = y !== undefined ? { x, y, z } : { x, z };
       }
     }
     if (Array.isArray(d.inventory)) {

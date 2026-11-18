@@ -41,9 +41,7 @@ export function zoneSpawnsMonoliths(zone: Pick<RemoteZoneConfig, 'id' | 'templat
 }
 
 export function zoneCountsForBadges(zone: Pick<RemoteZoneConfig, 'id' | 'template' | 'sheetName'>): boolean {
-  // Phase 1: QHMJ has no challenges yet, so it is excluded from the badge total (re-enable in phase 2).
-  const kind = classifyZoneTemplate(zone);
-  return kind !== 'flower' && kind !== 'qhmj';
+  return classifyZoneTemplate(zone) !== 'flower';
 }
 
 /**
@@ -61,7 +59,7 @@ export class WorldSession {
   private _questionsBySheet: Record<string, RemoteProblem[]> = {};
   private _monolithProblems: RemoteProblem[] = [];
   private _badgeZones: RemoteZoneConfig[] = [];
-  private deferredSpawnPosition: { x: number; z: number } | null = null;
+  private deferredSpawnPosition: { x: number; y?: number; z: number } | null = null;
 
   private readonly importWorld: () => Promise<{ World: new (canvas: HTMLCanvasElement) => WorldHandle }>;
   private readonly loadZones: (onFreshData?: (data: RemoteContentPayload) => void) => Promise<RemoteContentPayload>;
@@ -253,6 +251,7 @@ export class WorldSession {
       world.setEquippedTrail(state.equippedTrail);
     }
     world.isParkTreeAwakened = (idx) => this.ports.adventure.isParkTreeAwakened(idx);
+    world.isQhmjNodeSolved = (progressKey) => this.ports.adventure.isProblemSolved(progressKey);
 
     if (options.onTeleport) world.onTeleport = options.onTeleport;
     if (options.onJump) world.onJump = options.onJump;
@@ -263,15 +262,16 @@ export class WorldSession {
     if (options.onPortalClick) world.onPortalClick = options.onPortalClick;
     if (options.onShopClick) world.onShopClick = options.onShopClick;
     if (options.onFarmAnimalClick) world.onFarmAnimalClick = options.onFarmAnimalClick;
+    if (options.onQhmjNodeClick) world.onQhmjNodeClick = options.onQhmjNodeClick;
     if (options.onFrame) world.onFrame = options.onFrame;
 
     if (options.initialPosition) {
       const safe = world.spatial.resolveSafeSpawn(options.initialPosition.x, options.initialPosition.z);
       if (safe) {
         await world.activateRegionAt?.(safe.x, safe.z);
-        world.setInitialPosition(safe.x, safe.z);
+        world.setInitialPosition(safe.x, safe.z, options.initialPosition.y);
         if (safe.x !== options.initialPosition.x || safe.z !== options.initialPosition.z) {
-          this.ports.adventure.savePosition(safe.x, safe.z);
+          this.ports.adventure.savePosition(safe.x, safe.z, options.initialPosition.y);
           options.onTeleport?.(safe.x, safe.z);
         }
       } else {
@@ -316,9 +316,10 @@ export class WorldSession {
     if (this.deferredSpawnPosition) {
       const safe = world.spatial.resolveSafeSpawn(this.deferredSpawnPosition.x, this.deferredSpawnPosition.z);
       if (safe) {
+        const savedY = this.deferredSpawnPosition.y;
         await world.activateRegionAt?.(safe.x, safe.z);
-        world.teleport(safe.x, safe.z);
-        this.ports.adventure.savePosition(safe.x, safe.z);
+        world.teleport(safe.x, safe.z, savedY);
+        this.ports.adventure.savePosition(safe.x, safe.z, world.player.position.y);
         this.deferredSpawnPosition = null;
         this.ports.onDeferredSpawn?.(safe);
       }

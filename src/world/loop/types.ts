@@ -17,7 +17,7 @@ export interface WorldFrameSnapshot {
   active: boolean;
   paused: boolean;
   fps: number;
-  playerPosition: { x: number; z: number };
+  playerPosition: { x: number; y?: number; z: number };
   locationName: string;
   inGarden: boolean;
   inArchimedes: boolean;
@@ -28,6 +28,7 @@ export interface WorldFrameSnapshot {
   nearParkTreeIndex: number;
   nearShop: boolean;
   nearFarmAnimalId: string | null;
+  nearQhmjNodeIndex?: number;
   nearPortal: PortalSummary | null;
   portalTransit: PortalSummary | null;
   hudPoses?: {

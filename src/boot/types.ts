@@ -54,8 +54,20 @@ export interface WorldHandle {
   syncAwakenedParkTrees(awakenedList: boolean[]): void;
   setFarmRescued?(rescued: Record<string, boolean>): void;
   setEquippedTrail(trailId: string): void;
-  setInitialPosition(x: number, z: number): void;
-  teleport(x: number, z: number): void;
+  setInitialPosition(x: number, z: number, y?: number): void;
+  teleport(x: number, z: number, y?: number): void;
+  syncQhmjSolved?(zoneId: number): void;
+  getQhmjNodes?(zoneId: number): ReadonlyArray<{
+    index: number;
+    id: string | number;
+    progressKey: string;
+    kind: 'jump_gate' | 'path_crystal' | 'clock_summit';
+    tier: 1 | 2 | 3;
+    position: { x: number; y: number; z: number };
+    island: number;
+    lockedLinkIds: number[];
+    problem: RemoteProblem;
+  }>;
   activateRegionAt?(x: number, z: number): Promise<string>;
   getActiveRegionId?(): string;
   renderDynamicZones(
@@ -81,13 +93,15 @@ export interface WorldHandle {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
+  isQhmjNodeSolved?: (progressKey: string) => boolean;
   onFrame?: (snapshot: WorldFrameSnapshot) => void;
 }
 
 export interface WorldLaunchOptions {
   canvas: HTMLCanvasElement;
-  initialPosition?: { x: number; z: number } | null;
+  initialPosition?: { x: number; y?: number; z: number } | null;
   onTeleport?: (x: number, z: number) => void;
   onJump?: () => void;
   onSceneClick?: () => void;
@@ -97,6 +111,7 @@ export interface WorldLaunchOptions {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   onFrame?: WorldHandle['onFrame'];
 }
 
@@ -105,7 +120,7 @@ export interface WorldSessionAdventurePort {
   isProblemSolved(id: number | string): boolean;
   isParkTreeAwakened(index: number): boolean;
   reconcileZoneProgress(zones: RemoteZoneConfig[], questionsBySheet: Record<string, RemoteProblem[]>): boolean;
-  savePosition(x: number, z: number): void;
+  savePosition(x: number, z: number, y?: number): void;
 }
 
 export interface WorldSessionPorts {

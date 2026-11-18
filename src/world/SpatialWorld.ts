@@ -86,6 +86,13 @@ export const FLOWER_COORDS: [number, number][] = [
   [14, 6.0], [18, 6.0], [22, 8.5], [26, 6.0], [30, 6.0]
 ];
 
+export interface QhmjNodeAnchor {
+  index: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface QhmjZoneState {
   id: number;
   name: string;
@@ -95,6 +102,8 @@ export interface QhmjZoneState {
   spawn: { x: number; y: number; z: number };
   surface: RoadSurface | null;
   links: JumpLink[];
+  nodes: QhmjNodeAnchor[];
+  lockedLinkIds: Set<number>;
 }
 
 /** Cửa sổ độ cao khi bám mặt đường: bước lên tối đa / xuống tối đa so với độ cao hiện tại. */
@@ -220,16 +229,52 @@ export class SpatialWorld {
     this.qhmjZones = zones.map((z) => ({
       ...z,
       surface: prev.get(z.id)?.surface ?? null,
-      links: prev.get(z.id)?.links ?? []
+      links: prev.get(z.id)?.links ?? [],
+      nodes: prev.get(z.id)?.nodes ?? [],
+      lockedLinkIds: prev.get(z.id)?.lockedLinkIds ?? new Set<number>()
     }));
   }
 
-  setQhmjRoad(id: number, surface: RoadSurface, links: JumpLink[]) {
+  setQhmjRoad(
+    id: number,
+    surface: RoadSurface,
+    links: JumpLink[],
+    nodes: QhmjNodeAnchor[] = [],
+    lockedLinkIds: Set<number> = new Set()
+  ) {
     const zone = this.qhmjZones.find((z) => z.id === id);
     if (zone) {
       zone.surface = surface;
       zone.links = links;
+      zone.nodes = nodes;
+      zone.lockedLinkIds = new Set(lockedLinkIds);
     }
+  }
+
+  setQhmjLockedLinks(id: number, lockedLinkIds: Set<number>) {
+    const zone = this.qhmjZones.find((z) => z.id === id);
+    if (zone) {
+      zone.lockedLinkIds = new Set(lockedLinkIds);
+    }
+  }
+
+  nearQhmjNodeIndex(): number {
+    const q = this.qhmjAt(this.x, this.z);
+    if (!q || q.nodes.length === 0) return -1;
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    for (const n of q.nodes) {
+      const horiz = Math.hypot(this.x - n.x, this.z - n.z);
+      const dy = Math.abs(this.y - n.y);
+      if (horiz <= 3.2 && dy <= 2.5) {
+        const d3 = Math.hypot(horiz, dy);
+        if (d3 < bestDist) {
+          bestDist = d3;
+          bestIdx = n.index;
+        }
+      }
+    }
+    return bestIdx;
   }
 
   getQhmjZones(): ReadonlyArray<QhmjZoneState> {
@@ -445,6 +490,13 @@ export class SpatialWorld {
   }
 
   resolveSafeSpawn(x: number, z: number): { x: number; z: number } | null {
+    for (const qz of this.qhmjZones) {
+      if (Math.hypot(x - qz.cx, z - qz.cz) <= qz.radius) {
+        if (!qz.surface) return { x, z };
+        return qz.surface.sampleNearest(x, z, qz.spawn.y) ? { x, z } : { x: qz.spawn.x, z: qz.spawn.z };
+      }
+    }
+
     if (this.isWithinLand(x, z)) {
       return { x, z };
     }
@@ -543,7 +595,7 @@ export class SpatialWorld {
     return false;
   }
 
-  teleport(x: number, z: number) {
+  teleport(x: number, z: number, refY?: number) {
     this.x = x;
     this.z = z;
     this.launch = null;
@@ -551,7 +603,8 @@ export class SpatialWorld {
     this.padCooldown = 0.8;
     const qz = this.qhmjZones.find((q) => Math.hypot(x - q.cx, z - q.cz) <= q.radius);
     if (qz) {
-      this.y = qz.surface?.sampleNearest(x, z, qz.spawn.y)?.y ?? qz.spawn.y;
+      const targetRefY = typeof refY === 'number' && Number.isFinite(refY) ? refY : qz.spawn.y;
+      this.y = qz.surface?.sampleNearest(x, z, targetRefY)?.y ?? targetRefY;
       this.lastRoadSafe = { x, y: this.y, z };
     } else {
       this.y = this.floorHeight();
@@ -755,13 +808,15 @@ export class SpatialWorld {
       this.lastRoadSafe = { x: this.x, y: floor, z: this.z };
     }
 
-    // Bệ bật nhảy: chỉ kích hoạt lại sau khi đã rời khỏi mọi bệ.
+    // Bệ bật nhảy: bỏ qua bệ đang khóa, và chỉ kích hoạt lại sau khi đã rời khỏi mọi bệ.
     const onPad = q.links.find(
-      (l) => Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius && Math.abs(this.y - l.pad.y) <= 3
+      (l) => !q.lockedLinkIds.has(l.id) &&
+        Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius &&
+        Math.abs(this.y - l.pad.y) <= 3
     );
     if (!this.padArmed) {
       const nearAny = q.links.some(
-        (l) => Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius * 1.25
+        (l) => Math.hypot(this.x - l.pad.x, this.z - l.pad.z) <= l.triggerRadius * 1.25 && Math.abs(this.y - l.pad.y) <= 3.5
       );
       if (!nearAny && this.padCooldown <= 0) this.padArmed = true;
     } else if (onPad && this.padCooldown <= 0) {

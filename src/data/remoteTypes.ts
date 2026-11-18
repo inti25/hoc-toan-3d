@@ -20,7 +20,7 @@ export interface RemoteProblem {
   zoneName?: string;
   title: string;
   subtitle: string;
-  position?: { x: number; z: number } | null;
+  position?: { x: number; y?: number; z: number } | null;
   color?: number;
   badge?: string;
   steps: RemoteStep[];
