@@ -19,6 +19,7 @@ export interface WorldFrameSnapshot {
   fps: number;
   playerPosition: { x: number; y?: number; z: number };
   activeRegionId?: string;
+  cameraYaw?: number;
   locationName: string;
   inGarden: boolean;
   inArchimedes: boolean;

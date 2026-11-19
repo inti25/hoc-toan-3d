@@ -48,6 +48,11 @@ import {
   FARM_VILLAGE_RETURN_TARGET,
   computeFarmAnchors
 } from '../data/farmMap';
+import {
+  PinchOrbitController,
+  computePinchZoomDistance,
+  computeWheelZoomDistance
+} from './cameraZoom';
 
 export { type MonolithItem, ArchimedesZoneBuilder };
 
@@ -243,6 +248,7 @@ export class World {
   private readonly qhmjBuilds = new Map<number, QhmjRegionBuild>();
   private villageQhmjPortalArch?: THREE.Group;
   private cameraMode: 'isometric' | 'qhmj' | 'farm' = 'isometric';
+  private readonly pointerController = new PinchOrbitController();
   private sun: THREE.DirectionalLight;
 
   get active(): boolean {
@@ -262,6 +268,7 @@ export class World {
   set paused(value: boolean) {
     if (this._paused === value) return;
     this._paused = value;
+    if (value) this.pointerController.reset();
     this.syncRenderLoopState();
   }
 
@@ -342,30 +349,77 @@ export class World {
     ]);
     this.updateShadowBoundsForRegion('core');
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement!); this.resize();
-    let pointer = { x: 0, y: 0, moved: false, id: -1 };
-    canvas.addEventListener('pointerdown', e => { if (!this._active || this._paused) return; pointer = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointerdown', e => {
+      if (!this._active || this._paused) return;
+      this.pointerController.pointerDown(e.pointerId, e.clientX, e.clientY);
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore browsers/tests where pointer capture is unavailable
+      }
+    });
     canvas.addEventListener('pointermove', e => {
-      if (pointer.id !== e.pointerId || !this._active || this._paused) return;
-      const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
-      if (Math.abs(dx) + Math.abs(dy) > 2) pointer.moved = true;
-      this.yaw -= dx * .006;
+      if (!this._active || this._paused) return;
+      const move = this.pointerController.pointerMove(e.pointerId, e.clientX, e.clientY);
+      if (move.kind === 'none') return;
       const isCloseCam = this.isCloseExplorationCamera();
+      if (move.kind === 'pinch') {
+        this.distance = computePinchZoomDistance(
+          this.distance,
+          move.prevSpan,
+          move.nextSpan,
+          isCloseCam
+        );
+        return;
+      }
+      this.yaw -= move.dx * .006;
       const minPitch = isCloseCam ? -0.25 : 0.45;
       const maxPitch = isCloseCam ? 0.85 : 1.15;
-      this.pitch = THREE.MathUtils.clamp(this.pitch + dy * .003, minPitch, maxPitch);
-      pointer.x = e.clientX;
-      pointer.y = e.clientY;
+      this.pitch = THREE.MathUtils.clamp(this.pitch + move.dy * .003, minPitch, maxPitch);
     });
-    canvas.addEventListener('pointerup', e => { if (pointer.id !== e.pointerId) return; if (!pointer.moved && !this._paused) this.interactAtScreen(e.clientX, e.clientY); pointer.id = -1; });
-    canvas.addEventListener('pointercancel', () => { pointer.id = -1; });
+    const handlePointerEnd = (e: PointerEvent) => {
+      const res = this.pointerController.pointerUp(
+        e.pointerId,
+        e.clientX,
+        e.clientY,
+        e.type === 'pointercancel'
+      );
+      if (res.shouldTap && this._active && !this._paused) {
+        this.interactAtScreen(res.x, res.y);
+      }
+    };
+    canvas.addEventListener('pointerup', handlePointerEnd);
+    canvas.addEventListener('pointercancel', handlePointerEnd);
+    canvas.addEventListener(
+      'touchmove',
+      e => {
+        if (e.touches.length >= 2) e.preventDefault();
+      },
+      { passive: false }
+    );
+    canvas.addEventListener(
+      'gesturestart',
+      e => {
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+    canvas.addEventListener(
+      'gesturechange',
+      e => {
+        e.preventDefault();
+      },
+      { passive: false }
+    );
     canvas.addEventListener('wheel', e => {
       if (!this._active || this._paused) return;
       e.preventDefault();
-      const isCloseCam = this.isCloseExplorationCamera();
-      const minDist = isCloseCam ? 0.35 : 23;
-      const maxDist = isCloseCam ? 14 : 60;
-      const step = isCloseCam ? 0.008 : 0.025;
-      this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * step, minDist, maxDist);
+      this.distance = computeWheelZoomDistance(
+        this.distance,
+        e.deltaY,
+        this.isCloseExplorationCamera(),
+        e.ctrlKey
+      );
     }, { passive: false });
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -2125,7 +2179,7 @@ export class World {
   }
   private floorHeight() { return this.spatial.floorHeight(); }
   jump() { if (this.active && !this.paused && this.spatial.jump()) { this.onJump?.(); } }
-  clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; }
+  clearInput() { this.keys.clear(); this.joystick = { x: 0, y: 0 }; this.pointerController.reset(); }
   resetCamera() {
     if (this.cameraMode === 'qhmj') {
       this.yaw = Math.PI / 2;
@@ -2509,6 +2563,7 @@ export class World {
       fps: 1 / Math.max(rawDt, .001),
       playerPosition: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
       activeRegionId: this.activeRegionId,
+      cameraYaw: this.yaw,
       locationName: this.spatial.getCurrentLocationName(),
       inGarden: this.spatial.isInGarden(),
       inArchimedes: this.spatial.isInArchimedesRealm(),
@@ -2530,7 +2585,12 @@ export class World {
     this.farmRescued = rescued;
   }
 
+  setFocusedFarmAnimal(animalId: string | null) {
+    this.farmSanctuary?.setFocusedAnimal(animalId);
+  }
+
   dispose() {
+    this.pointerController.reset();
     cancelAnimationFrame(this.frame);
     cancelAnimationFrame(this.idleFrame);
     this.frame = 0;

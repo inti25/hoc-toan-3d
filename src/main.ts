@@ -34,6 +34,12 @@ import { computeProceduralEntityPositions, type RemoteZoneConfig, type RemotePla
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
 import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 import { ShopModal } from './ui/ShopModal';
+import { FarmTrackerHud } from './ui/FarmTrackerHud';
+import {
+  getFarmAnimalEmoji,
+  getFarmAnimalVietnameseName,
+  type FarmAnimalTrackerSource
+} from './world/farm/FarmGuidance';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -182,6 +188,46 @@ app.innerHTML = `
         </div>
       </div>
       <div class="wallet interactive" id="wallet-btn" title="Chạm để mở Tiệm Tạp Hóa Vương Quốc 🛍️">${icon('coin')}<strong id="coins">0</strong><span>xu</span></div>
+      <aside id="farm-tracker" class="farm-tracker" hidden aria-label="Theo dõi động vật nông trại">
+        <div class="farm-tracker-top">
+          <button id="farm-tracker-toggle" type="button" class="farm-tracker-toggle" aria-expanded="true" title="Thu gọn / mở rộng danh sách thú cưng">
+            <div class="farm-compass-dial" aria-hidden="true">
+              <svg id="farm-compass-arrow" class="farm-compass-arrow" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2.5L18.5 19L12 15.6L5.5 19L12 2.5Z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="farm-tracker-target">
+              <div class="farm-tracker-target-line">
+                <span id="farm-target-name" class="farm-target-name">🐾 Đang tìm thú...</span>
+                <span id="farm-target-pin" class="farm-target-pin" hidden>📌</span>
+              </div>
+              <div class="farm-tracker-meta-line">
+                <span id="farm-direction-cue" class="farm-direction-cue">Đi thẳng</span>
+                <span class="farm-meta-sep" aria-hidden="true">·</span>
+                <span id="farm-target-dist" class="farm-target-dist">0m</span>
+                <span id="farm-remaining-badge" class="farm-remaining-badge">Còn 0/0</span>
+              </div>
+            </div>
+            <span class="farm-tracker-chevron" aria-hidden="true">▾</span>
+          </button>
+        </div>
+        <div id="farm-tracker-body" class="farm-tracker-body">
+          <div class="farm-tracker-subheader">
+            <span id="farm-tracker-count">🐾 Còn 0 / 0 thú</span>
+            <small id="farm-tracker-hint">Chạm dòng để ghim</small>
+          </div>
+          <div id="farm-tracker-list" class="farm-tracker-list" role="list"></div>
+          <div id="farm-tracker-celebrate" class="farm-tracker-celebrate" hidden>
+            <strong>🎉 Đã cứu hết thú!</strong>
+            <p>Hãy đi theo mũi tên về <b>Cổng Về Làng Khởi Đầu</b> nhé.</p>
+          </div>
+          <div class="farm-tracker-footer">
+            <button id="farm-portal-guide-btn" type="button" class="farm-portal-guide-btn" aria-pressed="false">
+              🏡 Chỉ đường về Cổng Làng
+            </button>
+          </div>
+        </div>
+      </aside>
       <aside class="quest-card">
         <div class="eyebrow">${icon('flag')} CHUYẾN PHIÊU LƯU ĐẦU TIÊN</div>
         <h2 id="quest-title">Một cây cầu, ngàn niềm vui</h2>
@@ -250,6 +296,50 @@ app.innerHTML = `
       </div>
     </dialog>
   </main>`;
+
+const farmTrackerHud = new FarmTrackerHud($('farm-tracker'), {
+  onFocusChange: (animalId) => world?.setFocusedFarmAnimal?.(animalId)
+});
+
+function getActiveFarmZone(activeRegionId?: string): RemoteZoneConfig | null {
+  if (!activeRegionId || !activeRegionId.startsWith('zone:')) return null;
+  const zoneId = Number(activeRegionId.slice(5));
+  if (Number.isNaN(zoneId)) return null;
+  const zone = worldSession.zones.find((z) => z.id === zoneId);
+  if (!zone || classifyZoneTemplate(zone) !== 'farm') return null;
+  return zone;
+}
+
+function buildFarmTrackerSources(zone: RemoteZoneConfig): FarmAnimalTrackerSource[] {
+  const farmSanctuary = world?.farmSanctuary;
+  if (!farmSanctuary) return [];
+  const rescuedMap = adventure.getState().farmRescued || {};
+  const qList = worldSession.getQuestionsForSheet(zone.sheetName);
+  const triggerByAnimalId = new Map(
+    farmSanctuary.getInteractTriggers().map((t) => [t.animalId, t])
+  );
+
+  return farmSanctuary.animals.map((animal, idx) => {
+    const idMatch = animal.id.match(/^farm_[a-z]+_(\d+)$/);
+    const parsedIdx = idMatch ? Number(idMatch[1]) : idx;
+    const trigger = triggerByAnimalId.get(animal.id);
+    const problemTitle = trigger?.problemData?.title ?? qList[parsedIdx]?.title;
+    const isRescued =
+      rescuedMap[animal.id] === true ||
+      trigger?.isActive === false ||
+      animal.state === 'HOMEWARD' ||
+      animal.state === 'RESTING';
+
+    return {
+      id: animal.id,
+      index: parsedIdx,
+      kind: animal.kind,
+      localPos: { x: animal.root.position.x, z: animal.root.position.z },
+      rescued: isRescued,
+      problemTitle: typeof problemTitle === 'string' ? problemTitle : undefined
+    };
+  });
+}
 
 function toast(message: string, duration = 4200, onClick?: () => void) {
   const t = $('toast');
@@ -531,6 +621,7 @@ function menu() {
   $('world-caption').hidden = false;
   $('menu-footer').hidden = false;
   document.body.classList.remove('playing');
+  farmTrackerHud.hide();
   initWelcomeProfile();
   updateHUD();
   audio.music(false);
@@ -759,21 +850,6 @@ function openQhmjNodeDialog(zoneId: number, nodeIndex: number, stepIndex = 0) {
   });
 }
 
-function getAnimalVietnameseName(kind: string): string {
-  const map: Record<string, string> = {
-    cow: 'Bò Sữa',
-    calf: 'Bê Con',
-    pig: 'Heo Ủn Ỉn',
-    piglet: 'Heo Con',
-    chicken: 'Gà Mái',
-    chick: 'Gà Con',
-    duck: 'Vịt Trắng',
-    duckling: 'Vịt Con',
-    dog: 'Cún Cưng'
-  };
-  return map[kind] || 'Bé Thú';
-}
-
 async function openFarmAnimalDialog(animalId: string) {
   if (!world) return;
   const farmZone = worldSession.zones.find((z) => classifyZoneTemplate(z) === 'farm');
@@ -782,7 +858,7 @@ async function openFarmAnimalDialog(animalId: string) {
   const fallbackKinds = ['cow', 'pig', 'chicken', 'duck', 'dog'];
   const parsedIdx = idMatch ? Number(idMatch[2]) : 0;
   const kind = animal?.kind || idMatch?.[1] || fallbackKinds[parsedIdx % fallbackKinds.length];
-  const animalName = getAnimalVietnameseName(kind);
+  const animalName = getFarmAnimalVietnameseName(kind);
 
   const isAlreadyRescued = adventure.getState().farmRescued?.[animalId] === true;
   const trigger = world.farmSanctuary?.getInteractTriggers().find(t => t.animalId === animalId);
@@ -807,6 +883,7 @@ async function openFarmAnimalDialog(animalId: string) {
   if (outcome.status === 'solved' && outcome.isCorrect) {
     adventure.setFarmRescued(animalId, true);
     world.setFarmRescued?.(adventure.getState().farmRescued || {});
+    farmTrackerHud.invalidateSort();
 
     // Produce reward according to kind
     let rewardItem = 'produce_egg';
@@ -1066,13 +1143,6 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
     const qList = currentZone ? worldSession.getQuestionsForSheet(currentZone.sheetName) : [];
     const totalAnimals = Math.max(world?.farmSanctuary?.animals?.length || 0, qList.length, 10);
     const availableKinds = ['cow', 'pig', 'chicken', 'duck', 'dog'];
-    const animalEmojis: Record<string, string> = {
-      cow: '🐮',
-      pig: '🐷',
-      chicken: '🐔',
-      duck: '🦆',
-      dog: '🐶'
-    };
 
     const farmSpawn = farmZoneSpawn(currentZone);
     const animalCardsHtml = Array.from({ length: totalAnimals }, (_, i) => {
@@ -1085,8 +1155,8 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const targetX = aPos ? currentZone.center.x + aPos.x : farmSpawn.x;
       const targetY = aPos ? aPos.y : farmSpawn.y;
       const targetZ = aPos ? currentZone.center.z + aPos.z + 2 : farmSpawn.z;
-      const name = `${getAnimalVietnameseName(kind)} #${i + 1}`;
-      const emoji = animalEmojis[kind] || '🐾';
+      const name = `${getFarmAnimalVietnameseName(kind)} #${i + 1}`;
+      const emoji = getFarmAnimalEmoji(kind);
       const cardTitle = qItem?.title || name;
       const cardSubtitle = (qItem?.subtitle && qItem.subtitle !== qItem.title) ? qItem.subtitle : '';
       const cardPrompt = (qItem?.steps && qItem.steps[0] ? qItem.steps[0].prompt : '') || (isRescued
@@ -1495,7 +1565,7 @@ function help() {
     <div><b>1</b><p><strong>Khám phá ngôi làng & Vườn hoa</strong>Nhấn WASD / phím mũi tên, hoặc chạm xuống đất để di chuyển. Nhấn nút “Đến Vườn Hoa” để dịch chuyển nhanh qua lại.</p></div>
     <div><b>2</b><p><strong>Làm quen với Milo & Cây cầu</strong>Gặp Milo để nhận nhiệm vụ xây cầu bằng 6 phép nhân đúng.</p></div>
     <div><b>3</b><p><strong>Vườn Hoa 10 Thử Thách</strong>Đến gần 10 cây hoa bên bờ đông và nhấn E để trả lời câu hỏi. Mỗi câu đúng sẽ làm cây hoa bung nở rực rỡ!</p></div>
-  </div><div class="milo-tip"><p><b>Space</b>: nhảy · <b>Kéo trên làng</b>: xoay camera · <b>Lăn chuột</b>: phóng to / thu nhỏ · <b>Esc</b>: tạm dừng.</p></div><button id="understood" class="primary wide">Mình hiểu rồi! ${icon('check')}</button>`,
+  </div><div class="milo-tip"><p><b>Space</b>: nhảy · <b>Kéo trên làng</b>: xoay camera · <b>Lăn chuột / Chụm-tách 2 ngón</b>: phóng to / thu nhỏ · <b>Esc</b>: tạm dừng.</p></div><button id="understood" class="primary wide">Mình hiểu rồi! ${icon('check')}</button>`,
     'help'
   );
   $('understood').onclick = closeDialog;
@@ -1942,6 +2012,7 @@ function settings() {
       }
       lastSavedPos = { x: -6, z: 6 };
       worldSession.clearDeferredSpawn();
+      farmTrackerHud.resetState();
 
       menu();
       toast('Một hành trình mới đang chờ bạn!');
@@ -2205,6 +2276,22 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
     }
   }
 
+  const activeFarmZone = snapshot.active ? getActiveFarmZone(snapshot.activeRegionId) : null;
+  let farmPlayerLocalPos: { x: number; z: number } | null = null;
+  if (!activeFarmZone || !world.farmSanctuary) {
+    farmTrackerHud.hide();
+  } else {
+    const farmOrigin = world.farmSanctuary.group?.position ?? {
+      x: activeFarmZone.center.x,
+      z: activeFarmZone.center.z
+    };
+    farmPlayerLocalPos = {
+      x: snapshot.playerPosition.x - farmOrigin.x,
+      z: snapshot.playerPosition.z - farmOrigin.z
+    };
+    farmTrackerHud.updateCompass(farmPlayerLocalPos, snapshot.cameraYaw ?? 0);
+  }
+
   if (!snapshot.hudPoses) return;
 
   const locName = snapshot.locationName;
@@ -2226,7 +2313,7 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
     };
   } else if (nearFarmAnimalId) {
     const animal = world.farmSanctuary?.animals.find(a => a.id === nearFarmAnimalId);
-    const animalName = animal ? getAnimalVietnameseName(animal.kind) : 'Bé Thú';
+    const animalName = animal ? getFarmAnimalVietnameseName(animal.kind) : 'Bé Thú';
     const trigger = world.farmSanctuary?.getInteractTriggers().find(t => t.animalId === nearFarmAnimalId);
     const pd = trigger?.problemData;
     const probTitle = pd?.title || pd?.subtitle || `Bé ${animalName} Cần Giúp Đỡ`;
@@ -2289,6 +2376,14 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
     interactTargetLabel,
     arrowHtml: icon('arrow')
   });
+
+  if (activeFarmZone && farmPlayerLocalPos) {
+    farmTrackerHud.sync({
+      animals: buildFarmTrackerSources(activeFarmZone),
+      playerLocalPos: farmPlayerLocalPos,
+      cameraYaw: snapshot.cameraYaw ?? 0
+    });
+  }
 
   if (snapshot.active && !snapshot.paused && snapshot.crossedRiver) {
     const delta = adventure.completeRiverCrossing();

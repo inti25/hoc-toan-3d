@@ -36,8 +36,10 @@ export interface WorldHandle {
     prefetchForPortal(portalId: string, targetTemplate?: string): void;
   };
   readonly farmSanctuary?: {
+    readonly group?: { position: { x: number; y: number; z: number } };
     animals: Array<{ id: string; kind: string; state: string; root: { position: { x: number; y: number; z: number } } }>;
     getInteractTriggers(): Array<{ animalId: string; isActive: boolean; problemData?: any }>;
+    setFocusedAnimal?(animalId: string | null): void;
   } | null;
   readonly flowers: Array<{ position: { x: number; y: number; z: number } }>;
   readonly parkTrees: Array<{ position: { x: number; y: number; z: number } }>;
@@ -53,6 +55,7 @@ export interface WorldHandle {
   setAvatar(avatarId: AvatarId): void;
   syncAwakenedParkTrees(awakenedList: boolean[]): void;
   setFarmRescued?(rescued: Record<string, boolean>): void;
+  setFocusedFarmAnimal?(animalId: string | null): void;
   setEquippedTrail(trailId: string): void;
   setInitialPosition(x: number, z: number, y?: number): void;
   teleport(x: number, z: number, y?: number, explicitRegionId?: string): void;

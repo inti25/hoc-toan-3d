@@ -41,12 +41,16 @@ export class FarmSanctuary {
   public worldScene?: THREE.Group;
   public terrainSurface: RoadSurface | null = null;
   public colliderGrid: FarmColliderGrid | null = null;
+  public focusBeamGroup: THREE.Group | null = null;
   public onHomewardSparkle?: (worldPos: THREE.Vector3) => void;
 
   // Triggers for answering math problems
   public interactTriggers: FarmInteractTrigger[] = [];
   private triggerByAnimalId = new Map<string, FarmInteractTrigger>();
   private readonly scratchLocalPlayerPos = new THREE.Vector3();
+  private focusedAnimalId: string | null = null;
+  private focusRingMesh: THREE.Mesh | null = null;
+  private focusHaloMesh: THREE.Mesh | null = null;
 
   private readonly assets: AssetRepositorySeam;
   private time = 0;
@@ -115,6 +119,7 @@ export class FarmSanctuary {
 
     // 3. Spawn and configure farm animals across scenic spots
     this.spawnAnimals(farmRescued, questions);
+    this.syncFocusBeam(0);
   }
 
   private mountCountrysideWorld(worldScene: THREE.Group): void {
@@ -363,6 +368,7 @@ export class FarmSanctuary {
       this.interactTriggers = [];
       this.triggerByAnimalId.clear();
       this.spawnAnimals(this.lastFarmRescued, questions);
+      this.syncFocusBeam(0);
       return;
     }
 
@@ -373,6 +379,109 @@ export class FarmSanctuary {
       trigger.problemData = problemData;
       trigger.id = problemData.id || animal.id;
     });
+    this.syncFocusBeam(0);
+  }
+
+  private ensureFocusBeam(): THREE.Group {
+    if (this.focusBeamGroup) {
+      return this.focusBeamGroup;
+    }
+
+    const beamGroup = new THREE.Group();
+    beamGroup.name = 'farm_focus_beam';
+    beamGroup.visible = false;
+
+    const outerBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.52, 12.5, 14, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    outerBeam.position.y = 6.25;
+    outerBeam.frustumCulled = false;
+
+    const coreBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.16, 12.0, 10, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xfef9c3,
+        transparent: true,
+        opacity: 0.48,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    coreBeam.position.y = 6.0;
+    coreBeam.frustumCulled = false;
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.95, 1.38, 28),
+      new THREE.MeshBasicMaterial({
+        color: 0xfacc15,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.14;
+    ring.frustumCulled = false;
+    this.focusRingMesh = ring;
+
+    const halo = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.42, 0),
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b })
+    );
+    halo.position.y = 3.2;
+    halo.frustumCulled = false;
+    this.focusHaloMesh = halo;
+
+    beamGroup.add(outerBeam, coreBeam, ring, halo);
+    this.group.add(beamGroup);
+    this.focusBeamGroup = beamGroup;
+    return beamGroup;
+  }
+
+  /** Chọn con vật mục tiêu để dựng cột sáng 3D dẫn đường (hoặc `null` để ẩn). */
+  public setFocusedAnimal(animalId: string | null): void {
+    this.focusedAnimalId = animalId;
+    this.syncFocusBeam(0);
+  }
+
+  public getFocusedAnimalId(): string | null {
+    return this.focusedAnimalId;
+  }
+
+  private syncFocusBeam(dt: number): void {
+    const target = this.focusedAnimalId
+      ? this.animals.find(
+          (a) => a.id === this.focusedAnimalId && this.triggerByAnimalId.get(a.id)?.isActive === true
+        ) ?? null
+      : null;
+
+    if (!target) {
+      if (this.focusBeamGroup) {
+        this.focusBeamGroup.visible = false;
+      }
+      return;
+    }
+
+    const beam = this.ensureFocusBeam();
+    beam.visible = true;
+    beam.position.copy(target.root.position);
+
+    if (this.focusRingMesh) {
+      const pulse = 1 + Math.sin(this.time * 4.5) * 0.12;
+      this.focusRingMesh.scale.set(pulse, pulse, 1);
+    }
+    if (this.focusHaloMesh) {
+      this.focusHaloMesh.position.y = 3.2 + Math.sin(this.time * 3.2) * 0.25;
+      this.focusHaloMesh.rotation.y += dt * 2.1;
+    }
   }
 
   public getInteractTriggers() {
@@ -450,6 +559,7 @@ export class FarmSanctuary {
     if (trigger) {
       trigger.isActive = false;
     }
+    this.syncFocusBeam(0);
   }
 
   public update(dt: number, playerPos: THREE.Vector3) {
@@ -619,6 +729,8 @@ export class FarmSanctuary {
       // Procedural walking/head/legs/beacon animation
       animal.updateAnimation(dt, this.time);
     }
+
+    this.syncFocusBeam(dt);
   }
 
   private getRandomRoamPos(anchor?: THREE.Vector3): THREE.Vector3 {
@@ -653,6 +765,13 @@ export class FarmSanctuary {
 
   public dispose(): void {
     this.disposed = true;
+    this.focusedAnimalId = null;
+    if (this.focusBeamGroup) {
+      this.group.remove(this.focusBeamGroup);
+      this.focusBeamGroup = null;
+    }
+    this.focusRingMesh = null;
+    this.focusHaloMesh = null;
     this.sceneryGroup.clear();
     this.animalsGroup.clear();
     this.animals = [];
