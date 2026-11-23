@@ -1,0 +1,15 @@
+# Third-party installed agent skills (not part of the application codebase)
+.agents/
+skills-lock.json
+
+# 3D model UV texture maps and static PWA/favicon icons
+public/3dmodel/**/textures/
+public/3dmodel/*/textures/
+public/3dmodel/*/*/textures/
+public/icons/
+public/apple-touch-icon.png
+public/favicon.svg
+public/logo.png
+
+# Reference textbook PDF
+*.pdf
