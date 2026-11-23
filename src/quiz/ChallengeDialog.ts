@@ -8,6 +8,7 @@ import {
   createArchimedesChallenge,
   ChallengeSession,
   parseAnswer,
+  type Challenge,
   type ParsedAnswer,
   type MultiplicationChallenge,
   type FlowerChallenge,
@@ -55,7 +56,6 @@ export const icons: Record<string, string> = {
   key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3h3v3l-2 2h-2v2l-2 2"/>',
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
 };
-
 
 export const icon = (name: string): string =>
   `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] ?? icons.star}</svg>`;
@@ -128,13 +128,43 @@ export interface ChallengeDialogHost {
   onOpenMap?: (selectedZoneId?: number) => void;
 }
 
+interface UnifiedStepViewOptions {
+  dialogTitle: string;
+  dialogKind: string;
+  eyebrow: string;
+  bannerText: string;
+  isCompleted: boolean;
+  title: string;
+  subtitle?: string;
+  prompt: string;
+  imageUrl?: string;
+  explanationImageUrl?: string;
+  diagramSvg?: string;
+  explanation?: string;
+  answer: string;
+  options: { label: string; value: string }[];
+  challenge: Challenge;
+  stepIndex: number;
+  totalSteps: number;
+  footerRightHtml?: string;
+  finishButtonLabel: string;
+  optionClassName?: string;
+  wrongPromptText: string;
+  onLogAnswer?: (isCorrect: boolean, isLastStep: boolean) => void;
+  onNextStep: () => void;
+  onCompleteFinal: (res: { attempts: number; durationMs: number }) => {
+    feedbackText: string;
+    rewards?: ChallengeRewardSummary;
+    onAfterClose?: () => void;
+  };
+  onWrongAttempt?: () => void;
+}
+
 /**
- * Deep UI module that encapsulates challenge presentation:
- * - Multi-slot and numeric input rendering with virtual numpad
- * - Touch and keyboard navigation across answer slots
- * - Tiered hint expansions and diagram/explanation rendering
- * - Image zoom lightbox integration
- * - Multiplication, Flower, and Archimedes Trial modals
+ * Deep UI module encapsulating unified challenge presentation:
+ * - Single shared multi-step/multi-slot/numeric/comparison/choice renderer
+ * - Active & passive Math Helper Charms bar
+ * - Keyboard, touch Numpad, and Image Lightbox support
  */
 export class ChallengeDialog implements ChallengeSessionPort {
   private currentSession?: ChallengeSession;
@@ -169,12 +199,6 @@ export class ChallengeDialog implements ChallengeSessionPort {
     }
   }
 
-  /**
-   * Deep module seam: Runs any challenge specification,
-   * managing modal lifecycle, keypad interactions, tiered hints,
-   * sound cues, and progress persistence.
-   * Resolves when the challenge is solved or dismissed.
-   */
   startChallenge(spec: ChallengeSpec): Promise<ChallengeOutcome> {
     if (this.activeChallenge) {
       this.resolveActiveChallenge({
@@ -195,7 +219,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
       switch (spec.type) {
         case 'multiplication':
-          this.openMultiplication(spec.mode, spec.lastId);
+          this.openMultiplication(spec.mode, spec.lastId, spec.countDailyDrill);
           break;
         case 'flower':
           this.openFlower(spec.index, spec.remoteFlowers, spec.stepIndex ?? 0);
@@ -213,7 +237,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
           );
           break;
         case 'farm_animal':
-          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0, spec.zoneName);
+          this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0, spec.zoneName, spec.zoneId, spec.totalAnimals);
           break;
         case 'qhmj_node':
           this.openQhmjNode(spec, spec.stepIndex ?? 0);
@@ -262,7 +286,6 @@ export class ChallengeDialog implements ChallengeSessionPort {
       const target = e.target as HTMLElement | null;
       if (!target) return;
 
-      // 1. Close when clicking #lightbox-close (or any element inside it, e.g. SVG path)
       const closeBtn = target.closest?.('#lightbox-close');
       if (closeBtn) {
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -270,14 +293,12 @@ export class ChallengeDialog implements ChallengeSessionPort {
         return;
       }
 
-      // 2. Close when clicking the backdrop overlay or the dialog outside the wrapper
       if (target.classList?.contains('lightbox-backdrop') || target.id === 'image-lightbox') {
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
         closeLightbox();
         return;
       }
 
-      // 3. Open when clicking on a question image container
       const container = target.closest?.<HTMLElement>('.question-image-container');
       if (container && !container.classList?.contains('img-error')) {
         const img = container.querySelector<HTMLImageElement>('.question-inline-img');
@@ -343,13 +364,11 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (this.isMultiSlot) {
-          if (this.currentSlotValues[this.activeSlotIndex]) {
-            const unfilled = this.currentSlotValues.findIndex((v, i) => !v && i > this.activeSlotIndex);
-            if (unfilled !== -1) {
-              this.selectSlot(unfilled);
-              return true;
-            }
+        if (this.isMultiSlot && this.currentSlotValues[this.activeSlotIndex]) {
+          const unfilled = this.currentSlotValues.findIndex((v, i) => !v && i > this.activeSlotIndex);
+          if (unfilled !== -1) {
+            this.selectSlot(unfilled);
+            return true;
           }
         }
         const submitBtn = document.getElementById('numpad-submit') as HTMLButtonElement | null;
@@ -376,13 +395,19 @@ export class ChallengeDialog implements ChallengeSessionPort {
         optBtns[num].click();
         return true;
       }
+    } else if (dialog.open && !this.currentSession?.isSolved() && e.key.toLowerCase() === 'h') {
+      const hintBtn = (document.getElementById('challenge-hint') || document.getElementById('hint')) as HTMLButtonElement | null;
+      if (hintBtn && !hintBtn.hidden) {
+        e.preventDefault();
+        hintBtn.click();
+        return true;
+      }
     } else if (this.currentSession?.isSolved()) {
       if (e.key === 'Enter' || e.key === ' ') {
         const nextBtn = [
           document.getElementById('next-question'),
-          document.getElementById('flower-close-btn'),
-          document.getElementById('arch-next-step'),
-          document.getElementById('arch-finish-btn')
+          document.getElementById('challenge-next-step'),
+          document.getElementById('challenge-finish-btn')
         ].find((b) => b && !b.hidden) as HTMLElement | undefined;
         if (nextBtn) {
           e.preventDefault();
@@ -396,9 +421,11 @@ export class ChallengeDialog implements ChallengeSessionPort {
   }
 
   // -------------------------------------------------------------
-  // Multiplication Challenge Dialog
+  // Multiplication Challenge Dialog (Bridge & Daily Drill)
   // -------------------------------------------------------------
-  openMultiplication(nextMode: 'bridge' | 'practice', lastId = ''): void {
+  private dailyDrillSessionCount = 0;
+
+  openMultiplication(nextMode: 'bridge' | 'practice', lastId = '', countDailyDrill = false): void {
     this.currentMode = nextMode;
     const state = this.host.adventure.getState();
     const q = generateQuestion(state, this.currentMode, lastId);
@@ -417,11 +444,22 @@ export class ChallengeDialog implements ChallengeSessionPort {
         ? `Mình cần <strong>${challenge.answer} viên đá</strong> để xây cầu. Điền thừa số còn thiếu:`
         : 'Bạn hãy tính và nhập kết quả phép nhân:';
 
+    const doubleXpCount = this.host.adventure.getCharmCount('charm_double_xp');
+    const hintScrollCount = this.host.adventure.getCharmCount('charm_hint_scroll');
+    const charmPillHtml =
+      doubleXpCount > 0 || hintScrollCount > 0
+        ? `<div class="charm-bar">
+            ${doubleXpCount > 0 ? `<span class="charm-active-pill">📜 Bùa x2 XP đang bật (Còn ${doubleXpCount})</span>` : ''}
+            ${hintScrollCount > 0 ? `<button type="button" id="use-hint-scroll-btn" class="charm-use-btn">🧭 Dùng Cuộn Gợi Ý (${hintScrollCount})</button>` : ''}
+           </div>`
+        : '';
+
     this.host.openDialog(
       this.currentMode === 'bridge' ? 'Cùng xây cây cầu!' : 'Mỗi ngày, giỏi hơn một chút',
-      `<div class="dialog-eyebrow">${this.currentMode === 'bridge' ? `ĐOẠN CẦU ${state.bridge + 1} / ${BRIDGE_PARTS}` : challenge.review ? 'ÔN LẠI PHÉP NHÂN' : 'LUYỆN TẬP CÙNG MILO'}</div>
+      `<div class="dialog-eyebrow">${this.currentMode === 'bridge' ? `ĐOẠN CẦU ${state.bridge + 1} / ${BRIDGE_PARTS}` : challenge.review ? 'ÔN LẠI PHÉP NHÂN' : countDailyDrill ? `NHIỆM VỤ HẰNG NGÀY (${Math.min(5, (state.dailyDrill?.completedCount ?? 0) + 1)}/5)` : 'LUYỆN TẬP CÙNG MILO'}</div>
       <p class="question-intro">${introHtml}</p>
       <div class="equation">${equationHtml}</div>
+      ${charmPillHtml}
       ${this.renderMathInputAndNumpad()}
       <div id="feedback" class="feedback" aria-live="polite"></div>
       <div id="hint-area" class="hint-area" hidden></div>
@@ -430,19 +468,36 @@ export class ChallengeDialog implements ChallengeSessionPort {
       'quiz'
     );
 
-    this.setupNumpadListeners((val) => this.submitMultiplicationAnswer(Number(val), challenge));
+    this.setupNumpadListeners((val) => this.submitMultiplicationAnswer(Number(val), challenge, countDailyDrill));
 
-    const hintBtn = document.getElementById('hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hintText = this.currentSession.requestHint();
-        this.renderMultiplicationHint(hintText, challenge);
-        this.host.playCue('hint');
+    const triggerHint = () => {
+      if (!this.currentSession) return;
+      const hintText = this.currentSession.requestHint();
+      this.renderMultiplicationHint(hintText, challenge);
+      this.host.playCue('hint');
+      const hintBtn = document.getElementById('hint');
+      if (hintBtn) {
         if (this.currentSession.isMaxHintStage()) {
           hintBtn.hidden = true;
         } else {
           hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
+      }
+    };
+
+    const hintBtn = document.getElementById('hint');
+    if (hintBtn) hintBtn.onclick = triggerHint;
+
+    const scrollBtn = document.getElementById('use-hint-scroll-btn') as HTMLButtonElement | null;
+    if (scrollBtn) {
+      scrollBtn.onclick = () => {
+        if (!this.currentSession || this.currentSession.isMaxHintStage()) return;
+        if (this.host.adventure.consumeCharm('charm_hint_scroll')) {
+          triggerHint();
+          this.host.updateHUD();
+          const left = this.host.adventure.getCharmCount('charm_hint_scroll');
+          scrollBtn.textContent = left > 0 ? `🧭 Dùng Cuộn Gợi Ý (${left})` : '🧭 Đã dùng Cuộn Gợi Ý';
+          if (left <= 0 || this.currentSession.isMaxHintStage()) scrollBtn.disabled = true;
         }
       };
     }
@@ -454,7 +509,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
           this.host.closeDialog();
           this.host.toast('Tuyệt vời! Cầu đã xây xong. Cùng đi qua cầu đến Vườn Hoa Tri Thức nhé!');
         } else {
-          this.openMultiplication(this.currentMode, challenge.id);
+          this.openMultiplication(this.currentMode, challenge.id, countDailyDrill);
         }
       };
     }
@@ -467,7 +522,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     area.innerHTML = `<p>${hintText}</p><div class="stone-groups" aria-label="${challenge.b} nhóm, mỗi nhóm có ${challenge.a} viên đá">${Array.from({ length: challenge.b }, () => `<div class="stone-group">${'<i></i>'.repeat(challenge.a)}</div>`).join('')}</div>`;
   }
 
-  private submitMultiplicationAnswer(value: number, challenge: MultiplicationChallenge): void {
+  private submitMultiplicationAnswer(value: number, challenge: MultiplicationChallenge, countDailyDrill = false): void {
     if (!this.currentSession || this.currentSession.isSolved()) return;
     const res = this.currentSession.submit(value);
     const inputBox = document.getElementById('math-input-box');
@@ -478,7 +533,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
         questionId: challenge.id,
         isBridgeMode: this.currentMode === 'bridge',
         firstTry: res.attempts === 1,
-        responseTimeMs: this.currentSession.getDurationMs()
+        responseTimeMs: this.currentSession.getDurationMs(),
+        countDailyDrill
       });
 
       if (this.currentMode === 'bridge') {
@@ -495,7 +551,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
       const feedback = document.getElementById('feedback');
       if (feedback) {
         feedback.className = 'feedback success';
-        feedback.textContent = `✓ Chính xác! ${challenge.a} × ${challenge.b} = ${challenge.answer}. +10 XP · +5 xu${delta.combo >= 3 ? ` · Combo ${delta.combo}!` : ''}`;
+        const dailyText = delta.dailyDrillCompletedNow ? ' · 🎁 Hoàn thành 5 câu ngày (+25 XP, +15 xu, +1 Cuộn Gợi Ý)!' : '';
+        feedback.textContent = `✓ Chính xác! ${challenge.a} × ${challenge.b} = ${challenge.answer}. +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.combo >= 3 ? ` · Combo ${delta.combo}!` : ''}${delta.doubleXpApplied ? ' (x2 XP)' : ''}${dailyText}`;
       }
 
       const nextQuestion = document.getElementById('next-question') as HTMLButtonElement | null;
@@ -517,8 +574,8 @@ export class ChallengeDialog implements ChallengeSessionPort {
         attempts: res.attempts,
         durationMs: this.currentSession.getDurationMs(),
         rewards: {
-          xp: 10,
-          coins: 5,
+          xp: delta.xpGained,
+          coins: delta.coinsGained,
           combo: delta.combo,
           leveledUp: delta.leveledUp,
           newLevel: delta.newLevel,
@@ -555,19 +612,285 @@ export class ChallengeDialog implements ChallengeSessionPort {
   }
 
   // -------------------------------------------------------------
-  // Flower Trial Dialog
+  // Unified Step Challenge Renderer (Flower, Park, Farm, QHMJ, Archimedes)
+  // -------------------------------------------------------------
+  private renderStepChallenge(opts: UnifiedStepViewOptions): void {
+    this.currentSession = new ChallengeSession(opts.challenge);
+    this.currentInputValue = '';
+    const parsed = parseAnswer(opts.answer);
+    const isChoiceMode = parsed.type === 'choice';
+
+    let bodyControls = '';
+    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
+      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
+    } else if (parsed.type === 'numeric') {
+      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
+    } else if (parsed.type === 'comparison') {
+      const compOptions =
+        opts.options && opts.options.length > 0
+          ? opts.options.map((o) => String(o.value || o.label).trim())
+          : ['<', '=', '>'];
+      bodyControls = this.renderComparisonControls(compOptions);
+    } else {
+      const optCls = opts.optionClassName || 'flower-opt';
+      bodyControls = `
+        <div class="answers flower-answers">
+          ${opts.options
+            .map(
+              (o, i) => `
+            <button class="answer ${optCls}" data-value="${o.value}">
+              <kbd>${i + 1}</kbd><span>${o.label}</span>
+            </button>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+
+    const doubleXpCount = this.host.adventure.getCharmCount('charm_double_xp');
+    const hintScrollCount = this.host.adventure.getCharmCount('charm_hint_scroll');
+    const eliminateCount = this.host.adventure.getCharmCount('charm_eliminate');
+    const canShowEliminate = isChoiceMode && opts.options.length >= 3 && eliminateCount > 0;
+    const hasAnyCharm = doubleXpCount > 0 || hintScrollCount > 0 || canShowEliminate;
+
+    const charmBarHtml = hasAnyCharm
+      ? `<div class="charm-bar">
+          ${doubleXpCount > 0 ? `<span class="charm-active-pill">📜 Bùa x2 XP (Còn ${doubleXpCount})</span>` : ''}
+          ${hintScrollCount > 0 ? `<button type="button" id="charm-use-hint" class="charm-use-btn">🧭 Cuộn Gợi Ý (${hintScrollCount})</button>` : ''}
+          ${canShowEliminate ? `<button type="button" id="charm-use-eliminate" class="charm-use-btn">🔎 Bỏ 1 đáp án sai (${eliminateCount})</button>` : ''}
+        </div>`
+      : '';
+
+    this.host.openDialog(
+      opts.dialogTitle,
+      `
+      <div class="dialog-eyebrow">${opts.eyebrow}</div>
+      <div class="flower-status-banner ${opts.isCompleted ? 'bloomed' : 'bud'}">
+        ${opts.bannerText}
+      </div>
+      <div class="flower-question-box">
+        <div class="flower-question-title">${opts.title}</div>
+        ${opts.subtitle && opts.subtitle !== opts.title ? `<div class="flower-question-subtitle">${opts.subtitle}</div>` : ''}
+        <div class="flower-question-prompt">${opts.prompt}</div>
+        ${opts.diagramSvg ? `<div class="step-diagram-svg">${opts.diagramSvg}</div>` : ''}
+        ${renderQuestionImage(opts.imageUrl, opts.title)}
+      </div>
+      ${charmBarHtml}
+      ${bodyControls}
+      <div id="challenge-feedback" class="feedback" aria-live="polite"></div>
+      <div id="challenge-hint-area" class="hint-area" hidden></div>
+      <div class="quiz-footer">
+        <button id="challenge-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
+        ${opts.footerRightHtml ?? '<span>Không giới hạn thời gian</span>'}
+      </div>
+      <button id="challenge-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
+      <button id="challenge-finish-btn" class="primary wide" hidden>${opts.finishButtonLabel} ${icon('arrow')}</button>
+      `,
+      opts.dialogKind
+    );
+
+    const renderHintBox = (hintText: string, explanation?: string) => {
+      const area = document.getElementById('challenge-hint-area');
+      if (!area) return;
+      area.hidden = false;
+      const stage = this.currentSession?.getHintStage() ?? 1;
+      area.innerHTML = `
+        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
+        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
+        ${renderQuestionImage(opts.explanationImageUrl, 'Hình minh họa lời giải', true)}
+      `;
+    };
+
+    const handleSubmit = (choiceVal: string | string[]) => {
+      if (!this.currentSession || this.currentSession.isSolved()) return;
+      const res = this.currentSession.submit(choiceVal);
+      const inputBox = document.getElementById('math-input-box');
+      const isLastStep = opts.stepIndex + 1 >= opts.totalSteps;
+
+      if (res.isCorrect) {
+        if (inputBox) {
+          inputBox.classList.remove('shake', 'error');
+          inputBox.classList.add('correct');
+        }
+        if (this.isMultiSlot) {
+          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
+            b.classList.remove('shake', 'error', 'active');
+            b.classList.add('correct');
+          });
+        }
+        document
+          .querySelectorAll<HTMLButtonElement>('.flower-opt, .arch-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn, .charm-use-btn')
+          .forEach((b) => (b.disabled = true));
+        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
+        if (numpadContainer) numpadContainer.style.display = 'none';
+        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
+        if (slotNavBar) slotNavBar.style.display = 'none';
+
+        const feedback = document.getElementById('challenge-feedback');
+        if (feedback) feedback.className = 'feedback success';
+
+        opts.onLogAnswer?.(true, isLastStep);
+
+        const hintBtn = document.getElementById('challenge-hint');
+        if (hintBtn) hintBtn.hidden = true;
+
+        if (!isLastStep) {
+          this.host.playCue('correct');
+          if (feedback) {
+            feedback.textContent = `✓ Chính xác! Bước ${opts.stepIndex + 1}/${opts.totalSteps} hoàn thành xuất sắc!`;
+          }
+          const nextStepBtn = document.getElementById('challenge-next-step') as HTMLButtonElement | null;
+          if (nextStepBtn) {
+            nextStepBtn.hidden = false;
+            nextStepBtn.onclick = opts.onNextStep;
+            nextStepBtn.focus();
+          }
+          return;
+        }
+
+        const result = opts.onCompleteFinal({
+          attempts: res.attempts,
+          durationMs: this.currentSession.getDurationMs()
+        });
+        if (feedback) {
+          feedback.textContent = result.feedbackText;
+        }
+        this.host.updateHUD();
+
+        this.resolveActiveChallenge({
+          spec: this.activeChallenge?.spec ?? ({ type: 'flower', index: 0 } as ChallengeSpec),
+          status: 'solved',
+          isCorrect: true,
+          attempts: res.attempts,
+          durationMs: this.currentSession.getDurationMs(),
+          rewards: result.rewards
+        });
+
+        const finishBtn = document.getElementById('challenge-finish-btn') as HTMLButtonElement | null;
+        if (finishBtn) {
+          finishBtn.hidden = false;
+          finishBtn.onclick = () => {
+            this.host.closeDialog();
+            result.onAfterClose?.();
+          };
+          finishBtn.focus();
+        }
+      } else {
+        opts.onWrongAttempt?.();
+        opts.onLogAnswer?.(false, isLastStep);
+        if (inputBox) {
+          inputBox.classList.remove('shake');
+          void inputBox.offsetWidth;
+          inputBox.classList.add('shake', 'error');
+        }
+        if (this.isMultiSlot && res.slotResults) {
+          res.slotResults.forEach((correct, idx) => {
+            const box = document.getElementById(`slot-box-${idx}`);
+            if (box) {
+              box.classList.remove('shake', 'error', 'correct');
+              void box.offsetWidth;
+              box.classList.add(correct ? 'correct' : 'shake', ...(correct ? [] : ['error']));
+            }
+          });
+          const firstWrong = res.slotResults.findIndex((c) => !c);
+          if (firstWrong !== -1) this.selectSlot(firstWrong);
+        }
+        const feedback = document.getElementById('challenge-feedback');
+        if (feedback) {
+          feedback.className = 'feedback gentle';
+          const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
+          const totalSlots = res.slotResults ? res.slotResults.length : 0;
+          if (totalSlots > 1 && correctCount > 0) {
+            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy kiểm tra lại các ô màu đỏ nhé!`;
+          } else {
+            feedback.textContent = opts.wrongPromptText;
+          }
+        }
+      }
+    };
+
+    this.setupNumpadListeners(handleSubmit);
+
+    const optSelector = `.${opts.optionClassName || 'flower-opt'}`;
+    document.querySelectorAll<HTMLButtonElement>(optSelector).forEach((btn) => {
+      btn.onclick = () => handleSubmit(btn.dataset.value ?? '');
+    });
+
+    const triggerHint = () => {
+      if (!this.currentSession) return;
+      const hintText = this.currentSession.requestHint();
+      const isMax = this.currentSession.isMaxHintStage();
+      renderHintBox(hintText, isMax ? opts.explanation : undefined);
+      this.host.playCue('hint');
+      const hintBtn = document.getElementById('challenge-hint');
+      if (hintBtn) {
+        if (isMax) {
+          hintBtn.hidden = true;
+        } else {
+          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
+        }
+      }
+    };
+
+    const hintBtn = document.getElementById('challenge-hint');
+    if (hintBtn) hintBtn.onclick = triggerHint;
+
+    const charmHintBtn = document.getElementById('charm-use-hint') as HTMLButtonElement | null;
+    if (charmHintBtn) {
+      charmHintBtn.onclick = () => {
+        if (!this.currentSession || this.currentSession.isSolved() || this.currentSession.isMaxHintStage()) return;
+        if (this.host.adventure.consumeCharm('charm_hint_scroll')) {
+          triggerHint();
+          this.host.updateHUD();
+          const left = this.host.adventure.getCharmCount('charm_hint_scroll');
+          charmHintBtn.textContent = left > 0 ? `🧭 Cuộn Gợi Ý (${left})` : '🧭 Đã dùng Cuộn Gợi Ý';
+          if (left <= 0 || this.currentSession.isMaxHintStage()) charmHintBtn.disabled = true;
+        }
+      };
+    }
+
+    const charmElimBtn = document.getElementById('charm-use-eliminate') as HTMLButtonElement | null;
+    if (charmElimBtn) {
+      charmElimBtn.onclick = () => {
+        if (!this.currentSession || this.currentSession.isSolved()) return;
+        const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(optSelector)).filter(
+          (b) => !b.disabled && !b.classList.contains('eliminated')
+        );
+        const wrongButtons = buttons.filter(
+          (b) => String(b.dataset.value ?? '').trim().toLowerCase() !== String(opts.answer).trim().toLowerCase()
+        );
+        if (buttons.length <= 2 || wrongButtons.length === 0) {
+          this.host.toast('Chỉ còn ít phương án, không thể bỏ thêm!');
+          charmElimBtn.disabled = true;
+          return;
+        }
+        if (this.host.adventure.consumeCharm('charm_eliminate')) {
+          const target = wrongButtons[Math.floor(Math.random() * wrongButtons.length)];
+          target.disabled = true;
+          target.classList.add('eliminated');
+          this.host.playCue('hint');
+          this.host.updateHUD();
+          const left = this.host.adventure.getCharmCount('charm_eliminate');
+          charmElimBtn.textContent = left > 0 ? `🔎 Bỏ 1 đáp án sai (${left})` : '🔎 Đã dùng Kính Lúp';
+          if (left <= 0 || buttons.length - 1 <= 2) charmElimBtn.disabled = true;
+        }
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 1. Flower Trial
   // -------------------------------------------------------------
   openFlower(index: number, remoteFlowers?: RemoteProblem[], stepIndex = 0): void {
     const targetId = index + 1;
     const remoteQ =
       remoteFlowers &&
       (remoteFlowers.find((p) => Number(p.id) === targetId) ||
-       remoteFlowers.find((p) => String(p.id) === String(targetId)) ||
-       remoteFlowers[index]);
+        remoteFlowers.find((p) => String(p.id) === String(targetId)) ||
+        remoteFlowers[index]);
 
-    const steps = (remoteQ && remoteQ.steps && Array.isArray(remoteQ.steps) && remoteQ.steps.length > 0)
-      ? remoteQ.steps
-      : null;
+    const steps = remoteQ?.steps && Array.isArray(remoteQ.steps) && remoteQ.steps.length > 0 ? remoteQ.steps : null;
     const totalSteps = steps ? steps.length : 1;
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
 
@@ -575,7 +898,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     if (remoteQ && steps) {
       const step = steps[currentStepIndex] || steps[0];
       const flowerTitle = remoteQ.title || `Hoa Thử Thách #${index + 1}`;
-      const flowerSubtitle = (remoteQ.subtitle && remoteQ.subtitle !== remoteQ.title) ? remoteQ.subtitle : '';
+      const flowerSubtitle = remoteQ.subtitle && remoteQ.subtitle !== remoteQ.title ? remoteQ.subtitle : '';
       challenge = {
         id: `flower_${index}_${currentStepIndex}`,
         kind: 'flower',
@@ -594,7 +917,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         explanation: step.explanation,
         explanationImageUrl: step.explanationImageUrl,
         flowerQuestion: {
-          id: typeof remoteQ.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ.id), 10) || index + 1),
+          id: typeof remoteQ.id === 'number' ? remoteQ.id : parseInt(String(remoteQ.id), 10) || index + 1,
           title: flowerTitle,
           subtitle: flowerSubtitle,
           question: step.prompt,
@@ -612,255 +935,88 @@ export class ChallengeDialog implements ChallengeSessionPort {
       challenge = createFlowerChallenge(index, currentStepIndex);
     }
 
-    this.currentSession = new ChallengeSession(challenge);
-    this.currentInputValue = '';
     const q = challenge.flowerQuestion;
     const isBloomed = this.host.adventure.getState().flowers[index];
-    const parsed = parseAnswer(challenge.answer);
 
-    const renderFlowerHint = (hintText: string, explanation?: string) => {
-      const area = document.getElementById('flower-hint-area');
-      if (!area) return;
-      area.hidden = false;
-      const stage = this.currentSession?.getHintStage() ?? 1;
-      const explImg = challenge.explanationImageUrl || q.explanationImageUrl;
-      area.innerHTML = `
-        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
-        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
-        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
-      `;
-    };
-
-    const handleFlowerSubmit = (choiceVal: string | string[]) => {
-      if (!this.currentSession || this.currentSession.isSolved()) return;
-      const res = this.currentSession.submit(choiceVal);
-      const inputBox = document.getElementById('math-input-box');
-
-      if (res.isCorrect) {
-        if (inputBox) {
-          inputBox.classList.remove('shake', 'error');
-          inputBox.classList.add('correct');
-        }
-        if (this.isMultiSlot) {
-          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
-            b.classList.remove('shake', 'error', 'active');
-            b.classList.add('correct');
-          });
-        }
-        document
-          .querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
-          .forEach((b) => (b.disabled = true));
-        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
-        if (numpadContainer) numpadContainer.style.display = 'none';
-        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
-        if (slotNavBar) slotNavBar.style.display = 'none';
-
-        const feedback = document.getElementById('flower-feedback');
-        if (feedback) feedback.className = 'feedback success';
-
-        const isLastStep = currentStepIndex + 1 >= totalSteps;
-        this.host.logRemoteProgress({
+    this.renderStepChallenge({
+      dialogTitle: `Cây Hoa Số ${index + 1}: ${q.badge}`,
+      dialogKind: 'flowerQuiz',
+      eyebrow: `VƯỜN HOA TRI THỨC · BÀI ${index + 1} / 10${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}`,
+      bannerText: isBloomed
+        ? '🌸 Cây hoa này đã bung nở rực rỡ! Bạn có thể xem lại hoặc thử sức lại.'
+        : '🌱 Búp hoa đang ấp nụ. Hãy giải đúng câu hỏi dưới đây để đánh thức hoa nở nhé!',
+      isCompleted: isBloomed,
+      title: q.title,
+      subtitle: q.subtitle,
+      prompt: q.question,
+      imageUrl: challenge.imageUrl || q.imageUrl,
+      explanationImageUrl: challenge.explanationImageUrl || q.explanationImageUrl,
+      explanation: challenge.explanation,
+      answer: challenge.answer,
+      options: q.options,
+      challenge,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      footerRightHtml: `<span>${this.host.adventure.getState().flowers.filter(Boolean).length} / 10 cây hoa đã nở</span>`,
+      finishButtonLabel: 'Ngắm hoa nở',
+      wrongPromptText: "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nếu cần nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        if (!isCorrect) return;
+        void this.host.logRemoteProgress({
           zoneId: 6,
           problemId: challenge.flowerQuestion?.id || index + 1,
           stepId: steps?.[currentStepIndex]?.stepId || `flower_${challenge.flowerQuestion?.id || index + 1}_${currentStepIndex + 1}`,
           isCorrect: true,
-          score: isLastStep ? 15 : 10
+          score: isLast ? 15 : 10
         });
-
-        if (!isLastStep) {
+      },
+      onNextStep: () => this.openFlower(index, remoteFlowers, currentStepIndex + 1),
+      onCompleteFinal: () => {
+        const delta = this.host.adventure.bloomFlower(index);
+        if (!delta.alreadyBloomed) {
+          this.host.getWorld().bloomFlower(index);
+          this.host.playCue('celebrate');
+          if (delta.allFlowersCompleted) {
+            setTimeout(() => {
+              this.host.openDialog(
+                '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
+                `
+                <div class="completion-medal">${icon('crown')}</div>
+                <p class="dialog-copy centered">
+                  Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
+                  <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
+                </p>
+                <div class="completion-rewards">
+                  <span>★ +100 XP</span><span>◉ +30 xu</span>
+                </div>
+                <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
+                `,
+                'complete'
+              );
+              this.host.updateHUD();
+              const grandBtn = document.getElementById('close-grand');
+              if (grandBtn) grandBtn.onclick = this.host.closeDialog;
+            }, 900);
+          }
+        } else {
           this.host.playCue('correct');
-          if (feedback) {
-            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} hoàn thành xuất sắc! +10 XP`;
-          }
-          const hintBtn = document.getElementById('flower-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const nextStepBtn = document.getElementById('flower-next-step') as HTMLButtonElement | null;
-          if (nextStepBtn) {
-            nextStepBtn.hidden = false;
-            nextStepBtn.onclick = () => {
-              this.openFlower(index, remoteFlowers, currentStepIndex + 1);
-            };
-            nextStepBtn.focus();
-          }
-        } else {
-          const delta = this.host.adventure.bloomFlower(index);
-
-          if (!delta.alreadyBloomed) {
-            this.host.getWorld().bloomFlower(index);
-            this.host.playCue('celebrate');
-            if (feedback) {
-              feedback.textContent = totalSteps > 1
-                ? `✓ Xuất sắc! Hoàn thành cả ${totalSteps} bước! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`
-                : `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +15 XP · +5 xu`;
-            }
-            this.host.updateHUD();
-
-            if (delta.allFlowersCompleted) {
-              setTimeout(() => {
-                this.host.openDialog(
-                  '🌸 ĐẠI THÀNH CÔNG: VƯỜN HOA NỞ RỘ! 🌸',
-                  `
-                  <div class="completion-medal">${icon('crown')}</div>
-                  <p class="dialog-copy centered">
-                    Tuyệt vời! Bạn đã trả lời đúng toàn bộ 10 câu hỏi!<br>
-                    <b>10 cây hoa thần kỳ</b> đã nở rộ rực rỡ khắp Vườn Hoa Tri Thức!
-                  </p>
-                  <div class="completion-rewards">
-                    <span>★ +100 XP</span><span>◉ +30 xu</span>
-                  </div>
-                  <button id="close-grand" class="primary wide">Tự do ngắm vườn hoa ${icon('arrow')}</button>
-                  `,
-                  'complete'
-                );
-                this.host.updateHUD();
-                const grandBtn = document.getElementById('close-grand');
-                if (grandBtn) grandBtn.onclick = this.host.closeDialog;
-              }, 1200);
-            }
-          } else {
-            this.host.playCue('correct');
-            if (feedback) feedback.textContent = `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`;
-          }
-
-          this.resolveActiveChallenge({
-            spec: this.activeChallenge?.spec ?? { type: 'flower', index, stepIndex: currentStepIndex },
-            status: 'solved',
-            isCorrect: true,
-            attempts: res.attempts,
-            durationMs: this.currentSession.getDurationMs(),
-            rewards: {
-              xp: delta.alreadyBloomed ? 0 : 15,
-              coins: delta.alreadyBloomed ? 0 : 5,
-              bloomedIndex: index
-            }
-          });
-
-          const hintBtn = document.getElementById('flower-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const closeBtn = document.getElementById('flower-close-btn') as HTMLButtonElement | null;
-          if (closeBtn) {
-            closeBtn.hidden = false;
-            closeBtn.onclick = this.host.closeDialog;
-            closeBtn.focus();
-          }
         }
-      } else {
-        if (inputBox) {
-          inputBox.classList.remove('shake');
-          void inputBox.offsetWidth;
-          inputBox.classList.add('shake', 'error');
-        }
-        if (this.isMultiSlot && res.slotResults) {
-          res.slotResults.forEach((correct, idx) => {
-            const box = document.getElementById(`slot-box-${idx}`);
-            if (box) {
-              box.classList.remove('shake', 'error', 'correct');
-              void box.offsetWidth;
-              if (correct) {
-                box.classList.add('correct');
-              } else {
-                box.classList.add('shake', 'error');
-              }
-            }
-          });
-          const firstWrong = res.slotResults.findIndex((c) => !c);
-          if (firstWrong !== -1) {
-            this.selectSlot(firstWrong);
+        return {
+          feedbackText: delta.alreadyBloomed
+            ? `✓ Chính xác! Cây hoa số ${index + 1} vốn đã nở hoa rất đẹp!`
+            : `✓ Chính xác! Cây hoa số ${index + 1} đã nở hoa rực rỡ! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
+          rewards: {
+            xp: delta.xpGained,
+            coins: delta.coinsGained,
+            bloomedIndex: index
           }
-        }
-        const feedback = document.getElementById('flower-feedback');
-        if (feedback) {
-          feedback.className = 'feedback gentle';
-          const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
-          const totalSlots = res.slotResults ? res.slotResults.length : 0;
-          if (totalSlots > 1 && correctCount > 0) {
-            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy xem lại ô màu đỏ hoặc bấm 'Gợi ý cho mình' nếu cần nhé!`;
-          } else {
-            feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nếu cần nhé!";
-          }
-        }
+        };
       }
-    };
-
-    let bodyControls = '';
-    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
-      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
-    } else if (parsed.type === 'numeric') {
-      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
-    } else if (parsed.type === 'comparison') {
-      const compOptions =
-        challenge.options && challenge.options.length > 0
-          ? challenge.options.map((o) => String(o.value || o.label).trim())
-          : ['<', '=', '>'];
-      bodyControls = this.renderComparisonControls(compOptions);
-    } else {
-      bodyControls = `
-        <div class="answers flower-answers">
-          ${q.options
-            .map(
-              (o, i) => `
-            <button class="answer flower-opt" data-value="${o.value}">
-              <kbd>${i + 1}</kbd><span>${o.label}</span>
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-    }
-
-    this.host.openDialog(
-      `Cây Hoa Số ${index + 1}: ${q.badge}`,
-      `
-      <div class="dialog-eyebrow">VƯỜN HOA TRI THỨC · BÀI ${index + 1} / 10${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
-      <div class="flower-status-banner ${isBloomed ? 'bloomed' : 'bud'}">
-        ${isBloomed ? '🌸 Cây hoa này đã bung nở rực rỡ! Bạn có thể xem lại hoặc thử sức lại.' : '🌱 Búp hoa đang ấp nụ. Hãy giải đúng câu hỏi dưới đây để đánh thức hoa nở nhé!'}
-      </div>
-      <div class="flower-question-box">
-        <div class="flower-question-title">${q.title}</div>
-        ${q.subtitle ? `<div class="flower-question-subtitle">${q.subtitle}</div>` : ''}
-        <div class="flower-question-prompt">${q.question}</div>
-        ${renderQuestionImage(challenge.imageUrl || q.imageUrl, q.title)}
-      </div>
-      ${bodyControls}
-      <div id="flower-feedback" class="feedback" aria-live="polite"></div>
-      <div id="flower-hint-area" class="hint-area" hidden></div>
-      <div class="quiz-footer">
-        <button id="flower-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
-        <span>${this.host.adventure.getState().flowers.filter(Boolean).length} / 10 cây hoa đã nở</span>
-      </div>
-      <button id="flower-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
-      <button id="flower-close-btn" class="primary wide" hidden>Ngắm hoa nở ${icon('arrow')}</button>
-      `,
-      'flowerQuiz'
-    );
-
-    this.setupNumpadListeners(handleFlowerSubmit);
-
-    document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach((btn) => {
-      btn.onclick = () => handleFlowerSubmit(btn.dataset.value ?? '');
     });
-
-    const hintBtn = document.getElementById('flower-hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hintText = this.currentSession.requestHint();
-        const isMax = this.currentSession.isMaxHintStage();
-        const explanation = isMax ? challenge.explanation : undefined;
-        renderFlowerHint(hintText, explanation);
-        this.host.playCue('hint');
-        if (isMax) {
-          hintBtn.hidden = true;
-        } else {
-          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
-        }
-      };
-    }
   }
 
   // -------------------------------------------------------------
-  // Thử thách Cây Tri Thức (Công Viên Xanh - PARK_SANCTUARY)
+  // 2. Park Tree Sanctuary
   // -------------------------------------------------------------
   openParkTree(
     index: number,
@@ -868,9 +1024,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
     zoneConfig?: RemoteZoneConfig,
     stepIndex = 0
   ): void {
-    if (!remoteParkProblems || index < 0 || index >= remoteParkProblems.length) {
-      return;
-    }
+    if (!remoteParkProblems || index < 0 || index >= remoteParkProblems.length) return;
     const targetId = index + 1;
     const remoteQ =
       remoteParkProblems.find((p) => Number(p.id) === targetId) ||
@@ -880,8 +1034,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
 
     const zoneName = zoneConfig?.name || 'Công Viên Xanh';
     const zoneId = zoneConfig?.id || 7;
-
-    let step: RemoteStep = {
+    const fallbackStep: RemoteStep = {
       stepId: `tree_${targetId}`,
       prompt: `Cây Tri Thức #${targetId}: Tính giá trị của phép tính`,
       options: [{ label: '10', value: '10' }, { label: '20', value: '20' }],
@@ -889,20 +1042,17 @@ export class ChallengeDialog implements ChallengeSessionPort {
       hints: ['Dựa vào bảng nhân hoặc bảng chia tương ứng để tính nhẩm.'],
       explanation: 'Lời giải chi tiết.'
     };
-
-    const steps = (remoteQ && remoteQ.steps && Array.isArray(remoteQ.steps) && remoteQ.steps.length > 0)
-      ? remoteQ.steps
-      : [step];
+    const steps = remoteQ.steps && remoteQ.steps.length > 0 ? remoteQ.steps : [fallbackStep];
     const totalSteps = steps.length;
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
-    step = steps[currentStepIndex] || step;
+    const step = steps[currentStepIndex] || fallbackStep;
 
-    const title = remoteQ?.title || `Cây Tri Thức #${targetId}`;
-    const subtitle = (remoteQ?.subtitle && remoteQ.subtitle !== title) ? remoteQ.subtitle : '';
-    const badge = remoteQ?.badge || `🌳 Cây Tri Thức #${targetId}`;
+    const title = remoteQ.title || `Cây Tri Thức #${targetId}`;
+    const subtitle = remoteQ.subtitle && remoteQ.subtitle !== title ? remoteQ.subtitle : '';
+    const badge = remoteQ.badge || `🌳 Cây Tri Thức #${targetId}`;
 
     const challenge: FlowerChallenge = {
-      id: `park_tree_${index}_${currentStepIndex}`,
+      id: `park_tree_${zoneId}_${index}_${currentStepIndex}`,
       kind: 'flower',
       index,
       stepIndex: currentStepIndex,
@@ -910,17 +1060,17 @@ export class ChallengeDialog implements ChallengeSessionPort {
       title,
       subtitle,
       badge,
-      color: remoteQ?.color || 0x10b981,
+      color: remoteQ.color || 0x10b981,
       prompt: step.prompt,
       imageUrl: step.imageUrl,
-      options: step.options.map((o: { label: string; value: string }) => ({ value: o.value, label: o.label })),
+      options: step.options.map((o) => ({ value: o.value, label: o.label })),
       answer: step.answer,
       hints: step.hints,
       explanation: step.explanation,
       explanationImageUrl: step.explanationImageUrl,
       diagramSvg: step.diagramSvg,
       flowerQuestion: {
-        id: typeof remoteQ?.id === 'number' ? remoteQ.id : (parseInt(String(remoteQ?.id), 10) || targetId),
+        id: typeof remoteQ.id === 'number' ? remoteQ.id : parseInt(String(remoteQ.id), 10) || targetId,
         title,
         question: step.prompt,
         imageUrl: step.imageUrl,
@@ -930,257 +1080,102 @@ export class ChallengeDialog implements ChallengeSessionPort {
         explanation: step.explanation,
         explanationImageUrl: step.explanationImageUrl,
         badge,
-        color: remoteQ?.color || 0x10b981
+        color: remoteQ.color || 0x10b981
       }
     };
 
-    this.currentSession = new ChallengeSession(challenge);
-    this.currentInputValue = '';
-    const isAwakened = this.host.adventure.isParkTreeAwakened(index);
-    const parsed = parseAnswer(challenge.answer);
+    const isAwakened = this.host.adventure.isParkTreeAwakened(index, zoneId, remoteQ.id);
+    const totalCount = remoteParkProblems.length;
+    const awakenedCount = remoteParkProblems.filter((p, i) =>
+      this.host.adventure.isParkTreeAwakened(i, zoneId, p.id)
+    ).length;
 
-    const renderTreeHint = (hintText: string, explanation?: string) => {
-      const area = document.getElementById('park-tree-hint-area');
-      if (!area) return;
-      area.hidden = false;
-      const stage = this.currentSession?.getHintStage() ?? 1;
-      const explImg = challenge.explanationImageUrl || step.explanationImageUrl;
-      area.innerHTML = `
-        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
-        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
-        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
-      `;
-    };
-
-    const handleTreeSubmit = (choiceVal: string | string[]) => {
-      if (!this.currentSession || this.currentSession.isSolved()) return;
-      const res = this.currentSession.submit(choiceVal);
-      const inputBox = document.getElementById('math-input-box');
-
-      if (res.isCorrect) {
-        if (inputBox) {
-          inputBox.classList.remove('shake', 'error');
-          inputBox.classList.add('correct');
-        }
-        if (this.isMultiSlot) {
-          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
-            b.classList.remove('shake', 'error', 'active');
-            b.classList.add('correct');
-          });
-        }
-        document
-          .querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
-          .forEach((b) => (b.disabled = true));
-        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
-        if (numpadContainer) numpadContainer.style.display = 'none';
-        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
-        if (slotNavBar) slotNavBar.style.display = 'none';
-
-        const feedback = document.getElementById('park-tree-feedback');
-        if (feedback) feedback.className = 'feedback success';
-
-        const isLastStep = currentStepIndex + 1 >= totalSteps;
-        this.host.logRemoteProgress({
+    this.renderStepChallenge({
+      dialogTitle: `Cây Tri Thức #${targetId}: ${badge}`,
+      dialogKind: 'flowerQuiz',
+      eyebrow: `${zoneName.toUpperCase()} · BÀI ${targetId} / ${totalCount}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}`,
+      bannerText: isAwakened
+        ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.'
+        : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!',
+      isCompleted: isAwakened,
+      title,
+      subtitle,
+      prompt: step.prompt,
+      imageUrl: step.imageUrl,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      explanation: step.explanation,
+      answer: step.answer,
+      options: step.options,
+      challenge,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      footerRightHtml: `<span>${awakenedCount} / ${totalCount} cây đã thức tỉnh</span>`,
+      finishButtonLabel: 'Ngắm cây xanh',
+      wrongPromptText: "↻ Chưa đúng rồi. Bạn hãy tính nhẩm lại hoặc bấm 'Gợi ý cho mình' nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        if (!isCorrect) return;
+        void this.host.logRemoteProgress({
           zoneId,
-          problemId: remoteQ?.id || index + 1,
-          stepId: step.stepId || `tree_${remoteQ?.id || index + 1}_${currentStepIndex + 1}`,
+          problemId: remoteQ.id || index + 1,
+          stepId: step.stepId || `tree_${remoteQ.id || index + 1}_${currentStepIndex + 1}`,
           isCorrect: true,
-          score: isLastStep ? 20 : 10
+          score: isLast ? 20 : 10
         });
-
-        if (!isLastStep) {
+      },
+      onNextStep: () => this.openParkTree(index, remoteParkProblems, zoneConfig, currentStepIndex + 1),
+      onCompleteFinal: () => {
+        const delta = this.host.adventure.wakeParkTree(index, remoteQ.id, zoneId, totalCount);
+        if (!delta.alreadyAwakened) {
+          this.host.getWorld().wakeParkTree(index);
+          this.host.playCue('celebrate');
+          if (delta.allTreesCompleted) {
+            setTimeout(() => {
+              this.host.openDialog(
+                `🌳 ĐẠI THÀNH CÔNG: ${zoneName.toUpperCase()} THỨC TỈNH! 🌳`,
+                `
+                <div class="completion-medal">${icon('crown')}</div>
+                <p class="dialog-copy centered">
+                  Tuyệt vời! Bạn đã thức tỉnh toàn bộ ${totalCount} Cây Tri Thức trong ${zoneName}!<br>
+                  Không gian nơi đây giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
+                </p>
+                <div class="completion-rewards">
+                  <span>★ +150 XP</span><span>◉ +50 xu</span>
+                </div>
+                <button id="close-park-completion" class="primary wide">Tự do dạo chơi ${zoneName} ${icon('arrow')}</button>
+                `,
+                'complete'
+              );
+              this.host.updateHUD();
+              const grandBtn = document.getElementById('close-park-completion');
+              if (grandBtn) grandBtn.onclick = this.host.closeDialog;
+            }, 900);
+          }
+        } else {
           this.host.playCue('correct');
-          if (feedback) {
-            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} hoàn thành xuất sắc! +10 XP`;
-          }
-          const hintBtn = document.getElementById('park-tree-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const nextStepBtn = document.getElementById('park-tree-next-step') as HTMLButtonElement | null;
-          if (nextStepBtn) {
-            nextStepBtn.hidden = false;
-            nextStepBtn.onclick = () => {
-              this.openParkTree(index, remoteParkProblems, zoneConfig, currentStepIndex + 1);
-            };
-            nextStepBtn.focus();
-          }
-        } else {
-          const delta = this.host.adventure.wakeParkTree(index, remoteQ?.id);
-
-          if (!delta.alreadyAwakened) {
-            this.host.getWorld().wakeParkTree(index);
-            this.host.playCue('celebrate');
-            if (feedback) {
-              feedback.textContent = totalSteps > 1
-                ? `✓ Xuất sắc! Hoàn thành cả ${totalSteps} bước! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`
-                : `✓ Chính xác! Cây Tri Thức số ${index + 1} đã thức tỉnh và xanh tươi trở lại! +20 XP · +5 xu`;
-            }
-            this.host.updateHUD();
-
-            if (delta.allTreesCompleted) {
-              setTimeout(() => {
-                this.host.openDialog(
-                  `🌳 ĐẠI THÀNH CÔNG: ${zoneName.toUpperCase()} THỨC TỈNH! 🌳`,
-                  `
-                  <div class="completion-medal">${icon('crown')}</div>
-                  <p class="dialog-copy centered">
-                    Tuyệt vời! Bạn đã thức tỉnh toàn bộ 20 Cây Tri Thức trong ${zoneName}!<br>
-                    Không gian nơi đây giờ đây đã ngập tràn sức sống và sắc xanh rực rỡ!
-                  </p>
-                  <div class="completion-rewards">
-                    <span>★ +150 XP</span><span>◉ +50 xu</span>
-                  </div>
-                  <button id="close-park-completion" class="primary wide">Tự do dạo chơi ${zoneName} ${icon('arrow')}</button>
-                  `,
-                  'complete'
-                );
-                this.host.updateHUD();
-                const grandBtn = document.getElementById('close-park-completion');
-                if (grandBtn) grandBtn.onclick = this.host.closeDialog;
-              }, 1200);
-            }
-          } else {
-            this.host.playCue('correct');
-            if (feedback) feedback.textContent = `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`;
-          }
-
-          this.resolveActiveChallenge({
-            spec: this.activeChallenge?.spec ?? { type: 'park_tree', index, stepIndex: currentStepIndex },
-            status: 'solved',
-            isCorrect: true,
-            attempts: res.attempts,
-            durationMs: this.currentSession.getDurationMs(),
-            rewards: {
-              xp: delta.alreadyAwakened ? 0 : 20,
-              coins: delta.alreadyAwakened ? 0 : 5
-            }
-          });
-
-          const hintBtn = document.getElementById('park-tree-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const closeBtn = document.getElementById('park-tree-close-btn') as HTMLButtonElement | null;
-          if (closeBtn) {
-            closeBtn.hidden = false;
-            closeBtn.onclick = this.host.closeDialog;
-            closeBtn.focus();
-          }
         }
-      } else {
-        if (inputBox) {
-          inputBox.classList.remove('shake');
-          void inputBox.offsetWidth;
-          inputBox.classList.add('shake', 'error');
-        }
-        if (this.isMultiSlot && res.slotResults) {
-          res.slotResults.forEach((correct, idx) => {
-            const box = document.getElementById(`slot-box-${idx}`);
-            if (box) {
-              box.classList.remove('shake', 'error', 'correct');
-              void box.offsetWidth;
-              if (correct) {
-                box.classList.add('correct');
-              } else {
-                box.classList.add('shake', 'error');
-              }
-            }
-          });
-          const firstWrong = res.slotResults.findIndex((c) => !c);
-          if (firstWrong !== -1) {
-            this.selectSlot(firstWrong);
-          }
-        }
-        const feedback = document.getElementById('park-tree-feedback');
-        if (feedback) {
-          feedback.className = 'feedback gentle';
-          feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy tính nhẩm lại hoặc bấm 'Gợi ý cho mình' nhé!";
-        }
+        return {
+          feedbackText: delta.alreadyAwakened
+            ? `✓ Chính xác! Cây Tri Thức số ${index + 1} vốn đã thức tỉnh xanh tốt!`
+            : `✓ Chính xác! Cây Tri Thức số ${index + 1} đã thức tỉnh! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
+          rewards: { xp: delta.xpGained, coins: delta.coinsGained }
+        };
       }
-    };
-
-    let bodyControls = '';
-    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
-      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
-    } else if (parsed.type === 'numeric') {
-      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
-    } else if (parsed.type === 'comparison') {
-      const compOptions =
-        challenge.options && challenge.options.length > 0
-          ? challenge.options.map((o) => String(o.value || o.label).trim())
-          : ['<', '=', '>'];
-      bodyControls = this.renderComparisonControls(compOptions);
-    } else {
-      bodyControls = `
-        <div class="answers flower-answers">
-          ${step.options
-            .map(
-              (o: { label: string; value: string }, i: number) => `
-            <button class="answer flower-opt" data-value="${o.value}">
-              <kbd>${i + 1}</kbd><span>${o.label}</span>
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-    }
-
-    const state = this.host.adventure.getState();
-    const awakenedCount = state.parkTrees ? state.parkTrees.filter(Boolean).length : 0;
-    const totalCount = remoteParkProblems ? remoteParkProblems.length : 20;
-
-    this.host.openDialog(
-      `Cây Tri Thức #${targetId}: ${badge}`,
-      `
-      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · BÀI ${targetId} / ${totalCount}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
-      <div class="flower-status-banner ${isAwakened ? 'bloomed' : 'bud'}">
-        ${isAwakened ? '🌳 Cây Tri Thức này đã thức tỉnh xanh tươi! Bạn có thể xem lại hoặc thử sức lại.' : '🩶 Cây đang ngủ say trong lớp xám đá. Hãy giải đúng bài toán dưới đây để đánh thức cây xanh tốt nhé!'}
-      </div>
-      <div class="flower-question-box">
-        <div class="flower-question-title">${title}</div>
-        ${subtitle ? `<div class="flower-question-subtitle">${subtitle}</div>` : ''}
-        <div class="flower-question-prompt">${step.prompt}</div>
-        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
-      </div>
-      ${bodyControls}
-      <div id="park-tree-feedback" class="feedback" aria-live="polite"></div>
-      <div id="park-tree-hint-area" class="hint-area" hidden></div>
-      <div class="quiz-footer">
-        <button id="park-tree-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
-        <span>${awakenedCount} / 20 cây đã thức tỉnh</span>
-      </div>
-      <button id="park-tree-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
-      <button id="park-tree-close-btn" class="primary wide" hidden>Ngắm cây xanh ${icon('arrow')}</button>
-      `,
-      'flowerQuiz'
-    );
-
-    this.setupNumpadListeners(handleTreeSubmit);
-
-    document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach((btn) => {
-      btn.onclick = () => handleTreeSubmit(btn.dataset.value ?? '');
     });
-
-    const hintBtn = document.getElementById('park-tree-hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hintText = this.currentSession.requestHint();
-        const isMax = this.currentSession.isMaxHintStage();
-        const explanation = isMax ? challenge.explanation : undefined;
-        renderTreeHint(hintText, explanation);
-        this.host.playCue('hint');
-        if (isMax) {
-          hintBtn.hidden = true;
-        } else {
-          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
-        }
-      };
-    }
   }
 
   // -------------------------------------------------------------
-  // Farm Animal Rescue Dialog
+  // 3. Farm Animal Rescue
   // -------------------------------------------------------------
-  openFarmAnimal(animalId: string, animalName: string, pd: any, stepIndex = 0, zoneName?: string): void {
+  openFarmAnimal(
+    animalId: string,
+    animalName: string,
+    pd: any,
+    stepIndex = 0,
+    zoneName?: string,
+    zoneId = 8,
+    totalAnimals = 10
+  ): void {
     let fallbackStep: RemoteStep = {
       stepId: `farm_${animalId}`,
       prompt: `Cứu bé ${animalName}: Tính giá trị của phép tính`,
@@ -1191,31 +1186,26 @@ export class ChallengeDialog implements ChallengeSessionPort {
     };
 
     if (pd?.Problem) {
-      // Legacy or different format
       const rawOpts: string[] = typeof pd.Options === 'string'
         ? pd.Options.split('\n')
-        : (Array.isArray(pd.Options) ? pd.Options : []);
+        : Array.isArray(pd.Options) ? pd.Options : [];
       fallbackStep = {
         stepId: `farm_${animalId}`,
         prompt: pd.Problem,
-        options: rawOpts.map((opt: string, idx: number) => {
-          return { label: opt, value: opt };
-        }),
+        options: rawOpts.map((opt: string) => ({ label: opt, value: opt })),
         answer: pd.Answer,
         hints: pd.Hint ? [pd.Hint] : [],
-        explanation: pd.Hint || ''
+        explanation: pd.Explain || pd.Hint || ''
       };
     }
 
-    const steps: RemoteStep[] = (pd?.steps && Array.isArray(pd.steps) && pd.steps.length > 0)
-      ? pd.steps
-      : [fallbackStep];
+    const steps: RemoteStep[] = pd?.steps && Array.isArray(pd.steps) && pd.steps.length > 0 ? pd.steps : [fallbackStep];
     const totalSteps = steps.length;
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
     const step = steps[currentStepIndex] || fallbackStep;
 
     const title = pd?.title || pd?.Title || `Thử thách: Cứu Bé ${animalName}`;
-    const subtitle = (pd?.subtitle && pd.subtitle !== title) ? pd.subtitle : (pd?.Subtitle && pd.Subtitle !== title ? pd.Subtitle : '');
+    const subtitle = pd?.subtitle && pd.subtitle !== title ? pd.subtitle : (pd?.Subtitle && pd.Subtitle !== title ? pd.Subtitle : '');
     const badge = pd?.badge || `🐾 Giải Cứu Thú Cưng`;
 
     const challenge: FlowerChallenge = {
@@ -1230,7 +1220,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
       color: pd?.color || 0xf59e0b,
       prompt: step.prompt,
       imageUrl: step.imageUrl || pd?.imageUrl,
-      options: step.options.map((o: { label: string; value: string }) => ({ value: o.value, label: o.label })),
+      options: step.options.map((o) => ({ value: o.value, label: o.label })),
       answer: step.answer,
       hints: step.hints,
       explanation: step.explanation,
@@ -1252,241 +1242,88 @@ export class ChallengeDialog implements ChallengeSessionPort {
       }
     };
 
-    this.currentSession = new ChallengeSession(challenge);
-    this.currentInputValue = '';
-    const parsed = parseAnswer(challenge.answer);
+    const isRescued = this.host.adventure.isFarmRescued(animalId);
 
-    const renderHint = (hintText: string, explanation?: string) => {
-      const area = document.getElementById('farm-hint-area');
-      if (!area) return;
-      area.hidden = false;
-      const stage = this.currentSession?.getHintStage() ?? 1;
-      const explImg = challenge.explanationImageUrl || step.explanationImageUrl;
-      area.innerHTML = `
-        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
-        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
-        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
-      `;
-    };
-
-    const handleSubmit = (choiceVal: string | string[]) => {
-      if (!this.currentSession || this.currentSession.isSolved()) return;
-      const res = this.currentSession.submit(choiceVal);
-      const inputBox = document.getElementById('math-input-box');
-
-      if (res.isCorrect) {
-        if (inputBox) {
-          inputBox.classList.remove('shake', 'error');
-          inputBox.classList.add('correct');
-        }
-        if (this.isMultiSlot) {
-          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
-            b.classList.remove('shake', 'error', 'active');
-            b.classList.add('correct');
-          });
-        }
-        document
-          .querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
-          .forEach((b) => (b.disabled = true));
-        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
-        if (numpadContainer) numpadContainer.style.display = 'none';
-        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
-        if (slotNavBar) slotNavBar.style.display = 'none';
-
-        const feedback = document.getElementById('farm-feedback');
-        if (feedback) feedback.className = 'feedback success';
-        
-        const isLastStep = currentStepIndex + 1 >= totalSteps;
-        this.host.logRemoteProgress({
-          zoneId: 8,
+    this.renderStepChallenge({
+      dialogTitle: `Cứu Bé ${animalName}`,
+      dialogKind: 'farmAnimal',
+      eyebrow: `${(zoneName || 'Nông Trại Vui Vẻ').toUpperCase()} · BẮT THÚ VỀ CHUỒNG${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}`,
+      bannerText: isRescued
+        ? `💖 Bé ${animalName} đã về chuồng an toàn! Bạn có thể ôn lại bài toán này.`
+        : `🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!`,
+      isCompleted: isRescued,
+      title,
+      subtitle,
+      prompt: step.prompt,
+      imageUrl: challenge.imageUrl,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      explanation: step.explanation,
+      answer: step.answer,
+      options: step.options,
+      challenge,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      finishButtonLabel: 'Tiếp tục dạo chơi',
+      wrongPromptText: "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        if (!isCorrect) return;
+        void this.host.logRemoteProgress({
+          zoneId,
           problemId: pd?.id || animalId,
           stepId: step.stepId || `farm_${animalId}_${currentStepIndex + 1}`,
           isCorrect: true,
-          score: isLastStep ? 20 : 10
+          score: isLast ? 25 : 10
         });
-
-        if (!isLastStep) {
-          this.host.playCue('correct');
-          if (feedback) {
-            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} thành công! Tiếp tục giải cứu bé ${animalName} nhé!`;
-          }
-          const hintBtn = document.getElementById('farm-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const nextStepBtn = document.getElementById('farm-next-step') as HTMLButtonElement | null;
-          if (nextStepBtn) {
-            nextStepBtn.hidden = false;
-            nextStepBtn.onclick = () => {
-              this.openFarmAnimal(animalId, animalName, pd, currentStepIndex + 1, zoneName);
-            };
-            nextStepBtn.focus();
-          }
-        } else {
-          this.host.playCue('celebrate');
-          if (feedback) {
-            feedback.textContent = totalSteps > 1
-              ? `✓ Xuất sắc! Vượt qua cả ${totalSteps} bước! Bạn đã giúp bé ${animalName} trở về chuồng an toàn!`
-              : `✓ Chính xác! Bạn đã giúp bé ${animalName} trở về chuồng an toàn!`;
-          }
-          this.host.updateHUD();
-          
-          // Let the world handle animation/trigger clearing immediately
-          const world = this.host.getWorld();
-          if ((world as any).farmSanctuary) {
-            (world as any).farmSanctuary.onAnimalRescued(animalId);
-          }
-
-          this.resolveActiveChallenge({
-            spec: this.activeChallenge?.spec ?? { type: 'farm_animal', animalId, animalName, problemData: pd, stepIndex: currentStepIndex },
-            status: 'solved',
-            isCorrect: true,
-            attempts: res.attempts,
-            durationMs: this.currentSession.getDurationMs()
-          });
-
-          const hintBtn = document.getElementById('farm-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const closeBtn = document.getElementById('farm-close-btn') as HTMLButtonElement | null;
-          if (closeBtn) {
-            closeBtn.hidden = false;
-            closeBtn.onclick = this.host.closeDialog;
-            closeBtn.focus();
-          }
+      },
+      onNextStep: () => this.openFarmAnimal(animalId, animalName, pd, currentStepIndex + 1, zoneName, zoneId, totalAnimals),
+      onCompleteFinal: ({ attempts }) => {
+        this.host.playCue('celebrate');
+        const world = this.host.getWorld();
+        if ((world as any)?.farmSanctuary) {
+          (world as any).farmSanctuary.onAnimalRescued(animalId);
         }
-      } else {
-        if (inputBox) {
-          inputBox.classList.remove('shake');
-          void inputBox.offsetWidth;
-          inputBox.classList.add('shake', 'error');
-        }
-        if (this.isMultiSlot && res.slotResults) {
-          res.slotResults.forEach((correct, idx) => {
-            const box = document.getElementById(`slot-box-${idx}`);
-            if (box) {
-              box.classList.remove('shake', 'error', 'correct');
-              void box.offsetWidth;
-              if (correct) {
-                box.classList.add('correct');
-              } else {
-                box.classList.add('shake', 'error');
-              }
-            }
-          });
-          const firstWrong = res.slotResults.findIndex((c) => !c);
-          if (firstWrong !== -1) {
-            this.selectSlot(firstWrong);
-          }
-        }
-        const feedback = document.getElementById('farm-feedback');
-        if (feedback) {
-          feedback.className = 'feedback gentle';
-          feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!";
-        }
+        const delta = this.host.adventure.solveFarmAnimal({
+          zoneId,
+          animalId,
+          totalAnimals,
+          firstTry: attempts === 1
+        });
+        return {
+          feedbackText: `✓ Tuyệt vời! Bé ${animalName} đang vui vẻ chạy về chuồng! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
+          rewards: { xp: delta.xpGained, coins: delta.coinsGained }
+        };
       }
-    };
-
-    let bodyControls = '';
-    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
-      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
-    } else if (parsed.type === 'numeric') {
-      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
-    } else if (parsed.type === 'comparison') {
-      const compOptions =
-        challenge.options && challenge.options.length > 0
-          ? challenge.options.map((o) => String(o.value || o.label).trim())
-          : ['<', '=', '>'];
-      bodyControls = this.renderComparisonControls(compOptions);
-    } else {
-      bodyControls = `
-        <div class="answers flower-answers">
-          ${step.options
-            .map(
-              (o: { label: string; value: string }, i: number) => `
-            <button class="answer flower-opt" data-value="${o.value}">
-              <kbd>${i + 1}</kbd><span>${o.label}</span>
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-    }
-
-    this.host.openDialog(
-      `Cứu Bé ${animalName}`,
-      `
-      <div class="dialog-eyebrow">${(zoneName || 'Nông Trại Vui Vẻ').toUpperCase()} · BẮT THÚ VỀ CHUỒNG${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
-      <div class="flower-status-banner bud">
-        🩷 Hãy giải đúng bài toán dưới đây để đưa bé ${animalName} về chuồng an toàn nhé!
-      </div>
-      <div class="flower-question-box">
-        <div class="flower-question-title">${title}</div>
-        ${subtitle ? `<div class="flower-question-subtitle">${subtitle}</div>` : ''}
-        <div class="flower-question-prompt">${step.prompt}</div>
-        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
-      </div>
-      ${bodyControls}
-      <div id="farm-feedback" class="feedback" aria-live="polite"></div>
-      <div id="farm-hint-area" class="hint-area" hidden></div>
-      <div class="quiz-footer">
-        <button id="farm-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
-      </div>
-      <button id="farm-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
-      <button id="farm-close-btn" class="primary wide" hidden>Tiếp tục dạo chơi ${icon('arrow')}</button>
-      `,
-      'farmAnimal'
-    );
-
-    this.setupNumpadListeners(handleSubmit);
-
-    document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach((btn) => {
-      btn.onclick = () => handleSubmit(btn.dataset.value ?? '');
     });
-
-    const hintBtn = document.getElementById('farm-hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hintText = this.currentSession.requestHint();
-        const isMax = this.currentSession.isMaxHintStage();
-        const explanation = isMax ? challenge.explanation : undefined;
-        renderHint(hintText, explanation);
-        this.host.playCue('hint');
-        if (isMax) {
-          hintBtn.hidden = true;
-        } else {
-          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
-        }
-      };
-    }
   }
 
   // -------------------------------------------------------------
-  // QHMJ Sanctuary (Con Đường Bậc Thang & Bệ Bật Nhảy)
+  // 4. QHMJ Sanctuary
   // -------------------------------------------------------------
-  openQhmjNode(
-    spec: Extract<ChallengeSpec, { type: 'qhmj_node' }>,
-    stepIndex = 0
-  ): void {
+  openQhmjNode(spec: Extract<ChallengeSpec, { type: 'qhmj_node' }>, stepIndex = 0): void {
     const { zoneId, zoneName, nodeIndex, progressKey, nodeKind, problem, allProgressKeys } = spec;
-    const steps = problem.steps && problem.steps.length > 0 ? problem.steps : [{
-      stepId: `${progressKey}_1`,
-      prompt: problem.title,
-      options: [{ label: '10', value: '10' }, { label: '20', value: '20' }],
-      answer: '10',
-      hints: ['Hãy tính cẩn thận nhé!'],
-      explanation: 'Lời giải chi tiết.'
-    }];
+    const steps = problem.steps && problem.steps.length > 0
+      ? problem.steps
+      : [{
+          stepId: `${progressKey}_1`,
+          prompt: problem.title,
+          options: [{ label: '10', value: '10' }, { label: '20', value: '20' }],
+          answer: '10',
+          hints: ['Hãy tính cẩn thận nhé!'],
+          explanation: 'Lời giải chi tiết.'
+        }];
     const totalSteps = steps.length;
     const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
     const step = steps[currentStepIndex];
 
-    const kindLabel = nodeKind === 'jump_gate'
-      ? '🔓 Bệ Bật Nhảy Phong Ấn'
-      : nodeKind === 'clock_summit'
-        ? '🕰️ Đỉnh Tháp Đồng Hồ'
-        : '🔮 Tinh Thể Tri Thức';
+    const kindLabel =
+      nodeKind === 'jump_gate'
+        ? '🔓 Bệ Bật Nhảy Phong Ấn'
+        : nodeKind === 'clock_summit'
+          ? '🕰️ Đỉnh Tháp Đồng Hồ'
+          : '🔮 Tinh Thể Tri Thức';
     const title = problem.title || `${kindLabel} #${nodeIndex + 1}`;
-    const subtitle = (problem.subtitle && problem.subtitle !== title) ? problem.subtitle : '';
+    const subtitle = problem.subtitle && problem.subtitle !== title ? problem.subtitle : '';
     const badge = problem.badge || kindLabel;
 
     const challenge: FlowerChallenge = {
@@ -1523,93 +1360,54 @@ export class ChallengeDialog implements ChallengeSessionPort {
       }
     };
 
-    this.currentSession = new ChallengeSession(challenge);
-    this.currentInputValue = '';
-    const isAlreadySolved = this.host.adventure.isProblemSolved(progressKey);
-    const parsed = parseAnswer(challenge.answer);
+    const isAlreadySolved = this.host.adventure.isProblemSolved(progressKey, zoneId);
+    const solvedCount = allProgressKeys.filter((k) => this.host.adventure.isProblemSolved(k, zoneId)).length;
+    const bannerCopy = isAlreadySolved
+      ? `✅ ${kindLabel} này đã hoàn thành! Bạn có thể xem lại hoặc luyện tập lại.`
+      : nodeKind === 'jump_gate'
+        ? '🔒 Bệ bật nhảy đang bị phong ấn! Hãy giải đúng bài toán dưới đây để mở đường phóng lên tầng tiếp theo.'
+        : nodeKind === 'clock_summit'
+          ? '🕰️ Bạn đã lên tới Đỉnh Tháp Đồng Hồ! Giải thử thách cuối để khởi động đồng hồ.'
+          : '🔮 Giải đúng bài toán dưới đây để kích hoạt Tinh Thể Tri Thức!';
 
-    const renderQhmjHint = (hintText: string, explanation?: string) => {
-      const area = document.getElementById('qhmj-hint-area');
-      if (!area) return;
-      area.hidden = false;
-      const stage = this.currentSession?.getHintStage() ?? 1;
-      const explImg = challenge.explanationImageUrl || step.explanationImageUrl;
-      area.innerHTML = `
-        <p><strong>💡 Gợi ý cấp ${stage}:</strong> ${hintText}</p>
-        ${explanation ? `<p class="hint-explanation"><em>Lời giải: ${explanation}</em></p>` : ''}
-        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
-      `;
-    };
-
-    const handleSubmit = (choiceVal: string | string[]) => {
-      if (!this.currentSession || this.currentSession.isSolved()) return;
-      const res = this.currentSession.submit(choiceVal);
-      const inputBox = document.getElementById('math-input-box');
-
-      if (res.isCorrect) {
-        if (inputBox) {
-          inputBox.classList.remove('shake', 'error');
-          inputBox.classList.add('correct');
-        }
-        if (this.isMultiSlot) {
-          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
-            b.classList.remove('shake', 'error', 'active');
-            b.classList.add('correct');
-          });
-        }
-        document
-          .querySelectorAll<HTMLButtonElement>('.flower-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
-          .forEach((b) => (b.disabled = true));
-        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
-        if (numpadContainer) numpadContainer.style.display = 'none';
-        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
-        if (slotNavBar) slotNavBar.style.display = 'none';
-
-        const feedback = document.getElementById('qhmj-feedback');
-        if (feedback) feedback.className = 'feedback success';
-
-        const isLastStep = currentStepIndex + 1 >= totalSteps;
-        this.host.logRemoteProgress({
+    this.renderStepChallenge({
+      dialogTitle: `${kindLabel}: ${title}`,
+      dialogKind: 'flowerQuiz',
+      eyebrow: `${zoneName.toUpperCase()} · TRẠM ${nodeIndex + 1} / ${allProgressKeys.length}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}`,
+      bannerText: bannerCopy,
+      isCompleted: isAlreadySolved,
+      title,
+      subtitle,
+      prompt: step.prompt,
+      imageUrl: step.imageUrl,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      explanation: step.explanation,
+      answer: step.answer,
+      options: step.options,
+      challenge,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      footerRightHtml: `<span>${solvedCount} / ${allProgressKeys.length} trạm đã hoàn thành</span>`,
+      finishButtonLabel: 'Tiếp tục khám phá',
+      wrongPromptText: "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        if (!isCorrect) return;
+        void this.host.logRemoteProgress({
           zoneId,
           problemId: problem.id,
           stepId: step.stepId || `${progressKey}_${currentStepIndex + 1}`,
           isCorrect: true,
-          score: isLastStep ? 25 : 10
+          score: isLast ? 25 : 10
         });
-
-        if (!isLastStep) {
-          this.host.playCue('correct');
-          if (feedback) {
-            feedback.textContent = `✓ Chính xác! Bước ${currentStepIndex + 1}/${totalSteps} hoàn thành!`;
-          }
-          const hintBtn = document.getElementById('qhmj-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const nextStepBtn = document.getElementById('qhmj-next-step') as HTMLButtonElement | null;
-          if (nextStepBtn) {
-            nextStepBtn.hidden = false;
-            nextStepBtn.onclick = () => this.openQhmjNode(spec, currentStepIndex + 1);
-            nextStepBtn.focus();
-          }
-          return;
-        }
-
-        const delta = this.host.adventure.solveQhmjNode({
-          progressKey,
-          zoneId,
-          allProgressKeys
-        });
-
+      },
+      onNextStep: () => this.openQhmjNode(spec, currentStepIndex + 1),
+      onCompleteFinal: () => {
+        const delta = this.host.adventure.solveQhmjNode({ progressKey, zoneId, allProgressKeys });
         if (!delta.alreadySolved) {
           this.host.getWorld().syncQhmjSolved?.(zoneId);
           this.host.getWorld().burstPlayer(1.2);
           this.host.playCue('celebrate');
-          if (feedback) {
-            feedback.textContent = nodeKind === 'jump_gate'
-              ? `✓ Tuyệt vời! Bệ bật nhảy đã được mở khóa! +${delta.xpGained} XP · +${delta.coinsGained} xu`
-              : `✓ Chính xác! Bạn đã chinh phục ${badge}! +${delta.xpGained} XP · +${delta.coinsGained} xu`;
-          }
-          this.host.updateHUD();
-
           if (delta.zoneCompleted) {
             setTimeout(() => {
               this.host.openDialog(
@@ -1629,143 +1427,25 @@ export class ChallengeDialog implements ChallengeSessionPort {
               this.host.updateHUD();
               const grandBtn = document.getElementById('close-qhmj-completion');
               if (grandBtn) grandBtn.onclick = this.host.closeDialog;
-            }, 1000);
+            }, 900);
           }
         } else {
           this.host.playCue('correct');
-          if (feedback) feedback.textContent = `✓ Chính xác! Thử thách này bạn đã hoàn thành trước đó!`;
         }
-
-        this.resolveActiveChallenge({
-          spec: this.activeChallenge?.spec ?? { ...spec, stepIndex: currentStepIndex },
-          status: 'solved',
-          isCorrect: true,
-          attempts: res.attempts,
-          durationMs: this.currentSession.getDurationMs(),
+        return {
+          feedbackText: delta.alreadySolved
+            ? '✓ Chính xác! Thử thách này bạn đã hoàn thành trước đó!'
+            : nodeKind === 'jump_gate'
+              ? `✓ Tuyệt vời! Bệ bật nhảy đã được mở khóa! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`
+              : `✓ Chính xác! Bạn đã chinh phục ${badge}! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
           rewards: { xp: delta.xpGained, coins: delta.coinsGained }
-        });
-
-        const hintBtn = document.getElementById('qhmj-hint');
-        if (hintBtn) hintBtn.hidden = true;
-        const closeBtn = document.getElementById('qhmj-close-btn') as HTMLButtonElement | null;
-        if (closeBtn) {
-          closeBtn.hidden = false;
-          closeBtn.onclick = this.host.closeDialog;
-          closeBtn.focus();
-        }
-      } else {
-        if (inputBox) {
-          inputBox.classList.remove('shake');
-          void inputBox.offsetWidth;
-          inputBox.classList.add('shake', 'error');
-        }
-        if (this.isMultiSlot && res.slotResults) {
-          res.slotResults.forEach((correct, idx) => {
-            const box = document.getElementById(`slot-box-${idx}`);
-            if (box) {
-              box.classList.remove('shake', 'error', 'correct');
-              void box.offsetWidth;
-              box.classList.add(correct ? 'correct' : 'shake', ...(correct ? [] : ['error']));
-            }
-          });
-          const firstWrong = res.slotResults.findIndex((c) => !c);
-          if (firstWrong !== -1) this.selectSlot(firstWrong);
-        }
-        const feedback = document.getElementById('qhmj-feedback');
-        if (feedback) {
-          feedback.className = 'feedback gentle';
-          feedback.textContent = "↻ Chưa đúng rồi. Bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!";
-        }
+        };
       }
-    };
-
-    let bodyControls = '';
-    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
-      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
-    } else if (parsed.type === 'numeric') {
-      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
-    } else if (parsed.type === 'comparison') {
-      const compOptions =
-        challenge.options && challenge.options.length > 0
-          ? challenge.options.map((o) => String(o.value || o.label).trim())
-          : ['<', '=', '>'];
-      bodyControls = this.renderComparisonControls(compOptions);
-    } else {
-      bodyControls = `
-        <div class="answers flower-answers">
-          ${step.options
-            .map(
-              (o, i) => `
-            <button class="answer flower-opt" data-value="${o.value}">
-              <kbd>${i + 1}</kbd><span>${o.label}</span>
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-    }
-
-    const solvedCount = allProgressKeys.filter((k) => this.host.adventure.isProblemSolved(k)).length;
-    const bannerCopy = isAlreadySolved
-      ? `✅ ${kindLabel} này đã hoàn thành! Bạn có thể xem lại hoặc luyện tập lại.`
-      : nodeKind === 'jump_gate'
-        ? '🔒 Bệ bật nhảy đang bị phong ấn! Hãy giải đúng bài toán dưới đây để mở đường phóng lên tầng tiếp theo.'
-        : nodeKind === 'clock_summit'
-          ? '🕰️ Bạn đã lên tới Đỉnh Tháp Đồng Hồ! Giải thử thách cuối để khởi động đồng hồ.'
-          : '🔮 Giải đúng bài toán dưới đây để kích hoạt Tinh Thể Tri Thức!';
-
-    this.host.openDialog(
-      `${kindLabel}: ${title}`,
-      `
-      <div class="dialog-eyebrow">${zoneName.toUpperCase()} · TRẠM ${nodeIndex + 1} / ${allProgressKeys.length}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}</div>
-      <div class="flower-status-banner ${isAlreadySolved ? 'bloomed' : 'bud'}">
-        ${bannerCopy}
-      </div>
-      <div class="flower-question-box">
-        <div class="flower-question-title">${title}</div>
-        ${subtitle ? `<div class="flower-question-subtitle">${subtitle}</div>` : ''}
-        <div class="flower-question-prompt">${step.prompt}</div>
-        ${renderQuestionImage(challenge.imageUrl || step.imageUrl, title)}
-      </div>
-      ${bodyControls}
-      <div id="qhmj-feedback" class="feedback" aria-live="polite"></div>
-      <div id="qhmj-hint-area" class="hint-area" hidden></div>
-      <div class="quiz-footer">
-        <button id="qhmj-hint" class="text-button">${icon('help')} Gợi ý cho mình</button>
-        <span>${solvedCount} / ${allProgressKeys.length} trạm đã hoàn thành</span>
-      </div>
-      <button id="qhmj-next-step" class="primary wide" hidden>Bước tiếp theo ${icon('arrow')}</button>
-      <button id="qhmj-close-btn" class="primary wide" hidden>Tiếp tục khám phá ${icon('arrow')}</button>
-      `,
-      'flowerQuiz'
-    );
-
-    this.setupNumpadListeners(handleSubmit);
-    document.querySelectorAll<HTMLButtonElement>('.flower-opt').forEach((btn) => {
-      btn.onclick = () => handleSubmit(btn.dataset.value ?? '');
     });
-
-    const hintBtn = document.getElementById('qhmj-hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hintText = this.currentSession.requestHint();
-        const isMax = this.currentSession.isMaxHintStage();
-        const explanation = isMax ? challenge.explanation : undefined;
-        renderQhmjHint(hintText, explanation);
-        this.host.playCue('hint');
-        if (isMax) {
-          hintBtn.hidden = true;
-        } else {
-          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
-        }
-      };
-    }
   }
 
   // -------------------------------------------------------------
-  // Archimedes Monolith Trial Dialog
+  // 5. Archimedes Monolith Trial
   // -------------------------------------------------------------
   openArchimedes(
     monolithRef: number | string,
@@ -1812,10 +1492,10 @@ export class ChallengeDialog implements ChallengeSessionPort {
       probIdx !== -1
         ? probIdx
         : typeof monolithRef === 'number' && monolithRef < 300
-        ? monolithRef
-        : typeof monolithId === 'number' && monolithId >= 306
-        ? monolithId - 306
-        : 0;
+          ? monolithRef
+          : typeof monolithId === 'number' && monolithId >= 306
+            ? monolithId - 306
+            : 0;
 
     if (remoteProblem && remoteProblem.steps && remoteProblem.steps.length > 0) {
       const rStep = remoteProblem.steps[Math.min(stepIndex, remoteProblem.steps.length - 1)] || remoteProblem.steps[0];
@@ -1824,7 +1504,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         return list?.some((p) => String(p.id) === String(remoteProblem?.id) || p.id === remoteProblem?.id);
       });
       const pId = remoteProblem.id !== undefined ? remoteProblem.id : monolithId;
-      const validZoneId = (parentZone?.id && parentZone.id <= 5 ? parentZone.id : 1) as 1 | 2 | 3 | 4 | 5;
+      const resolvedZoneId = parentZone?.id ?? 1;
       challenge = {
         id: `arch_${pId}_${stepIndex}`,
         kind: 'archimedes',
@@ -1847,7 +1527,7 @@ export class ChallengeDialog implements ChallengeSessionPort {
         diagramSvg: rStep.diagramSvg,
         monolith: {
           id: pId,
-          zoneId: validZoneId,
+          zoneId: resolvedZoneId as 1 | 2 | 3 | 4 | 5,
           zoneName: parentZone?.name || 'Vùng Đất Archimedes',
           page: 1,
           title: remoteProblem.title || `Thử Thách #${pId}`,
@@ -1864,263 +1544,97 @@ export class ChallengeDialog implements ChallengeSessionPort {
     }
 
     const m = challenge.monolith;
-    this.currentSession = new ChallengeSession(challenge);
-    this.currentInputValue = '';
     const step = challenge.step;
     const isDone =
-      this.host.adventure.isProblemSolved(monolithId) ||
-      (typeof monolithId === 'number' && monolithId >= 306 && this.host.adventure.getState().monoliths[monolithId - 306] === true);
-    const parsed = parseAnswer(challenge.answer);
+      this.host.adventure.isProblemSolved(monolithId, m.zoneId) ||
+      (typeof monolithId === 'number' &&
+        monolithId >= 306 &&
+        this.host.adventure.getState().monoliths[monolithId - 306] === true);
 
-    const renderArchimedesHint = (hintText: string, explanation?: string) => {
-      const area = document.getElementById('arch-hint-area');
-      if (!area) return;
-      area.hidden = false;
-      const stage = this.currentSession?.getHintStage() ?? 1;
-      const explImg = step.explanationImageUrl || challenge.explanationImageUrl;
-      area.innerHTML = `
-        <p><strong>💡 Gợi ý bước ${stage}:</strong> ${hintText}</p>
-        ${explanation ? `<p class="hint-explanation"><em>Lời giải chi tiết: ${explanation}</em></p>` : ''}
-        ${renderQuestionImage(explImg, 'Hình minh họa lời giải', true)}
-      `;
-    };
-
-    const handleArchSubmit = (choiceVal: string | string[]) => {
-      if (!this.currentSession || this.currentSession.isSolved()) return;
-      const res = this.currentSession.submit(choiceVal);
-      const inputBox = document.getElementById('math-input-box');
-
-      if (res.isCorrect) {
-        if (inputBox) {
-          inputBox.classList.remove('shake', 'error');
-          inputBox.classList.add('correct');
-        }
-        if (this.isMultiSlot) {
-          document.querySelectorAll<HTMLElement>('.math-slot-box').forEach((b) => {
-            b.classList.remove('shake', 'error', 'active');
-            b.classList.add('correct');
-          });
-        }
-        document
-          .querySelectorAll<HTMLButtonElement>('.arch-opt, .numpad-btn, #numpad-submit, .comp-btn, .slot-nav-btn')
-          .forEach((b) => (b.disabled = true));
-        const numpadContainer = document.querySelector<HTMLElement>('.numpad-container');
-        if (numpadContainer) numpadContainer.style.display = 'none';
-        const slotNavBar = document.querySelector<HTMLElement>('.slot-nav-bar');
-        if (slotNavBar) slotNavBar.style.display = 'none';
-
-        const feedback = document.getElementById('arch-feedback');
-        if (feedback) feedback.className = 'feedback success';
-
-        const isLastStep = stepIndex + 1 >= challenge.totalSteps;
-        this.host.logRemoteProgress({
+    this.renderStepChallenge({
+      dialogTitle: `Bia Đá #${m.id}: ${m.title}`,
+      dialogKind: 'archimedesQuiz',
+      eyebrow: `${m.zoneName.toUpperCase()} · BƯỚC ${stepIndex + 1} / ${challenge.totalSteps}`,
+      bannerText: isDone
+        ? '✨ Bia đá này đã được bạn thắp sáng! Có thể luyện tập lại để nhận thêm XP.'
+        : '🔒 Bia đá đang đợi bạn giải câu đố để thắp sáng nguồn năng lượng cổ xưa.',
+      isCompleted: isDone,
+      title: m.title,
+      subtitle: m.subtitle,
+      prompt: step.prompt,
+      imageUrl: step.imageUrl || challenge.imageUrl,
+      explanationImageUrl: step.explanationImageUrl || challenge.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      explanation: challenge.explanation,
+      answer: challenge.answer,
+      options: step.options,
+      challenge,
+      stepIndex,
+      totalSteps: challenge.totalSteps,
+      optionClassName: 'arch-opt',
+      footerRightHtml: `<button id="back-map-btn" class="text-button">${icon('compass')} Về bản đồ</button>`,
+      finishButtonLabel: 'Kích hoạt Bia Đá',
+      wrongPromptText: "↻ Chưa chính xác rồi. Bạn hãy tính lại hoặc bấm 'Xem gợi ý' nếu cần trợ giúp nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        void this.host.logRemoteProgress({
           zoneId: m.zoneId,
           problemId: m.id,
           stepId: step.stepId,
-          isCorrect: true,
-          score: isLastStep ? 20 : 10
+          isCorrect,
+          score: isCorrect ? (isLast ? 20 : 10) : 0
         });
+      },
+      onNextStep: () =>
+        this.openArchimedes(monolithIndex, stepIndex + 1, activeRemoteQuestions, activeRemoteZones, activeMonolithProblems),
+      onCompleteFinal: () => {
+        const zone = activeRemoteZones.find((z) => z.id === m.zoneId);
+        const zoneQuestions = zone ? activeRemoteQuestions[zone.sheetName] || [] : [];
+        const zoneProblemIds = zoneQuestions.map((p) => p.id);
+        const delta = this.host.adventure.activateMonolith(monolithIndex, m.id, m.zoneId, zoneProblemIds);
+        this.host.getWorld().activateMonolith(m.id);
+        this.host.playCue('celebrate');
+        this.host.burstPlayer();
 
-        if (!isLastStep) {
-          this.host.playCue('correct');
-          if (feedback) feedback.textContent = `✓ Chính xác! Bước ${stepIndex + 1} hoàn thành xuất sắc!`;
-          const hintBtn = document.getElementById('arch-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const nextStepBtn = document.getElementById('arch-next-step') as HTMLButtonElement | null;
-          if (nextStepBtn) {
-            nextStepBtn.hidden = false;
-            nextStepBtn.onclick = () =>
-              this.openArchimedes(monolithIndex, stepIndex + 1, activeRemoteQuestions, activeRemoteZones, activeMonolithProblems);
-            nextStepBtn.focus();
-          }
-        } else {
-          const zone = activeRemoteZones.find((z) => z.id === m.zoneId);
-          const zoneQuestions = zone ? activeRemoteQuestions[zone.sheetName] || [] : [];
-          const zoneProblemIds = zoneQuestions.map((p) => p.id);
-          const delta = this.host.adventure.activateMonolith(monolithIndex, m.id, m.zoneId, zoneProblemIds);
-          this.host.getWorld().activateMonolith(m.id);
-          this.host.playCue('celebrate');
-          this.host.burstPlayer();
-
-          if (feedback) {
-            feedback.textContent = delta.alreadyActivated
-              ? `✓ Chính xác! Bạn đã ôn luyện lại Bia Đá ${m.id} thành công!`
-              : `✓ Xuất sắc! Kích hoạt thành công Bia Đá ${m.id}! +${delta.xpGained} XP · +${delta.coinsGained} xu`;
-          }
-
-          this.host.updateHUD();
-
-          this.resolveActiveChallenge({
-            spec: this.activeChallenge?.spec ?? { type: 'archimedes', monolithRef: monolithIndex, stepIndex },
-            status: 'solved',
-            isCorrect: true,
-            attempts: res.attempts,
-            durationMs: this.currentSession.getDurationMs(),
-            rewards: {
-              xp: delta.alreadyActivated ? 0 : delta.xpGained,
-              coins: delta.alreadyActivated ? 0 : delta.coinsGained,
-              monolithId: m.id
-            }
-          });
-
-          const hintBtn = document.getElementById('arch-hint');
-          if (hintBtn) hintBtn.hidden = true;
-          const finishBtn = document.getElementById('arch-finish-btn') as HTMLButtonElement | null;
-          if (finishBtn) {
-            finishBtn.hidden = false;
-            finishBtn.onclick = this.host.closeDialog;
-            finishBtn.focus();
-          }
-
-          if (delta.zoneCompleted) {
-            setTimeout(() => {
-              this.host.openDialog(
-                `🏆 HOÀN THÀNH: ${m.zoneName.toUpperCase()}! 🏆`,
-                `
-                <div class="completion-medal">${icon('crown')}</div>
-                <p class="dialog-copy centered">
-                  Kỳ tích! Bạn đã giải trọn vẹn toàn bộ các Bia Đá trong<br>
-                  <b>${m.zoneName}</b>!<br>
-                  Đại Huy Chương Khu Vực đã thuộc về bạn!
-                </p>
-                <div class="completion-rewards">
-                  <span>★ +50 XP</span><span>◉ +25 xu</span>
-                </div>
-                <button id="close-zone-grand" class="primary wide">Tiếp tục khám phá ${icon('arrow')}</button>
-                `,
-                'complete'
-              );
-              this.host.updateHUD();
-              const closeZoneBtn = document.getElementById('close-zone-grand');
-              if (closeZoneBtn) closeZoneBtn.onclick = this.host.closeDialog;
-            }, 1200);
-          }
+        if (delta.zoneCompleted) {
+          setTimeout(() => {
+            this.host.openDialog(
+              `🏆 HOÀN THÀNH: ${m.zoneName.toUpperCase()}! 🏆`,
+              `
+              <div class="completion-medal">${icon('crown')}</div>
+              <p class="dialog-copy centered">
+                Kỳ tích! Bạn đã giải trọn vẹn toàn bộ các Bia Đá trong<br>
+                <b>${m.zoneName}</b>!<br>
+                Đại Huy Chương Khu Vực đã thuộc về bạn!
+              </p>
+              <div class="completion-rewards">
+                <span>★ +50 XP</span><span>◉ +25 xu</span>
+              </div>
+              <button id="close-zone-grand" class="primary wide">Tiếp tục khám phá ${icon('arrow')}</button>
+              `,
+              'complete'
+            );
+            this.host.updateHUD();
+            const closeZoneBtn = document.getElementById('close-zone-grand');
+            if (closeZoneBtn) closeZoneBtn.onclick = this.host.closeDialog;
+          }, 900);
         }
-      } else {
-        this.host.logRemoteProgress({
-          zoneId: m.zoneId,
-          problemId: m.id,
-          stepId: step.stepId,
-          isCorrect: false,
-          score: 0
-        });
-        if (inputBox) {
-          inputBox.classList.remove('shake');
-          void inputBox.offsetWidth;
-          inputBox.classList.add('shake', 'error');
-        }
-        if (this.isMultiSlot && res.slotResults) {
-          res.slotResults.forEach((correct, idx) => {
-            const box = document.getElementById(`slot-box-${idx}`);
-            if (box) {
-              box.classList.remove('shake', 'error', 'correct');
-              void box.offsetWidth;
-              if (correct) {
-                box.classList.add('correct');
-              } else {
-                box.classList.add('shake', 'error');
-              }
-            }
-          });
-          const firstWrong = res.slotResults.findIndex((c) => !c);
-          if (firstWrong !== -1) {
-            this.selectSlot(firstWrong);
+
+        return {
+          feedbackText: delta.alreadyActivated
+            ? `✓ Chính xác! Bạn đã ôn luyện lại Bia Đá ${m.id} thành công!`
+            : `✓ Xuất sắc! Kích hoạt thành công Bia Đá ${m.id}! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
+          rewards: {
+            xp: delta.alreadyActivated ? 0 : delta.xpGained,
+            coins: delta.alreadyActivated ? 0 : delta.coinsGained,
+            monolithId: m.id
           }
-        }
-        const feedback = document.getElementById('arch-feedback');
-        if (feedback) {
-          feedback.className = 'feedback gentle';
-          const correctCount = res.slotResults ? res.slotResults.filter(Boolean).length : 0;
-          const totalSlots = res.slotResults ? res.slotResults.length : 0;
-          if (totalSlots > 1 && correctCount > 0) {
-            feedback.textContent = `↻ Bạn đã làm đúng ${correctCount}/${totalSlots} ô. Hãy tính lại các ô màu đỏ hoặc bấm 'Xem gợi ý' nếu cần nhé!`;
-          } else {
-            feedback.textContent = "↻ Chưa chính xác rồi. Bạn hãy tính lại hoặc bấm 'Xem gợi ý' nếu cần trợ giúp nhé!";
-          }
-        }
+        };
       }
-    };
-
-    let bodyControls = '';
-    if (parsed.type === 'multi' && parsed.slots && parsed.slots.length > 0) {
-      bodyControls = this.renderMultiSlotInputAndNumpad(parsed.slots);
-    } else if (parsed.type === 'numeric') {
-      bodyControls = this.renderMathInputAndNumpad(parsed.unit);
-    } else if (parsed.type === 'comparison') {
-      const compOptions =
-        step.options && step.options.length > 0
-          ? step.options.map((o) => String(o.value || o.label).trim())
-          : ['<', '=', '>'];
-      bodyControls = this.renderComparisonControls(compOptions);
-    } else {
-      bodyControls = `
-        <div class="answers arch-answers">
-          ${step.options
-            .map(
-              (o, i) => `
-            <button class="answer arch-opt" data-value="${o.value}">
-              <kbd>${i + 1}</kbd><span>${o.label}</span>
-            </button>
-          `
-            )
-            .join('')}
-        </div>
-      `;
-    }
-
-    this.host.openDialog(
-      `Bia Đá #${m.id}: ${m.title}`,
-      `
-      <div class="dialog-eyebrow">${m.zoneName.toUpperCase()} · BƯỚC ${stepIndex + 1} / ${challenge.totalSteps}</div>
-      <div class="flower-status-banner ${isDone ? 'bloomed' : 'bud'}">
-        ${isDone ? '✨ Bia đá này đã được bạn thắp sáng! Có thể luyện tập lại để nhận thêm XP.' : '🔒 Bia đá đang đợi bạn giải câu đố để thắp sáng nguồn năng lượng cổ xưa.'}
-      </div>
-      <div class="flower-question-box">
-        <div class="flower-question-title">${m.title}</div>
-        ${m.subtitle && m.subtitle !== m.title ? `<div class="flower-question-subtitle">${m.subtitle}</div>` : ''}
-        <div class="flower-question-prompt">${step.prompt}</div>
-        ${step.diagramSvg ? `<div class="step-diagram-svg">${step.diagramSvg}</div>` : ''}
-        ${renderQuestionImage(step.imageUrl || challenge.imageUrl, challenge.title)}
-      </div>
-      ${bodyControls}
-      <div id="arch-feedback" class="feedback" aria-live="polite"></div>
-      <div id="arch-hint-area" class="hint-area" hidden></div>
-      <div class="quiz-footer">
-        <button id="arch-hint" class="text-button">${icon('help')} Xem gợi ý</button>
-        <button id="back-map-btn" class="text-button">${icon('compass')} Về bản đồ</button>
-      </div>
-      <button id="arch-next-step" class="primary wide" hidden>Tiếp tục bước tiếp theo ${icon('arrow')}</button>
-      <button id="arch-finish-btn" class="primary wide" hidden>Kích hoạt Bia Đá ${icon('check')}</button>
-      `,
-      'archimedesQuiz'
-    );
+    });
 
     const backMapBtn = document.getElementById('back-map-btn');
     if (backMapBtn) {
       backMapBtn.onclick = () => this.host.onOpenMap?.(m.zoneId);
-    }
-
-    this.setupNumpadListeners(handleArchSubmit);
-
-    document.querySelectorAll<HTMLButtonElement>('.arch-opt').forEach((btn) => {
-      btn.onclick = () => handleArchSubmit(btn.dataset.value ?? '');
-    });
-
-    const hintBtn = document.getElementById('arch-hint');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        if (!this.currentSession) return;
-        const hint = this.currentSession.requestHint();
-        const isMax = this.currentSession.isMaxHintStage();
-        const explanation = isMax ? challenge.explanation : undefined;
-        renderArchimedesHint(hint, explanation);
-        this.host.playCue('hint');
-        if (isMax) {
-          hintBtn.hidden = true;
-        } else {
-          hintBtn.innerHTML = `${icon('help')} Xem thêm gợi ý`;
-        }
-      };
     }
   }
 
@@ -2330,13 +1844,9 @@ export class ChallengeDialog implements ChallengeSessionPort {
       });
 
       const prevBtn = document.getElementById('prev-slot-btn');
-      if (prevBtn) {
-        prevBtn.onclick = () => this.selectSlot(this.activeSlotIndex - 1);
-      }
+      if (prevBtn) prevBtn.onclick = () => this.selectSlot(this.activeSlotIndex - 1);
       const nextBtn = document.getElementById('next-slot-btn');
-      if (nextBtn) {
-        nextBtn.onclick = () => this.selectSlot(this.activeSlotIndex + 1);
-      }
+      if (nextBtn) nextBtn.onclick = () => this.selectSlot(this.activeSlotIndex + 1);
     }
 
     const submitBtn = document.getElementById('numpad-submit');

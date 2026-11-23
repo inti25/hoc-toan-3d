@@ -161,8 +161,31 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     charms[key] = Math.max(local.charms?.[key] || 0, remote.charms?.[key] || 0);
   }
 
+  // Hợp nhất nông sản thu hoạch (Union-Max theo số lượng)
+  const produceBag: Record<string, number> = {};
+  const allProduceKeys = new Set([...Object.keys(local.produceBag || {}), ...Object.keys(remote.produceBag || {})]);
+  for (const key of allProduceKeys) {
+    const val = Math.max(local.produceBag?.[key] || 0, remote.produceBag?.[key] || 0);
+    if (val > 0) produceBag[key] = val;
+  }
+
+  // Hợp nhất từ điển thực thể v2 (${zoneId}:${problemId})
+  const solvedEntities: Record<string, { solvedAt: string; attempts: number }> = {
+    ...(remote.solvedEntities || {}),
+    ...(local.solvedEntities || {})
+  };
+
+  const dailyDrill =
+    local.dailyDrill?.date === remote.dailyDrill?.date
+      ? {
+          date: local.dailyDrill?.date || new Date().toISOString().slice(0, 10),
+          completedCount: Math.max(local.dailyDrill?.completedCount || 0, remote.dailyDrill?.completedCount || 0),
+          rewardClaimed: Boolean(local.dailyDrill?.rewardClaimed || remote.dailyDrill?.rewardClaimed)
+        }
+      : (local.dailyDrill || remote.dailyDrill || { date: new Date().toISOString().slice(0, 10), completedCount: 0, rewardClaimed: false });
+
   return {
-    version: 1,
+    version: 2,
     xp,
     coins,
     bridge,
@@ -180,6 +203,9 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     parkTrees,
     farmRescued: { ...local.farmRescued, ...remote.farmRescued },
     solvedProblems,
+    solvedEntities,
+    produceBag,
+    dailyDrill,
     questionStats,
     review,
     position,

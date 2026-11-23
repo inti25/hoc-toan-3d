@@ -6,6 +6,8 @@ export interface ShopItem {
   name: string;
   description: string;
   price: number;
+  sellPrice?: number;
+  purchasable?: boolean;
   type: ShopItemType;
   icon: string;
   badge: string;
@@ -20,6 +22,7 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     name: 'Bước Chân Nở Hoa',
     description: 'Mỗi bước chân nở ra những cánh hoa và chồi non rực rỡ sắc màu của Vườn Hoa Tri Thức.',
     price: 80,
+    purchasable: true,
     type: 'trail',
     icon: '🌸',
     badge: 'Hiệu Ứng Vĩnh Viễn',
@@ -32,6 +35,7 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     name: 'Bụi Sao Lấp Lánh',
     description: 'Dấu chân dũng sĩ tỏa ánh sáng hoàng kim lung linh như bầu trời sao Đỉnh Núi Tư Duy.',
     price: 150,
+    purchasable: true,
     type: 'trail',
     icon: '✨',
     badge: 'Hiệu Ứng Vĩnh Viễn',
@@ -44,6 +48,7 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     name: 'Băng Tuyết Pha Lê',
     description: 'Để lại những tinh thể băng óng ánh và bông tuyết huyền ảo khi di chuyển trong Vương Quốc.',
     price: 250,
+    purchasable: true,
     type: 'trail',
     icon: '❄️',
     badge: 'Hiệu Ứng Huyền Thoại',
@@ -52,21 +57,61 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     particleColors: [0x00f5d4, 0x70d6ff, 0xe0fbfc, 0x00b4d8, 0x90e0ef]
   },
   {
+    id: 'trail_rainbow',
+    name: 'Dải Cầu Vồng',
+    description: 'Những hạt sáng 7 sắc cầu vồng rực rỡ nối đuôi nhau theo từng bước chạy.',
+    price: 350,
+    purchasable: true,
+    type: 'trail',
+    icon: '🌈',
+    badge: 'Hiệu Ứng Huyền Thoại',
+    rarity: 'legendary',
+    themeColor: '#ec4899',
+    particleColors: [0xef4444, 0xf59e0b, 0x10b981, 0x3b82f6, 0xa855f7]
+  },
+  {
     id: 'charm_double_xp',
-    name: 'Bùa Nhân Đôi XP',
-    description: 'Nhân đôi XP (+10 XP ➔ +20 XP) ở câu hỏi tiếp theo! Tự động kích hoạt khi giải đúng bài toán.',
+    name: 'Bùa Sao Băng (x2 XP)',
+    description: 'Nhân đôi XP ở thử thách hoàn thành tiếp theo! Tự động kích hoạt khi giải đúng bài toán.',
     price: 50,
+    purchasable: true,
     type: 'charm',
     icon: '📜',
-    badge: 'Bùa Phép Tiêu Hao',
+    badge: 'Bùa Thụ Động',
     rarity: 'rare',
     themeColor: '#8b5cf6'
   },
   {
+    id: 'charm_hint_scroll',
+    name: 'Cuộn Giấy Thông Thái',
+    description: 'Kích hoạt ngay trong thử thách để mở 1 tầng gợi ý mà vẫn giữ nguyên thưởng Lần Đầu.',
+    price: 35,
+    purchasable: true,
+    type: 'charm',
+    icon: '🧭',
+    badge: 'Bùa Chủ Động',
+    rarity: 'common',
+    themeColor: '#059669'
+  },
+  {
+    id: 'charm_eliminate',
+    name: 'Kính Lúp Soi Sáng',
+    description: 'Kích hoạt trong câu trắc nghiệm (≥ 3 lựa chọn) để gạch bỏ 1 phương án sai.',
+    price: 45,
+    purchasable: true,
+    type: 'charm',
+    icon: '🔎',
+    badge: 'Bùa Chủ Động',
+    rarity: 'rare',
+    themeColor: '#0284c7'
+  },
+  {
     id: 'produce_milk',
     name: 'Bình Sữa Tươi',
-    description: 'Sữa bò tươi ngon thu hoạch từ Nông Trại Vui Vẻ.',
-    price: 30, // có thể đem đổi/bán lại tiệm
+    description: 'Sữa bò tươi ngon thu hoạch từ Nông Trại Vui Vẻ. Có thể bán lấy 20 xu hoặc đổi bùa!',
+    price: 20,
+    sellPrice: 20,
+    purchasable: false,
     type: 'produce',
     icon: '🥛',
     badge: 'Nông Sản',
@@ -76,8 +121,10 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
   {
     id: 'produce_egg',
     name: 'Trứng Gà Vàng',
-    description: 'Quả trứng vàng lấp lánh do gà mái đẻ.',
-    price: 30,
+    description: 'Quả trứng vàng lấp lánh do gà mái đẻ. Bán lấy 20 xu hoặc đổi bùa tại Tiệm Tạp Hóa.',
+    price: 20,
+    sellPrice: 20,
+    purchasable: false,
     type: 'produce',
     icon: '🥚',
     badge: 'Nông Sản',
@@ -87,8 +134,10 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
   {
     id: 'produce_duck_egg',
     name: 'Trứng Vịt Xanh',
-    description: 'Trứng vịt to tròn, vỏ xanh nhạt dễ thương.',
-    price: 30,
+    description: 'Trứng vịt to tròn, vỏ xanh nhạt dễ thương. Bán lấy 25 xu tại Tiệm Tạp Hóa.',
+    price: 25,
+    sellPrice: 25,
+    purchasable: false,
     type: 'produce',
     icon: '🪺',
     badge: 'Nông Sản',
@@ -96,26 +145,30 @@ export const SHOP_CATALOG: readonly ShopItem[] = [
     themeColor: '#10b981'
   },
   {
-    id: 'produce_truffle',
-    name: 'Nấm Quý Truffle',
-    description: 'Nấm quý hiếm do bạn Heo tìm thấy dưới gốc cây.',
-    price: 80,
-    type: 'produce',
-    icon: '🍄',
-    badge: 'Nông Sản Quý',
-    rarity: 'rare',
-    themeColor: '#a855f7'
-  },
-  {
     id: 'produce_bone',
     name: 'Xương May Mắn',
-    description: 'Khúc xương may mắn của bạn Cún chăn cừu.',
-    price: 50,
+    description: 'Khúc xương may mắn của bạn Cún chăn cừu. Bán lấy 30 xu tại Tiệm Tạp Hóa.',
+    price: 30,
+    sellPrice: 30,
+    purchasable: false,
     type: 'produce',
     icon: '🦴',
     badge: 'Nông Sản',
     rarity: 'rare',
     themeColor: '#ec4899'
+  },
+  {
+    id: 'produce_truffle',
+    name: 'Nấm Quý Truffle',
+    description: 'Nấm quý hiếm do bạn Heo tìm thấy dưới gốc cây. Bán lấy 45 xu hoặc đổi Bùa x2 XP!',
+    price: 45,
+    sellPrice: 45,
+    purchasable: false,
+    type: 'produce',
+    icon: '🍄',
+    badge: 'Nông Sản Quý',
+    rarity: 'rare',
+    themeColor: '#a855f7'
   }
 ] as const;
 
@@ -125,4 +178,28 @@ export function getShopItem(id: string): ShopItem | undefined {
 
 export function getShopItemsByType(type: ShopItemType): ShopItem[] {
   return SHOP_CATALOG.filter((item) => item.type === type);
+}
+
+export function getPurchasableShopItems(): ShopItem[] {
+  return SHOP_CATALOG.filter((item) => item.purchasable !== false);
+}
+
+export function getProduceForAnimalKind(kind: string): string {
+  switch (kind) {
+    case 'cow':
+    case 'calf':
+      return 'produce_milk';
+    case 'duck':
+    case 'duckling':
+      return 'produce_duck_egg';
+    case 'pig':
+    case 'piglet':
+      return 'produce_truffle';
+    case 'dog':
+      return 'produce_bone';
+    case 'chicken':
+    case 'chick':
+    default:
+      return 'produce_egg';
+  }
 }

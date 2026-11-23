@@ -385,8 +385,10 @@ export class ArchimedesZoneBuilder {
       if (typeof checker === 'function') {
         active = checker(m.id, i);
       } else if (Array.isArray(checker)) {
-        active =
-          typeof m.id === 'number' && m.id >= 306 && m.id < 306 + checker.length && checker[m.id - 306] === true;
+        const hasLegacyArchId = typeof m.id === 'number' && m.id >= 306 && m.id < 306 + checker.length;
+        active = hasLegacyArchId
+          ? checker[(m.id as number) - 306] === true
+          : (i < checker.length && checker[i] === true);
       } else if (checker && typeof checker === 'object') {
         const solved = checker.solvedProblems;
         const moList = checker.monoliths;

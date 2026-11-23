@@ -240,6 +240,8 @@ export function sanitizeRemoteProblems(rawList: any[]): RemoteProblem[] {
       .filter((s: any): s is NonNullable<typeof s> => s !== null);
 
     if (validSteps.length > 0) {
+      const diffNum = Number(raw.difficulty);
+      const difficulty = diffNum === 1 || diffNum === 2 || diffNum === 3 ? diffNum : undefined;
       validProblems.push({
         id,
         zoneId: raw.zoneId ? Number(raw.zoneId) : undefined,
@@ -249,6 +251,8 @@ export function sanitizeRemoteProblems(rawList: any[]): RemoteProblem[] {
         position: pos,
         color: raw.color ? Number(raw.color) : undefined,
         badge: raw.badge ? String(raw.badge) : undefined,
+        entityKind: raw.entityKind ? String(raw.entityKind).trim().toLowerCase() : undefined,
+        difficulty,
         steps: validSteps
       });
     }
@@ -385,6 +389,8 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       ? rawTemplate
       : 'GRID_SANCTUARY') as any;
 
+    const rawRewardXp = Number(z.rewardXp ?? z.RewardXP);
+    const rawRewardCoins = Number(z.rewardCoins ?? z.RewardCoins);
     return {
       id: Number(z.id ?? z.ZoneId) || idx + 1,
       name: String(z.name || z.ZoneName || 'Vùng Đất Mới').trim(),
@@ -401,7 +407,10 @@ export function sanitizeRemoteZones(rawList: any[]): RemoteZoneConfig[] {
       colorHex: String(z.colorHex || z.ColorHex || '#38bdf8'),
       badge: String(z.badge || z.Badge || '🏆 Huy Chương Thám Hiểm'),
       active: parseActiveFlag(z.active ?? z.Active),
-      startAt: String(z.startAt ?? z.StartAt ?? '').trim()
+      startAt: String(z.startAt ?? z.StartAt ?? '').trim(),
+      unlockRule: String(z.unlockRule ?? z.UnlockRule ?? '').trim() || undefined,
+      rewardXp: Number.isFinite(rawRewardXp) && rawRewardXp > 0 ? rawRewardXp : undefined,
+      rewardCoins: Number.isFinite(rawRewardCoins) && rawRewardCoins > 0 ? rawRewardCoins : undefined
     };
   });
 }

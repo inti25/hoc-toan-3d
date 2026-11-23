@@ -73,18 +73,19 @@ test('SceneBatchPool ring-buffered InstancedMesh effects emit, advance, expire, 
   pool.attachEffects(scene);
 
   const initialChildren = scene.children.length;
-  assert.equal(initialChildren, 4, 'Should attach 1 spark pool + 3 trail pools');
+  assert.equal(initialChildren, 5, 'Should attach 1 spark pool + 4 trail pools');
 
   pool.emitBurst(1, 2, 3);
   pool.emitTrail(0, 0, 0, 'trail_flower');
   pool.emitTrail(0, 0, 0, 'trail_stardust');
   pool.emitTrail(0, 0, 0, 'trail_frost');
+  pool.emitTrail(0, 0, 0, 'trail_rainbow');
 
   // Emitting particles must NOT add extra meshes to scene
   assert.equal(scene.children.length, initialChildren);
   const counts = pool.getActiveEffectCount();
   assert.equal(counts.sparks, 20);
-  assert.equal(counts.trails, 4); // 1 flower + 2 stardust + 1 frost
+  assert.equal(counts.trails, 5); // 1 flower + 2 stardust + 1 frost + 1 rainbow
 
   // Advance simulation past max lifetime -> slots expire cleanly
   for (let step = 0; step < 30; step++) {

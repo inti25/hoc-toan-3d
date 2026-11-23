@@ -6,16 +6,20 @@
 
 export const CAMERA_ZOOM_LIMITS = {
   close: { minDist: 0.35, maxDist: 14 },
+  thirdPerson: { minDist: 3.5, maxDist: 28 },
   isometric: { minDist: 23, maxDist: 60 }
 } as const;
+
+export type CameraZoomMode = boolean | 'third_person';
 
 export interface CameraDistanceLimits {
   readonly minDist: number;
   readonly maxDist: number;
 }
 
-export function getCameraDistanceLimits(isCloseCam: boolean): CameraDistanceLimits {
-  return isCloseCam ? CAMERA_ZOOM_LIMITS.close : CAMERA_ZOOM_LIMITS.isometric;
+export function getCameraDistanceLimits(mode: CameraZoomMode): CameraDistanceLimits {
+  if (mode === 'third_person') return CAMERA_ZOOM_LIMITS.thirdPerson;
+  return mode ? CAMERA_ZOOM_LIMITS.close : CAMERA_ZOOM_LIMITS.isometric;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -25,11 +29,11 @@ function clamp(value: number, min: number, max: number): number {
 export function computeWheelZoomDistance(
   currentDistance: number,
   deltaY: number,
-  isCloseCam: boolean,
+  mode: CameraZoomMode,
   isTrackpadPinch = false
 ): number {
-  const { minDist, maxDist } = getCameraDistanceLimits(isCloseCam);
-  const step = (isCloseCam ? 0.008 : 0.025) * (isTrackpadPinch ? 2.5 : 1);
+  const { minDist, maxDist } = getCameraDistanceLimits(mode);
+  const step = (mode === true ? 0.008 : mode === 'third_person' ? 0.014 : 0.025) * (isTrackpadPinch ? 2.5 : 1);
   return clamp(currentDistance + deltaY * step, minDist, maxDist);
 }
 
@@ -42,9 +46,9 @@ export function computePinchZoomDistance(
   currentDistance: number,
   prevSpanPx: number,
   nextSpanPx: number,
-  isCloseCam: boolean
+  mode: CameraZoomMode
 ): number {
-  const { minDist, maxDist } = getCameraDistanceLimits(isCloseCam);
+  const { minDist, maxDist } = getCameraDistanceLimits(mode);
   const clampedCurrent = clamp(currentDistance, minDist, maxDist);
   if (
     !Number.isFinite(prevSpanPx) ||
@@ -54,7 +58,7 @@ export function computePinchZoomDistance(
   ) {
     return clampedCurrent;
   }
-  const floor = isCloseCam ? 1.2 : 0;
+  const floor = mode === true ? 1.2 : mode === 'third_person' ? 0.8 : 0;
   const next = (clampedCurrent + floor) * (prevSpanPx / nextSpanPx) - floor;
   return clamp(next, minDist, maxDist);
 }

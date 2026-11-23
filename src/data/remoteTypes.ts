@@ -23,6 +23,8 @@ export interface RemoteProblem {
   position?: { x: number; y?: number; z: number } | null;
   color?: number;
   badge?: string;
+  entityKind?: string;
+  difficulty?: 1 | 2 | 3;
   steps: RemoteStep[];
 }
 
@@ -45,6 +47,11 @@ export interface RemoteZoneConfig {
   active?: boolean;
   /** Cột StartAt trong CONFIG (ISO hoặc 'yyyy-MM-dd HH:mm' giờ VN); trống = hiện ngay */
   startAt?: string;
+  /** Quy tắc mở khóa v2 (trống = mở ngay; 'BRIDGE_DONE' / 'LEVEL:N' / 'ZONE:ID') */
+  unlockRule?: string;
+  /** Thưởng hoàn thành vùng tùy chỉnh từ CONFIG */
+  rewardXp?: number;
+  rewardCoins?: number;
 }
 
 export interface ExplorerProfile {

@@ -2149,6 +2149,217 @@ body.in-farm-sanctuary .quest-card {
   }
 }
 
+/* =========================================================
+   UI/UX v2: Safe-area insets, Compact Objective Pill,
+   Charm Bar, Focus Rings & Read-only Map Tags
+   ========================================================= */
+.topbar {
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-left: max(22px, env(safe-area-inset-left));
+  padding-right: max(22px, env(safe-area-inset-right));
+}
+
+.bottom-bar {
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: max(20px, env(safe-area-inset-left));
+  right: max(20px, env(safe-area-inset-right));
+}
+
+.touch-controls {
+  left: max(20px, env(safe-area-inset-left));
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(88px, calc(76px + env(safe-area-inset-bottom)));
+}
+
+body.playing .quest-toggle-btn {
+  display: grid !important;
+}
+
+.quest-card {
+  display: none !important;
+}
+
+.active-objective-pill {
+  position: absolute;
+  top: 205px;
+  left: max(28px, env(safe-area-inset-left));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: min(296px, calc(100vw - 44px));
+  padding: 9px 15px;
+  border-radius: 999px;
+  border: 1.5px solid #d4e4ca;
+  background: #fffceff2;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-objective-pill:hover {
+  background: #f5fae8;
+  border-color: #93c47d;
+}
+
+.player-card {
+  cursor: pointer;
+}
+
+.icon-button,
+.tool-button,
+.answer,
+.charm-use-btn,
+.shop-buy-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #e99231;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px #e9923133;
+}
+
+.charm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.charm-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.charm-use-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1.5px solid #60a5fa;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.charm-use-btn:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.charm-use-btn:disabled {
+  opacity: 0.55;
+}
+
+.answer.eliminated {
+  opacity: 0.28;
+  text-decoration: line-through;
+  background: #e5e7eb;
+  border-color: #cbd5e1;
+}
+
+.archimedes-card-readonly-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #eef4ea;
+  color: #3a624b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shop-produce-exchange {
+  background: #f5faee;
+  border: 1.5px solid #cde2bf;
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.shop-section-heading {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--green);
+  margin: 0 0 6px;
+}
+
+.shop-section-sub {
+  font-size: 12px;
+  color: #54745f;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.shop-trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.shop-trade-btn {
+  flex: 1 1 220px;
+  min-height: 44px;
+  border-radius: 11px;
+  border: 1.5px solid #c5dbb7;
+  background: #ffffff;
+  color: #194f42;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.shop-trade-btn:hover:not(:disabled) {
+  background: #eaf5e2;
+  border-color: #7eb865;
+}
+
+.shop-trade-btn:disabled {
+  opacity: 0.5;
+}
+
+@media (max-width: 700px) {
+  .active-objective-pill {
+    top: 158px;
+    left: max(14px, env(safe-area-inset-left));
+    font-size: 11.5px;
+    padding: 7px 12px;
+    min-height: 38px;
+  }
+}
+
+@media (max-height: 620px) and (orientation: landscape) {
+  .active-objective-pill {
+    top: 142px;
+    left: max(14px, env(safe-area-inset-left));
+    font-size: 11px;
+  }
+}
+
+
 
 
 

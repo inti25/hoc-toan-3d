@@ -9,6 +9,7 @@ export type ChallengeSpec =
       type: 'multiplication';
       mode: 'bridge' | 'practice';
       lastId?: string;
+      countDailyDrill?: boolean;
     }
   | {
       type: 'flower';
@@ -38,6 +39,8 @@ export type ChallengeSpec =
       problemData: any;
       stepIndex?: number;
       zoneName?: string;
+      zoneId?: number;
+      totalAnimals?: number;
     }
   | {
       type: 'qhmj_node';

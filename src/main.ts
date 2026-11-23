@@ -8,7 +8,8 @@ import { generateQhmjProblems } from './core/qhmjQuestions';
 import { qhmjZoneSpawn } from './data/qhmjMap';
 import { farmZoneSpawn } from './data/farmMap';
 import { qhmjProgressKey } from './world/qhmj/QhmjLayout';
-import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, type Table } from './data/config';
+import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, getLevelTitle, type Table } from './data/config';
+import { getProduceForAnimalKind } from './data/shopCatalog';
 import { CHARACTERS, DEFAULT_AVATAR_ID, getCharacter } from './data/characters';
 import { ARCHIMEDES_ZONES } from './data/archimedesTrialMap';
 import { FLOWER_COORDS } from './world/SpatialWorld';
@@ -23,7 +24,7 @@ import {
   loadPlayerProgressFromSheets
 } from './core/sheetsClient';
 import { normalizePasscode, defaultStorage, profileManager } from './core/profile';
-import { sanitizeSaveState } from './core/state';
+import { sanitizeSaveState, todayDateKey } from './core/state';
 import {
   SyncManager,
   formatTimeAgo,
@@ -34,6 +35,7 @@ import { computeProceduralEntityPositions, type RemoteZoneConfig, type RemotePla
 import { ChallengeDialog, icon } from './quiz/ChallengeDialog';
 import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 import { ShopModal } from './ui/ShopModal';
+import { ScreenStack } from './ui/ScreenStack';
 import { FarmTrackerHud } from './ui/FarmTrackerHud';
 import {
   getFarmAnimalEmoji,
@@ -144,11 +146,11 @@ function getThemeBadgeIcon(theme?: string): string {
 const app = $('app');
 app.innerHTML = `
   <main class="game-shell">
-    <canvas id="world" aria-label="Làng Khởi Đầu và Vườn Hoa Tri Thức 3D. Di chuyển bằng WASD, phím mũi tên hoặc chạm xuống đất."></canvas>
+    <canvas id="world" aria-label="Làng Khởi Đầu và Vườn Hoa Tri Thức 3D. Di chuyển bằng WASD, phím mũi tên hoặc bánh xe điều khiển."></canvas>
     <div id="loading" class="loading"><div class="loading-logo-box"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="loading-logo-img" /></div><strong id="loading-title">Đang mở cánh cổng…</strong><small id="loading-sub" class="loading-sub"></small></div>
     <header class="topbar">
       <a class="brand" href="${import.meta.env.BASE_URL}" aria-label="Vương Quốc Học Toán 3D"><span class="brand-mark"><img src="${import.meta.env.BASE_URL}icons/logo-ui.png" alt="Biểu Tượng Vương Quốc" class="brand-logo-img" /></span><span>VƯƠNG QUỐC<small>HỌC TOÁN <b>3D</b></small></span></a>
-      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="cloud-status-btn" class="icon-button cloud-status-btn" title="Trạng thái đồng bộ đám mây" aria-label="Trạng thái đồng bộ đám mây"><span class="cloud-status-icon">${icon('cloud')}</span><i id="cloud-status-dot" class="cloud-status-dot idle"></i></button><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhiệm vụ & Tiến độ" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
+      <div class="top-right"><span class="village-status"><i id="status-dot"></i><span id="village-status-text">Làng Khởi Đầu</span></span><button id="cloud-status-btn" class="icon-button cloud-status-btn" title="Trạng thái đồng bộ đám mây" aria-label="Trạng thái đồng bộ đám mây"><span class="cloud-status-icon">${icon('cloud')}</span><i id="cloud-status-dot" class="cloud-status-dot idle"></i></button><button id="quest-btn" class="icon-button quest-toggle-btn" title="Nhật ký nhiệm vụ (J)" aria-label="Xem nhiệm vụ & tiến độ">${icon('flag')}</button><button id="sound" class="icon-button" title="Bật / tắt âm thanh" aria-label="Tắt âm thanh">${icon('sound')}</button><button id="settings" class="icon-button" title="Cài đặt" aria-label="Cài đặt">${icon('settings')}</button></div>
     </header>
     <section id="welcome" class="welcome">
       <div class="chapter"><span></span> MỘT CUỘC PHIÊU LƯU NHỎ</div>
@@ -228,7 +230,11 @@ app.innerHTML = `
           </div>
         </div>
       </aside>
-      <aside class="quest-card">
+      <button id="quest-pill" class="active-objective-pill" type="button" title="Mở Nhật Ký Nhiệm Vụ (J)">
+        <span>🚩</span>
+        <span id="quest-pill-text">Gặp Milo bên bờ sông</span>
+      </button>
+      <aside class="quest-card" hidden aria-hidden="true">
         <div class="eyebrow">${icon('flag')} CHUYẾN PHIÊU LƯU ĐẦU TIÊN</div>
         <h2 id="quest-title">Một cây cầu, ngàn niềm vui</h2>
         <p id="quest-copy">Milo đang chờ bạn bên dòng sông. Đến gần và chào bạn ấy nhé!</p>
@@ -257,7 +263,7 @@ app.innerHTML = `
       <div id="bridge-label" class="world-label landmark"><strong>Cây cầu tình bạn</strong><small id="bridge-count">0 / 6 đoạn cầu</small></div>
       <button id="portal-label" class="world-label" aria-label="Cổng dịch chuyển" hidden><span class="milo-dot">🌀</span><strong>Cổng dịch chuyển</strong><small>Khám phá vùng đất mới</small></button>
       <div class="bottom-bar">
-        <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><kbd>B</kbd><span>Túi đồ</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
+        <div class="controls-hint"><span class="key-group"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Di chuyển</span><span class="divider"></span><kbd>Space</kbd><span>Nhảy</span><span class="divider"></span><kbd>B</kbd><span>Túi đồ</span><span class="divider"></span><kbd>M</kbd><span>Bản đồ</span><span class="divider"></span><span>Kéo chuột để xoay</span></div>
         <div class="toolbar">
           <button id="inventory-btn" class="tool-button special-btn inventory-hud-btn" title="Túi Đồ Dũng Sĩ">🎒<span>Túi Đồ</span></button>
           <button id="archimedes-btn" class="tool-button special-btn">${icon('star')}<span>Bản Đồ</span></button>
@@ -296,6 +302,15 @@ app.innerHTML = `
       </div>
     </dialog>
   </main>`;
+
+const screenStack = new ScreenStack(
+  $<HTMLDialogElement>('dialog'),
+  [
+    $<HTMLElement>('hud'),
+    $<HTMLElement>('welcome'),
+    document.querySelector('header.topbar') as HTMLElement
+  ].filter(Boolean)
+);
 
 const farmTrackerHud = new FarmTrackerHud($('farm-tracker'), {
   onFocusChange: (animalId) => world?.setFocusedFarmAnimal?.(animalId)
@@ -374,7 +389,7 @@ function updateHUD() {
   const ch = getCharacter(state.avatar);
   $('avatar-face').textContent = ch.emoji;
   const playerTitleEl = document.getElementById('player-title');
-  if (playerTitleEl) playerTitleEl.textContent = ch.title;
+  if (playerTitleEl) playerTitleEl.textContent = `${getLevelTitle(level)} · ${ch.title}`;
   $('level').textContent = String(level);
   $('coins').textContent = String(state.coins);
   $('xp-text').textContent = next ? `${state.xp - start} / ${next - start} XP` : `${state.xp} XP · Cấp cao nhất`;
@@ -395,13 +410,21 @@ function updateHUD() {
         ? 'Giúp Milo chọn phép nhân đúng. Mỗi câu trả lời sẽ xây thêm một đoạn cầu.'
         : 'Milo đang chờ bạn bên dòng sông. Đến gần và chào bạn ấy nhé!';
   $('quest-title').textContent = state.questComplete ? 'Cây cầu tình bạn đã hoàn thành!' : 'Một cây cầu, ngàn niềm vui';
-  $('quest-progress').textContent = state.questComplete
-    ? '✓ Hoàn thành'
+  const questProgressLabel = state.questComplete
+    ? '✓ Hoàn thành cầu tình bạn'
     : state.bridge === BRIDGE_PARTS
-      ? 'Đi qua cầu để hoàn thành'
+      ? 'Qua cầu sang Vườn Hoa'
       : state.questAccepted
-        ? `${state.bridge} / ${BRIDGE_PARTS} đoạn cầu`
-        : 'Gặp người dẫn đường';
+        ? `Xây cầu ${state.bridge}/${BRIDGE_PARTS}`
+        : 'Gặp Milo bên bờ sông';
+  $('quest-progress').textContent = questProgressLabel;
+  const questPillText = document.getElementById('quest-pill-text');
+  if (questPillText) {
+    const drillDone = state.dailyDrill?.date === todayDateKey() ? state.dailyDrill.completedCount : 0;
+    questPillText.textContent = state.questComplete
+      ? `🌸 ${state.flowers.filter(Boolean).length}/10 hoa · 📅 ${Math.min(5, drillDone)}/5`
+      : questProgressLabel;
+  }
   $('quest-steps').innerHTML = Array.from(
     { length: BRIDGE_PARTS },
     (_, i) =>
@@ -455,7 +478,11 @@ function openDialog(title: string, body: string, kind: string) {
   currentDialog = kind;
   $('dialog-content').innerHTML = `<h2 id="dialog-title">${title}</h2>${body}`;
   const dialog = $<HTMLDialogElement>('dialog');
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) {
+    screenStack.push(kind);
+  } else {
+    screenStack.focusPrimaryControl();
+  }
 }
 
 function closeDialog() {
@@ -469,6 +496,7 @@ $('dialog').addEventListener('close', () => {
   }
   currentDialog = '';
   challengeDialog.resetSession();
+  screenStack.onClosed();
 });
 
 $('close-dialog').onclick = closeDialog;
@@ -659,15 +687,24 @@ function talk() {
   }
   const state = adventure.getState();
   const complete = state.bridge === BRIDGE_PARTS;
+  const drillToday = state.dailyDrill?.date === todayDateKey() ? state.dailyDrill : undefined;
+  const drillDone = drillToday?.completedCount ?? 0;
+  const drillBanner = complete
+    ? `<div class="milo-tip"><span>📅</span><p><b>Nhiệm vụ hằng ngày (${Math.min(5, drillDone)} / 5 câu):</b> ${
+        drillToday?.rewardClaimed
+          ? 'Bạn đã nhận thưởng +25 XP, +15 xu & 1 Cuộn Gợi Ý hôm nay! Tiếp tục luyện thêm nếu muốn nhé.'
+          : 'Hoàn thành 5 phép nhân bất kỳ cùng Milo mỗi ngày để nhận thưởng nóng <b>+25 XP, +15 xu & 1 Cuộn Gợi Ý</b>!'
+      }</p></div>`
+    : `<div class="milo-tip"><span>✦</span><p>Chọn phép nhân cho đúng số viên đá. Mỗi câu đúng: <b>+10 XP, +5 xu</b>. Nếu chưa nhớ, bạn hãy mở Sổ cửu chương để xem lại nhé!</p></div>`;
   openDialog(
     'Chào bạn, mình là Milo!',
-    `<div class="dialog-eyebrow">NGƯỜI DẪN ĐƯỜNG CỦA BẠN</div><p class="dialog-copy">${complete ? 'Cây cầu của chúng mình thật đẹp! Bạn có thể chọn luyện bất kỳ bảng cửu chương nào từ <b>bảng ×1 đến bảng ×10</b> hoặc cùng mình xây thêm kiến thức nhé!' : 'Vườn Hoa Tri Thức bên kia sông đang chờ chúng mình. Hãy giúp mình xây <strong>6 đoạn cầu</strong> bằng những viên đá phép thuật nhé! Bạn có thể luyện tập đầy đủ từ <strong>bảng ×1 đến bảng ×10</strong>.'}</p><div class="milo-tip"><span>✦</span><p>${complete ? 'Sổ cửu chương có đầy đủ 10 bảng nhân (×1 đến ×10). Bạn có thể chọn riêng từng bảng để luyện tập hoặc trộn lẫn tất cả!' : 'Chọn phép nhân cho đúng số viên đá. Mỗi câu đúng: <b>+10 XP, +5 xu</b>. Nếu chưa nhớ, bạn hãy mở Sổ cửu chương để xem lại nhé!'}</p></div><button id="accept-quest" class="primary wide">${complete ? 'Cùng luyện tập phép nhân' : 'Cùng xây cầu nào!'} ${icon('arrow')}</button><button id="milo-open-book" class="secondary wide">${icon('book')} Mở Sổ cửu chương (Bảng ×1 – ×10)</button>`,
+    `<div class="dialog-eyebrow">NGƯỜI DẪN ĐƯỜNG CỦA BẠN</div><p class="dialog-copy">${complete ? 'Cây cầu của chúng mình thật đẹp! Bạn có thể chọn luyện bất kỳ bảng cửu chương nào từ <b>bảng ×1 đến bảng ×10</b> hoặc cùng mình làm Nhiệm Vụ Hằng Ngày nhé!' : 'Vườn Hoa Tri Thức bên kia sông đang chờ chúng mình. Hãy giúp mình xây <strong>6 đoạn cầu</strong> bằng những viên đá phép thuật nhé! Bạn có thể luyện tập đầy đủ từ <strong>bảng ×1 đến bảng ×10</strong>.'}</p>${drillBanner}<button id="accept-quest" class="primary wide">${complete ? 'Cùng luyện tập phép nhân' : 'Cùng xây cầu nào!'} ${icon('arrow')}</button><button id="milo-open-book" class="secondary wide">${icon('book')} Mở Sổ cửu chương (Bảng ×1 – ×10)</button>`,
     'milo'
   );
   $('accept-quest').onclick = () => {
     adventure.acceptQuest();
     updateHUD();
-    showQuestion(complete ? 'practice' : 'bridge');
+    showQuestion(complete ? 'practice' : 'bridge', '', complete);
   };
   $('milo-open-book').onclick = () => {
     learn();
@@ -769,12 +806,13 @@ function openParkSelectionDialog() {
 
 $('interact').onclick = interactAction;
 
-function showQuestion(nextMode: 'bridge' | 'practice', last = '') {
+function showQuestion(nextMode: 'bridge' | 'practice', last = '', countDailyDrill = false) {
   mode = nextMode;
   return challengeDialog.startChallenge({
     type: 'multiplication',
     mode: nextMode,
-    lastId: last
+    lastId: last,
+    countDailyDrill
   });
 }
 
@@ -870,32 +908,28 @@ async function openFarmAnimalDialog(animalId: string) {
 
   const qList = farmZone ? worldSession.getQuestionsForSheet(farmZone.sheetName) : [];
   const pd = trigger?.problemData ?? qList[parsedIdx] ?? generateFarmMultiplicationProblem(parsedIdx, kind as any);
-  const questionId = pd?.id || animalId;
+  const totalAnimals = world?.farmSanctuary?.animals?.length || qList.length || 10;
 
   const outcome = await challengeDialog.startChallenge({
     type: 'farm_animal',
     animalId,
     animalName,
     problemData: pd,
-    zoneName: farmZone?.name
+    zoneName: farmZone?.name,
+    zoneId: farmZone?.id ?? 8,
+    totalAnimals
   });
 
   if (outcome.status === 'solved' && outcome.isCorrect) {
-    adventure.setFarmRescued(animalId, true);
     world.setFarmRescued?.(adventure.getState().farmRescued || {});
     farmTrackerHud.invalidateSort();
 
-    // Produce reward according to kind
-    let rewardItem = 'produce_egg';
-    if (kind === 'cow' || kind === 'calf') rewardItem = 'produce_milk';
-    else if (kind === 'duck' || kind === 'duckling') rewardItem = 'produce_duck_egg';
-    else if (kind === 'pig' || kind === 'piglet' || kind === 'dog') rewardItem = 'produce_bone';
+    const rewardItem = getProduceForAnimalKind(kind);
     adventure.addProduceToInventory(rewardItem, 1);
 
     toast(`🎉 Trả lời đúng! Bé ${animalName} đang vui vẻ chạy về chuồng. +1 Nông sản!`);
 
     world.burstPlayer(1.2);
-    adventure.recordQuizResult({ isCorrect: true, questionId });
     updateHUD();
   }
 }
@@ -1057,9 +1091,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           ${flowerSubtitle ? `<div class="archimedes-card-sub">${flowerSubtitle}</div>` : ''}
           ${flowerPrompt && flowerPrompt !== flowerSubtitle ? `<div class="archimedes-card-desc">${flowerPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
-            <button class="archimedes-card-action flower-open-btn" data-index="${i}">
-              ${bloomed ? `${icon('check')} Xem lại` : `🌸 Làm nở hoa`}
-            </button>
+            <span class="archimedes-card-readonly-tag">${bloomed ? `${icon('check')} Đã nở hoa` : '🌱 Khám phá 3D để giải'}</span>
             <button class="zone-teleport-btn archimedes-card-teleport" data-x="${flowerPos.x - 1.5}" data-z="${flowerPos.z}" data-name="${flowerTitle}">
               🚀 Đến ngay
             </button>
@@ -1107,9 +1139,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           ${treeSubtitle ? `<div class="archimedes-card-sub">${treeSubtitle}</div>` : ''}
           ${treePrompt && treePrompt !== treeSubtitle ? `<div class="archimedes-card-desc">${treePrompt}</div>` : ''}
           <div class="archimedes-card-actions">
-            <button class="archimedes-card-action park-tree-open-btn" data-index="${i}">
-              ${awakened ? `${icon('check')} Xem lại` : `🌳 Thức tỉnh cây`}
-            </button>
+            <span class="archimedes-card-readonly-tag">${awakened ? `${icon('check')} Đã thức tỉnh` : '🌳 Đến gần cây để giải'}</span>
             <button class="zone-teleport-btn archimedes-card-teleport" data-x="${treePos.x}" data-z="${treePos.z + 2}" data-name="${treeTitle}">
               🚀 Đến ngay
             </button>
@@ -1172,9 +1202,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           ${cardSubtitle ? `<div class="archimedes-card-sub">${cardSubtitle}</div>` : ''}
           ${cardPrompt && cardPrompt !== cardSubtitle ? `<div class="archimedes-card-desc">${cardPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
-            <button class="archimedes-card-action farm-animal-open-btn" data-id="${animalId}">
-              ${isRescued ? `${icon('check')} Xem lại` : `🐾 Giải cứu`}
-            </button>
+            <span class="archimedes-card-readonly-tag">${isRescued ? `${icon('check')} Đã về chuồng` : '🐾 Gặp thú để giải cứu'}</span>
             <button class="zone-teleport-btn archimedes-card-teleport" data-x="${targetX}" data-y="${targetY}" data-z="${targetZ}" data-region="zone:${currentZone.id}" data-name="${currentZone.name}">
               🚀 Đến chỗ thú cưng
             </button>
@@ -1222,9 +1250,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           ${pSub ? `<div class="archimedes-card-sub">${pSub}</div>` : ''}
           ${pPrompt && pPrompt !== pSub ? `<div class="archimedes-card-desc">${pPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
-            <button class="archimedes-card-action qhmj-node-open-btn" data-zone="${currentZone.id}" data-index="${node?.index ?? i}">
-              ${isDone ? `${icon('check')} Xem lại` : `🔮 Giải bài`}
-            </button>
+            <span class="archimedes-card-readonly-tag">${isDone ? `${icon('check')} Đã mở ấn` : '🔮 Leo trạm để giải'}</span>
             <button class="zone-teleport-btn archimedes-card-teleport" data-x="${tp.x}" data-y="${tp.y}" data-z="${tp.z}" data-name="${pTitle}">
               🚀 Đến trạm
             </button>
@@ -1266,9 +1292,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
           ${mSubtitle ? `<div class="archimedes-card-sub">${mSubtitle}</div>` : ''}
           ${mPrompt && mPrompt !== mSubtitle ? `<div class="archimedes-card-desc">${mPrompt}</div>` : ''}
           <div class="archimedes-card-actions">
-            <button class="archimedes-card-action monolith-open-btn" data-index="${m.id}">
-              ${isDone ? `${icon('check')} Xem lại` : `${icon('star')} Giải bài`}
-            </button>
+            <span class="archimedes-card-readonly-tag">${isDone ? `${icon('check')} Đã giải` : '🏛️ Đến bia đá để giải'}</span>
             <button class="zone-teleport-btn archimedes-card-teleport" data-x="${pPos.x - 1.5}" data-z="${pPos.z}" data-name="${mTitle}">
               🚀 Đến ngay
             </button>
@@ -1370,47 +1394,6 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const name = btn.dataset.name || 'đích đến';
       closeDialog();
       void teleportWithRegionLoading(x, z, name, Number.isFinite(y) ? y : undefined, regionId);
-    };
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('.qhmj-node-open-btn').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const zId = Number(btn.dataset.zone ?? '0');
-      const idx = Number(btn.dataset.index ?? '0');
-      void openQhmjNodeDialog(zId, idx);
-    };
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('.monolith-open-btn').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const ref = btn.dataset.index ?? '0';
-      openArchimedesMonolithDialog(isNaN(Number(ref)) ? ref : Number(ref), 0);
-    };
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('.flower-open-btn').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const fIdx = Number(btn.dataset.index ?? '0');
-      openFlowerDialog(fIdx);
-    };
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('.park-tree-open-btn').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const tIdx = Number(btn.dataset.index ?? '0');
-      openParkTreeDialog(tIdx);
-    };
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('.farm-animal-open-btn').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const aId = btn.dataset.id ?? '';
-      openFarmAnimalDialog(aId);
     };
   });
 }
@@ -2087,13 +2070,22 @@ $('sound').onclick = () => {
 };
 $('jump').onclick = () => world?.jump();
 $('quest-btn').onclick = () => openQuestDialog();
+document.getElementById('quest-pill')?.addEventListener('click', () => openQuestDialog());
 $('help').onclick = () => help();
 
 document.addEventListener('keydown', e => {
   if (challengeDialog.handleKeyDown(e)) return;
-  if (e.repeat && ['e', 'b', ' ', 'Escape'].includes(e.key)) return;
+  if (e.repeat && ['e', 'b', 'm', 'j', ' ', 'Escape'].includes(e.key)) return;
   if ($<HTMLDialogElement>('dialog').open) {
     if (e.key.toLowerCase() === 'b' && currentDialog === 'inventory') {
+      e.preventDefault();
+      closeDialog();
+    }
+    if (e.key.toLowerCase() === 'm' && currentDialog === 'archimedesMap') {
+      e.preventDefault();
+      closeDialog();
+    }
+    if (e.key.toLowerCase() === 'j' && currentDialog === 'quest') {
       e.preventDefault();
       closeDialog();
     }
@@ -2110,6 +2102,14 @@ document.addEventListener('keydown', e => {
   if (key === 'b') {
     e.preventDefault();
     shopModal.open('inventory', 'inventory');
+  }
+  if (key === 'm') {
+    e.preventDefault();
+    openArchimedesMapDialog();
+  }
+  if (key === 'j') {
+    e.preventDefault();
+    openQuestDialog();
   }
   if (key === 'escape') {
     e.preventDefault();
@@ -2428,6 +2428,9 @@ async function ensureWorld(): Promise<WorldHandle> {
 $('loading').hidden = true;
 initWelcomeProfile();
 updateHUD();
+adventure.subscribe(() => {
+  updateHUD();
+});
 
 // Tự động kiểm tra di chuyển dữ liệu cục bộ lên đám mây (Ticket 04)
 void runLocalStorageMigration(adventure, undefined, syncManager, defaultStorage, (msg) => {

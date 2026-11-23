@@ -1,0 +1,21 @@
+{
+  "3": "PlayerAvatar",
+  "8": "SyncManager",
+  "11": "state.ts",
+  "14": "SceneBatchPool.ts",
+  "28": ".renderDynamicZones",
+  "33": "ref_node_assert",
+  "45": "Vương Quốc Học Toán 3D — Game Design Document (Remake v2.0)",
+  "50": "AssetRepository",
+  "51": "three",
+  "55": "SyncManager.ts",
+  "59": "prefabSlicer.ts",
+  "60": "World.ts",
+  "61": "adventure.ts",
+  "63": "AssetRepositorySeam",
+  "67": "getBundledFallbackData",
+  "69": "portal_stuck_and_hub_overlap.test.ts",
+  "70": "config.ts",
+  "76": "sanitizeRemoteProblems",
+  "77": ".constructor"
+}

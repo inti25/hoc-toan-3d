@@ -15,27 +15,28 @@
 const CONFIG_HEADERS = [
   'ZoneId', 'Name', 'Title', 'Description', 'Template', 'Theme', 'DecorDensity',
   'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge',
-  'Active', 'StartAt', 'QuestionCount'
+  'Active', 'StartAt', 'QuestionCount', 'UnlockRule', 'RewardXP', 'RewardCoins'
 ];
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
 const QUEST_HEADERS = [
   'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt', 'ImageUrl',
   'OptionA', 'OptionB', 'OptionC', 'OptionD', 'Answer',
-  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ'
+  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ',
+  'EntityKind', 'Difficulty'
 ];
 
 // Tiêu đề các cột cho sheet LOGS
 const LOG_HEADERS = [
   'Timestamp', 'ExplorerName', 'ClassName', 'ZoneId',
-  'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details'
+  'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details', 'DurationMs'
 ];
 
 // Tiêu đề các cột cho sheet PLAYERS (Sổ Theo Dõi Người Chơi & Lưu Trữ Đám Mây)
 const PLAYER_HEADERS = [
   'ExplorerId', 'Passcode', 'Nickname', 'ClassName', 'Avatar',
   'Level', 'TotalXP', 'TotalCoins', 'BridgeParts', 'FlowersBloomed',
-  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson'
+  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson', 'SolvedCount'
 ];
 
 /**
@@ -284,7 +285,9 @@ function generateMultiplicationRows(zoneId, count) {
       escapeSheetsText(a + ' × ' + b + ' = ' + answer),
       '',
       '',
-      ''
+      '',
+      '',
+      '1'
     ]);
   }
   return rows;
@@ -645,7 +648,10 @@ function fetchZonesFromSheet(ss) {
       colorHex: String(rowObj.ColorHex || '#38bdf8'),
       badge: String(rowObj.Badge || '🏆 Huy Chương Thám Hiểm'),
       active: parseActiveFlag(rowObj.Active),
-      startAt: normalizeStartAt(rowObj.StartAt)
+      startAt: normalizeStartAt(rowObj.StartAt),
+      unlockRule: String(rowObj.UnlockRule || '').trim(),
+      rewardXp: Number(rowObj.RewardXP) || 0,
+      rewardCoins: Number(rowObj.RewardCoins) || 0
     });
   }
 
@@ -765,6 +771,8 @@ function fetchQuestionsFromSheet(ss, sheetName) {
         id: isNaN(Number(probId)) ? probId : Number(probId),
         title: String(rowObj.Title || 'Bài ' + probId).trim(),
         subtitle: String(rowObj.Subtitle || '').trim(),
+        entityKind: String(rowObj.EntityKind || '').trim().toLowerCase(),
+        difficulty: Number(rowObj.Difficulty) || 1,
         position: (posX !== null && posZ !== null)
           ? (posY !== null && !isNaN(posY) ? { x: posX, y: posY, z: posZ } : { x: posX, z: posZ })
           : null,

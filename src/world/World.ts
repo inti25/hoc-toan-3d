@@ -157,7 +157,7 @@ export interface ParkTreeEntity {
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(42, 1, .1, 400);
+  readonly camera = new THREE.PerspectiveCamera(48, 1, .1, 480);
   readonly player = new THREE.Group();
   readonly avatar: PlayerAvatar;
   readonly milo = new THREE.Group();
@@ -185,11 +185,11 @@ export class World {
   private windmill = new THREE.Group();
   private water: THREE.Mesh;
   private clock = new THREE.Clock();
-  private target = new THREE.Vector3(-5, 0, 0);
+  private target = new THREE.Vector3(-5, 1.35, 0);
   private jumpVelocity = 0;
   private yaw = .57;
-  private pitch = .8;
-  private distance = 48;
+  private pitch = .42;
+  private distance = 13.5;
   private bridgeCount = 0;
   private time = 0;
   private observer: ResizeObserver;
@@ -286,17 +286,19 @@ export class World {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.setClearColor(0xc9e9e5);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.setClearColor(0xc7ebea);
     this.coreRegionGroup.name = 'Region_Core_Village_Garden';
     this.hubRegionGroup.name = 'Region_Archimedes_Hub';
     this.activeMountedGroup = this.coreRegionGroup;
     this.scene.add(this.coreRegionGroup);
 
-    this.scene.fog = new THREE.Fog(0xc9e9e5, 110, 320);
-    this.scene.add(new THREE.HemisphereLight(0xf2fbff, 0x7d9870, 2.4));
-    this.sun = new THREE.DirectionalLight(0xfff0c9, 3.2);
+    this.scene.fog = new THREE.Fog(0xc7ebea, 95, 310);
+    this.scene.add(new THREE.HemisphereLight(0xf6fbff, 0x7b9868, 1.35));
+    this.sun = new THREE.DirectionalLight(0xfff1d0, 2.1);
     this.sun.position.set(-18, 45, 12); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.normalBias = .045; this.sun.shadow.bias = -.0003;
     this.scene.add(this.sun, this.sun.target);
 
@@ -363,18 +365,19 @@ export class World {
       const move = this.pointerController.pointerMove(e.pointerId, e.clientX, e.clientY);
       if (move.kind === 'none') return;
       const isCloseCam = this.isCloseExplorationCamera();
+      const zoomMode = isCloseCam ? true : ('third_person' as const);
       if (move.kind === 'pinch') {
         this.distance = computePinchZoomDistance(
           this.distance,
           move.prevSpan,
           move.nextSpan,
-          isCloseCam
+          zoomMode
         );
         return;
       }
       this.yaw -= move.dx * .006;
-      const minPitch = isCloseCam ? -0.25 : 0.45;
-      const maxPitch = isCloseCam ? 0.85 : 1.15;
+      const minPitch = isCloseCam ? -0.25 : 0.15;
+      const maxPitch = isCloseCam ? 0.85 : 1.05;
       this.pitch = THREE.MathUtils.clamp(this.pitch + move.dy * .003, minPitch, maxPitch);
     });
     const handlePointerEnd = (e: PointerEvent) => {
@@ -414,10 +417,11 @@ export class World {
     canvas.addEventListener('wheel', e => {
       if (!this._active || this._paused) return;
       e.preventDefault();
+      const zoomMode = this.isCloseExplorationCamera() ? true : ('third_person' as const);
       this.distance = computeWheelZoomDistance(
         this.distance,
         e.deltaY,
-        this.isCloseExplorationCamera(),
+        zoomMode,
         e.ctrlKey
       );
     }, { passive: false });
@@ -514,14 +518,14 @@ export class World {
       }
     } else {
       this.yaw = 0.57;
-      this.pitch = 0.8;
-      this.distance = 48;
+      this.pitch = 0.42;
+      this.distance = 13.5;
       this.avatar.group.visible = true;
-      this.camera.fov = 42;
-      this.camera.far = 400;
+      this.camera.fov = 48;
+      this.camera.far = 480;
       if (fog) {
-        fog.near = 110;
-        fog.far = 320;
+        fog.near = 95;
+        fog.far = 310;
       }
     }
     this.camera.updateProjectionMatrix();
@@ -1723,7 +1727,9 @@ export class World {
     this.syncCameraModeForRegion(targetRegion);
     const targetY =
       this.player.position.y +
-      (this.isCloseExplorationCamera() ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+      (this.isCloseExplorationCamera()
+        ? (this.avatar.activeAvatar === 'elsa' ? 2.4 : 1.75)
+        : (this.avatar.activeAvatar === 'elsa' ? 1.85 : 1.35));
     this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
       void this.activateRegionAt(x, z, targetRegion);
@@ -1740,7 +1746,9 @@ export class World {
     this.syncCameraModeForRegion(targetRegion);
     const targetY =
       this.player.position.y +
-      (this.isCloseExplorationCamera() ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85) : 0);
+      (this.isCloseExplorationCamera()
+        ? (this.avatar.activeAvatar === 'elsa' ? 2.4 : 1.75)
+        : (this.avatar.activeAvatar === 'elsa' ? 1.85 : 1.35));
     this.target.set(x, targetY, z);
     if (targetRegion !== this.activeRegionId) {
       void this.activateRegionAt(x, z, targetRegion);
@@ -2194,8 +2202,8 @@ export class World {
       return;
     }
     this.yaw = .57;
-    this.pitch = .8;
-    this.distance = 48;
+    this.pitch = .42;
+    this.distance = 13.5;
     this.avatar.group.visible = true;
   }
 
@@ -2408,18 +2416,18 @@ export class World {
       this.accumulator = 0; // prevent spiral of death
     }
 
-    // Presentation tick: smooth camera lerp & procedural animations using rawDt
+    // Presentation tick: unified third-person camera lerp & procedural animations using rawDt
     const qhmjBuild = this.activeQhmjBuild();
     const isNearFps = this.isCloseExplorationCamera();
     const wantedY = isNearFps
-      ? (this.avatar.activeAvatar === 'elsa' ? 2.65 : 1.85)
-      : (this.avatar.activeAvatar === 'elsa' ? 0.7 : 0);
+      ? (this.avatar.activeAvatar === 'elsa' ? 2.4 : 1.75)
+      : (this.avatar.activeAvatar === 'elsa' ? 1.85 : 1.35);
     if (this._active) {
-      this.scratchWanted.set(this.player.position.x, wantedY + (isNearFps ? this.player.position.y : 0), this.player.position.z);
+      this.scratchWanted.set(this.player.position.x, wantedY + this.player.position.y, this.player.position.z);
     } else {
-      this.scratchWanted.set(-7, 0, 0);
+      this.scratchWanted.set(-7, 1.35, 0);
     }
-    const lerpSpeed = isNearFps ? 22 : 3;
+    const lerpSpeed = isNearFps ? 20 : 14;
     if (rawDt > 0) {
       this.target.lerp(this.scratchWanted, 1 - Math.exp(-rawDt * lerpSpeed));
     } else {
@@ -2428,14 +2436,14 @@ export class World {
     if (qhmjBuild) {
       updateQhmjAnimation(qhmjBuild, this.time, rawDt);
     }
-    const distance = this._active ? this.distance : (this.camera.aspect < .85 ? 69 : 59);
-    if (isNearFps && this._active) {
-      this.avatar.group.visible = distance >= 1.1;
+    const distance = this._active ? this.distance : (this.camera.aspect < .85 ? 54 : 44);
+    if (this._active) {
+      this.avatar.group.visible = distance >= 1.8;
     } else if (!this.avatar.group.visible) {
       this.avatar.group.visible = true;
     }
     let camY = this.target.y + Math.sin(this.pitch) * distance;
-    if (isNearFps && this._active) {
+    if (this._active) {
       camY = Math.max(camY, this.player.position.y + 0.55);
     }
     this.camera.position.set(

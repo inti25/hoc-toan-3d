@@ -90,9 +90,9 @@ export const FARM_REMOTE_HOMEWARD_WARP_SEC = 4.5;
 /** Tham số mặc định của Góc Nhìn Khám Phá Gần cho `FARM_SANCTUARY`. */
 export const FARM_CAMERA_DEFAULTS = {
   yaw: Math.PI / 2 - 0.12,
-  pitch: 0.22,
-  distance: 4.2,
-  fov: 58,
+  pitch: 0.34,
+  distance: 8.5,
+  fov: 50,
   far: 950,
   fogNear: 480,
   fogFar: 1100

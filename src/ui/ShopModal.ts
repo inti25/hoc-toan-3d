@@ -1,4 +1,4 @@
-import { SHOP_CATALOG, type ShopItem } from '../data/shopCatalog';
+import { getPurchasableShopItems, getShopItemsByType } from '../data/shopCatalog';
 import type { Adventure } from '../core/adventure';
 import type { World } from '../world/World';
 import type { AudioManager } from '../audio/audio';
@@ -35,10 +35,15 @@ export class ShopModal {
     const inventory = state.inventory || [];
     const equippedTrail = state.equippedTrail || '';
     const charms = state.charms || {};
+    const produceBag = state.produceBag || {};
+    const totalCharmCount = Object.values(charms).reduce((s, n) => s + (n > 0 ? n : 0), 0);
+    const totalProduceCount = Object.values(produceBag).reduce((s, n) => s + (n > 0 ? n : 0), 0);
+    const invBadgeCount = inventory.length + totalCharmCount + totalProduceCount;
 
-    const tipText = this.currentMode === 'inventory'
-      ? '🌟 Trang bị hiệu ứng bước chân để tỏa sáng trên hành trình, bùa x2 XP sẽ tự kích hoạt khi giải đúng câu hỏi!'
-      : '🌟 Giải đúng câu hỏi cùng Milo để nhận thêm xu nhé! (+5 xu/câu đúng)';
+    const tipText =
+      this.currentMode === 'inventory'
+        ? '🌟 Trang bị hiệu ứng bước chân, kiểm tra bùa phép và mang nông sản đến Tiệm Tạp Hóa để đổi xu!'
+        : '🌟 Giải toán để nhận Xu & Nông sản. Bán nông sản hoặc đổi lấy Bùa trợ giúp ngay tại đây!';
 
     const bannerHtml = `
       <div class="shop-balance-banner">
@@ -55,62 +60,67 @@ export class ShopModal {
       </div>
     `;
 
-    const tabsHtml = this.currentMode === 'inventory' ? '' : `
+    const tabsHtml =
+      this.currentMode === 'inventory'
+        ? ''
+        : `
       <div class="shop-tab-nav" role="tablist">
         <button id="shop-tab-shop" class="shop-tab-btn ${this.currentTab === 'shop' ? 'active' : ''}" role="tab" aria-selected="${this.currentTab === 'shop'}">
           🛍️ Tiệm Tạp Hóa
         </button>
         <button id="shop-tab-inv" class="shop-tab-btn ${this.currentTab === 'inventory' ? 'active' : ''}" role="tab" aria-selected="${this.currentTab === 'inventory'}">
-          🎒 Túi Đồ Dũng Sĩ (${inventory.length + (charms['charm_double_xp'] ? 1 : 0)})
+          🎒 Túi Đồ Dũng Sĩ (${invBadgeCount})
         </button>
       </div>
     `;
 
     let contentHtml = '';
+    const produceItems = getShopItemsByType('produce').filter((p) => (produceBag[p.id] || 0) > 0);
 
     if (this.currentTab === 'shop') {
-      const cardsHtml = SHOP_CATALOG.map((item) => {
-        const isOwned = item.type === 'trail' && inventory.includes(item.id);
-        const isEquipped = item.id === equippedTrail;
-        const charmCount = item.type === 'charm' ? (charms[item.id] || 0) : 0;
-        const canAfford = coins >= item.price;
+      const purchasables = getPurchasableShopItems();
+      const cardsHtml = purchasables
+        .map((item) => {
+          const isOwned = item.type === 'trail' && inventory.includes(item.id);
+          const isEquipped = item.id === equippedTrail;
+          const charmCount = item.type === 'charm' ? charms[item.id] || 0 : 0;
+          const canAfford = coins >= item.price;
 
-        let badgeClass = 'common';
-        if (item.rarity === 'rare') badgeClass = 'rare';
-        if (item.rarity === 'legendary') badgeClass = 'legendary';
-        if (isEquipped) badgeClass = 'equipped';
+          let badgeClass = 'common';
+          if (item.rarity === 'rare') badgeClass = 'rare';
+          if (item.rarity === 'legendary') badgeClass = 'legendary';
+          if (isEquipped) badgeClass = 'equipped';
 
-        let actionBtnHtml = '';
-        if (item.type === 'trail') {
-          if (isEquipped) {
-            actionBtnHtml = `
+          let actionBtnHtml = '';
+          if (item.type === 'trail') {
+            if (isEquipped) {
+              actionBtnHtml = `
               <span class="shop-card-owned-tag">✨ Đang dùng</span>
               <button class="shop-btn unequip-btn" data-action="unequip">Gỡ</button>
             `;
-          } else if (isOwned) {
-            actionBtnHtml = `
+            } else if (isOwned) {
+              actionBtnHtml = `
               <span class="shop-card-owned-tag">✓ Đã sở hữu</span>
               <button class="shop-btn equip-btn" data-action="equip" data-id="${item.id}">Trang bị</button>
             `;
-          } else {
-            actionBtnHtml = `
+            } else {
+              actionBtnHtml = `
               <div class="shop-card-price">🪙 ${item.price} <small>xu</small></div>
               <button class="shop-btn buy-btn" data-action="buy" data-id="${item.id}" ${canAfford ? '' : 'disabled title="Bé chưa đủ xu"'}>
                 Đổi quà
               </button>
             `;
-          }
-        } else {
-          // Consumable charm
-          actionBtnHtml = `
+            }
+          } else {
+            actionBtnHtml = `
             <div class="shop-card-price">🪙 ${item.price} <small>xu</small></div>
             <button class="shop-btn buy-btn" data-action="buy" data-id="${item.id}" ${canAfford ? '' : 'disabled title="Bé chưa đủ xu"'}>
               Mua thêm
             </button>
           `;
-        }
+          }
 
-        return `
+          return `
           <div class="shop-card ${isEquipped ? 'equipped' : ''} ${item.type === 'charm' ? 'charm-card' : ''}">
             <div class="shop-card-top">
               <div class="shop-card-icon" style="background:${item.themeColor}15;border-color:${item.themeColor}40">
@@ -128,19 +138,64 @@ export class ShopModal {
             </div>
           </div>
         `;
-      }).join('');
+        })
+        .join('');
+
+      const produceTradeHtml =
+        totalProduceCount > 0
+          ? `
+        <div class="shop-produce-exchange">
+          <div class="shop-section-heading">🌾 Quầy Thu Mua Nông Sản (${totalProduceCount} món)</div>
+          <div class="shop-trade-actions">
+            <button class="shop-btn equip-btn" data-action="trade-charm" data-id="charm_hint_scroll" ${totalProduceCount >= 3 ? '' : 'disabled'}>
+              🧭 Đổi 3 nông sản → Cuộn Gợi Ý
+            </button>
+            <button class="shop-btn equip-btn" data-action="trade-charm" data-id="charm_double_xp" ${(produceBag['produce_truffle'] || 0) >= 2 ? '' : 'disabled'}>
+              📜 Đổi 2 Nấm Truffle → Bùa x2 XP
+            </button>
+          </div>
+          <div class="shop-item-grid">
+            ${produceItems
+              .map((item) => {
+                const qty = produceBag[item.id] || 0;
+                const unitPrice = item.sellPrice ?? item.price;
+                return `
+              <div class="shop-card produce-card">
+                <div class="shop-card-top">
+                  <div class="shop-card-icon" style="background:${item.themeColor}15;border-color:${item.themeColor}40">
+                    ${item.icon}
+                  </div>
+                  <div class="shop-card-meta">
+                    <div class="shop-card-title">${item.name}</div>
+                    <span class="shop-badge common">Đang có: ${qty}</span>
+                  </div>
+                </div>
+                <p class="shop-card-desc">${item.description}</p>
+                <div class="shop-card-bottom">
+                  <div class="shop-card-price">+${unitPrice} <small>xu / món</small></div>
+                  <button class="shop-btn buy-btn" data-action="sell-produce" data-id="${item.id}">
+                    Bán 1 món
+                  </button>
+                </div>
+              </div>`;
+              })
+              .join('')}
+          </div>
+        </div>
+      `
+          : '';
 
       contentHtml = `
         <div class="shop-item-grid">
           ${cardsHtml}
         </div>
+        ${produceTradeHtml}
       `;
     } else {
-      // Inventory Tab
-      const ownedTrails = SHOP_CATALOG.filter((i) => i.type === 'trail' && inventory.includes(i.id));
-      const ownedCharms = SHOP_CATALOG.filter((i) => i.type === 'charm' && (charms[i.id] || 0) > 0);
+      const ownedTrails = getShopItemsByType('trail').filter((i) => inventory.includes(i.id));
+      const ownedCharms = getShopItemsByType('charm').filter((i) => (charms[i.id] || 0) > 0);
 
-      if (ownedTrails.length === 0 && ownedCharms.length === 0) {
+      if (ownedTrails.length === 0 && ownedCharms.length === 0 && produceItems.length === 0) {
         if (this.currentMode === 'inventory') {
           contentHtml = `
             <div class="shop-empty-state">
@@ -165,9 +220,10 @@ export class ShopModal {
           `;
         }
       } else {
-        const trailCards = ownedTrails.map((item) => {
-          const isEquipped = item.id === equippedTrail;
-          return `
+        const trailCards = ownedTrails
+          .map((item) => {
+            const isEquipped = item.id === equippedTrail;
+            return `
             <div class="shop-card ${isEquipped ? 'equipped' : ''}">
               <div class="shop-card-top">
                 <div class="shop-card-icon" style="background:${item.themeColor}15;border-color:${item.themeColor}40">
@@ -182,18 +238,25 @@ export class ShopModal {
               </div>
               <p class="shop-card-desc">${item.description}</p>
               <div class="shop-card-bottom">
-                ${isEquipped
-                  ? `<button class="shop-btn unequip-btn" data-action="unequip" style="width:100%;justify-content:center">Gỡ hiệu ứng</button>`
-                  : `<button class="shop-btn equip-btn" data-action="equip" data-id="${item.id}" style="width:100%;justify-content:center">Trang bị ngay</button>`
+                ${
+                  isEquipped
+                    ? `<button class="shop-btn unequip-btn" data-action="unequip" style="width:100%;justify-content:center">Gỡ hiệu ứng</button>`
+                    : `<button class="shop-btn equip-btn" data-action="equip" data-id="${item.id}" style="width:100%;justify-content:center">Trang bị ngay</button>`
                 }
               </div>
             </div>
           `;
-        }).join('');
+          })
+          .join('');
 
-        const charmCards = ownedCharms.map((item) => {
-          const count = charms[item.id] || 0;
-          return `
+        const charmCards = ownedCharms
+          .map((item) => {
+            const count = charms[item.id] || 0;
+            const hint =
+              item.id === 'charm_double_xp'
+                ? '⚡ Tự động dùng khi trả lời đúng'
+                : '🎯 Bấm kích hoạt ngay trong Thử Thách';
+            return `
             <div class="shop-card charm-card">
               <div class="shop-card-top">
                 <div class="shop-card-icon" style="background:${item.themeColor}15;border-color:${item.themeColor}40">
@@ -206,16 +269,47 @@ export class ShopModal {
               </div>
               <p class="shop-card-desc">${item.description}</p>
               <div class="shop-card-bottom">
-                <span style="font-size:12px;font-weight:700;color:#7c3aed">⚡ Tự động dùng khi trả lời đúng</span>
+                <span style="font-size:12px;font-weight:700;color:#7c3aed">${hint}</span>
               </div>
             </div>
           `;
-        }).join('');
+          })
+          .join('');
+
+        const produceCards = produceItems
+          .map((item) => {
+            const qty = produceBag[item.id] || 0;
+            const unitPrice = item.sellPrice ?? item.price;
+            return `
+            <div class="shop-card produce-card">
+              <div class="shop-card-top">
+                <div class="shop-card-icon" style="background:${item.themeColor}15;border-color:${item.themeColor}40">
+                  ${item.icon}
+                </div>
+                <div class="shop-card-meta">
+                  <div class="shop-card-title">${item.name}</div>
+                  <span class="shop-badge common">Số lượng: ${qty}</span>
+                </div>
+              </div>
+              <p class="shop-card-desc">${item.description}</p>
+              <div class="shop-card-bottom">
+                <div class="shop-card-price">+${unitPrice} <small>xu / món</small></div>
+                ${
+                  this.currentMode === 'full'
+                    ? `<button class="shop-btn buy-btn" data-action="sell-produce" data-id="${item.id}">Bán 1 món</button>`
+                    : `<button id="shop-go-to-stall" class="shop-btn equip-btn">Đem bán 🛍️</button>`
+                }
+              </div>
+            </div>
+          `;
+          })
+          .join('');
 
         contentHtml = `
           <div class="shop-item-grid">
             ${trailCards}
             ${charmCards}
+            ${produceCards}
           </div>
         `;
       }
@@ -274,7 +368,6 @@ export class ShopModal {
       };
     }
 
-    // Action buttons: buy, equip, unequip
     document.querySelectorAll<HTMLButtonElement>('.shop-btn[data-action]').forEach((btn) => {
       btn.onclick = () => {
         const action = btn.dataset.action;
@@ -310,6 +403,26 @@ export class ShopModal {
             this.getWorld()?.setEquippedTrail('');
             this.ctx.toast(res.message);
             this.render();
+          }
+        } else if (action === 'sell-produce' && itemId) {
+          const res = this.ctx.adventure.sellProduce(itemId, 1);
+          if (res.success) {
+            this.ctx.audio.playCue('correct');
+            this.ctx.toast(res.message);
+            this.ctx.updateHUD();
+            this.render();
+          } else {
+            this.ctx.toast(res.message);
+          }
+        } else if (action === 'trade-charm' && itemId) {
+          const res = this.ctx.adventure.tradeProduceForCharm(itemId);
+          if (res.success) {
+            this.ctx.audio.playCue('celebrate');
+            this.ctx.toast(res.message);
+            this.ctx.updateHUD();
+            this.render();
+          } else {
+            this.ctx.toast(res.message);
           }
         }
       };

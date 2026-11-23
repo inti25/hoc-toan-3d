@@ -13,7 +13,7 @@ export interface BatchTemplateOptions {
   receiveShadow?: boolean;
 }
 
-export type TrailEffectKind = 'trail_flower' | 'trail_stardust' | 'trail_frost';
+export type TrailEffectKind = 'trail_flower' | 'trail_stardust' | 'trail_frost' | 'trail_rainbow';
 
 interface SparkSlot {
   active: boolean;
@@ -44,8 +44,10 @@ interface TrailSlot {
   maxLife: number;
 }
 
+type TrailPoolKey = 'flower' | 'star' | 'frost' | 'rainbow';
+
 interface TrailPool {
-  kind: 'flower' | 'star' | 'frost';
+  kind: TrailPoolKey;
   mesh: THREE.InstancedMesh;
   slots: TrailSlot[];
   cursor: number;
@@ -55,10 +57,11 @@ interface TrailPool {
 const SPARK_CAPACITY = 160;
 const TRAIL_CAPACITY = 96;
 const SPARK_COLORS = [0xffd164, 0xfff4c7, 0x7dd4b5, 0xf06292];
-const TRAIL_PALETTES: Record<'flower' | 'star' | 'frost', number[]> = {
+const TRAIL_PALETTES: Record<TrailPoolKey, number[]> = {
   flower: [0xff69b4, 0xffd166, 0x06d6a0, 0xf72585, 0x70e000],
   star: [0xffd700, 0xffbe0b, 0xfff8e7, 0xfb5607, 0xffe600],
-  frost: [0x00f5d4, 0x70d6ff, 0xe0fbfc, 0x00b4d8, 0x90e0ef]
+  frost: [0x00f5d4, 0x70d6ff, 0xe0fbfc, 0x00b4d8, 0x90e0ef],
+  rainbow: [0xef4444, 0xf59e0b, 0x10b981, 0x3b82f6, 0xa855f7]
 };
 
 /**
@@ -73,7 +76,7 @@ export class SceneBatchPool {
   private sparkMesh: THREE.InstancedMesh | null = null;
   private sparkSlots: SparkSlot[] = [];
   private sparkCursor = 0;
-  private trailPools: Record<'flower' | 'star' | 'frost', TrailPool> | null = null;
+  private trailPools: Record<TrailPoolKey, TrailPool> | null = null;
   private effectGeometries: THREE.BufferGeometry[] = [];
   private effectMaterials: THREE.Material[] = [];
 
@@ -83,7 +86,7 @@ export class SceneBatchPool {
   private readonly scratchInv = new THREE.Matrix4();
   private readonly scratchChildMat = new THREE.Matrix4();
 
-  material(color: number, roughness = 0.9, metalness = 0): THREE.MeshStandardMaterial {
+  material(color: number, roughness = 0.86, metalness = 0.02): THREE.MeshStandardMaterial {
     const key = `${color}:${roughness}:${metalness}`;
     let mat = this.materials.get(key);
     if (!mat) {
@@ -254,14 +257,16 @@ export class SceneBatchPool {
   }
 
   emitTrail(x: number, y: number, z: number, trailType: string): void {
-    const kind =
+    const kind: TrailPoolKey | null =
       trailType === 'trail_flower'
         ? 'flower'
         : trailType === 'trail_stardust'
           ? 'star'
           : trailType === 'trail_frost'
             ? 'frost'
-            : null;
+            : trailType === 'trail_rainbow'
+              ? 'rainbow'
+              : null;
     if (!kind) return;
 
     this.ensureEffectPools();
@@ -331,7 +336,7 @@ export class SceneBatchPool {
     }
 
     if (this.trailPools) {
-      for (const kind of ['flower', 'star', 'frost'] as const) {
+      for (const kind of ['flower', 'star', 'frost', 'rainbow'] as const) {
         const pool = this.trailPools[kind];
         let anyTrailDirty = false;
         for (let i = 0; i < TRAIL_CAPACITY; i++) {
@@ -368,7 +373,7 @@ export class SceneBatchPool {
     }
     let trails = 0;
     if (this.trailPools) {
-      for (const kind of ['flower', 'star', 'frost'] as const) {
+      for (const kind of ['flower', 'star', 'frost', 'rainbow'] as const) {
         for (const t of this.trailPools[kind].slots) {
           if (t.active) trails++;
         }
@@ -389,7 +394,7 @@ export class SceneBatchPool {
       this.sparkMesh = null;
     }
     if (this.trailPools) {
-      for (const kind of ['flower', 'star', 'frost'] as const) {
+      for (const kind of ['flower', 'star', 'frost', 'rainbow'] as const) {
         const pool = this.trailPools[kind];
         this.effectsScene?.remove(pool.mesh);
         pool.mesh.dispose();
@@ -431,7 +436,7 @@ export class SceneBatchPool {
     this.effectsScene.add(sparkMesh);
     this.sparkMesh = sparkMesh;
 
-    const createTrailPool = (kind: 'flower' | 'star' | 'frost', geo: THREE.BufferGeometry): TrailPool => {
+    const createTrailPool = (kind: TrailPoolKey, geo: THREE.BufferGeometry): TrailPool => {
       const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       this.effectGeometries.push(geo);
       this.effectMaterials.push(mat);
@@ -474,7 +479,8 @@ export class SceneBatchPool {
     this.trailPools = {
       flower: createTrailPool('flower', new THREE.IcosahedronGeometry(0.12, 0)),
       star: createTrailPool('star', new THREE.TetrahedronGeometry(0.11, 0)),
-      frost: createTrailPool('frost', new THREE.OctahedronGeometry(0.12, 0))
+      frost: createTrailPool('frost', new THREE.OctahedronGeometry(0.12, 0)),
+      rainbow: createTrailPool('rainbow', new THREE.IcosahedronGeometry(0.13, 0))
     };
   }
 
