@@ -5,7 +5,7 @@ import { type AvatarId } from '../data/characters';
 import { FLOWER_QUESTIONS } from '../data/flowerQuestions';
 import { SpatialWorld, type PortalLink } from './SpatialWorld';
 import { PlayerAvatar } from './PlayerAvatar';
-import { SceneBatchPool } from './SceneBatchPool';
+import { SceneBatchPool, type StaticPlacement } from './SceneBatchPool';
 import {
   ArchimedesZoneBuilder,
   allocateDynamicHubPortalSlot,
@@ -172,8 +172,15 @@ export class World {
   readonly spatial = new SpatialWorld(-6, 6);
   private geom = new SceneBatchPool();
   private obstacles: Obstacle[] = [];
-  private ripples: THREE.Mesh[] = [];
-  private clouds: THREE.Group[] = [];
+  private rippleMesh!: THREE.InstancedMesh;
+  private rippleSlots: Array<{ x: number; z: number; sx: number }> = [];
+  private cloudMesh!: THREE.InstancedMesh;
+  private cloudGroupX: number[] = [];
+  private cloudSlots: Array<{ groupIdx: number; ox: number; oy: number; oz: number; sx: number; sy: number; sz: number }> = [];
+  private disposableInstancedMeshes: THREE.InstancedMesh[] = [];
+  private miloBeacon?: THREE.Mesh;
+  private lastPrefetchedPortalKey = '';
+  private readonly instDummy = new THREE.Object3D();
   private readonly scratchWanted = new THREE.Vector3();
   private readonly scratchProj = new THREE.Vector3();
   private readonly scratchRay = new THREE.Raycaster();
@@ -281,8 +288,15 @@ export class World {
   }
 
   constructor(readonly canvas: HTMLCanvasElement) {
+    const isCompactGpu =
+      typeof window !== 'undefined' &&
+      ((typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) ||
+        Math.min(window.innerWidth || 1280, window.innerHeight || 720) <= 760);
+    const maxPixelRatio = isCompactGpu ? 1.25 : 1.5;
+    const shadowMapSize = isCompactGpu ? 1024 : 1536;
+
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, maxPixelRatio));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -298,17 +312,37 @@ export class World {
     this.scene.add(new THREE.HemisphereLight(0xf6fbff, 0x7b9868, 1.35));
     this.sun = new THREE.DirectionalLight(0xfff1d0, 2.1);
     this.sun.position.set(-18, 45, 12); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     this.sun.shadow.normalBias = .045; this.sun.shadow.bias = -.0003;
     this.scene.add(this.sun, this.sun.target);
 
     this.spatial.enableRegionScoping();
     this.terrain();
-    this.water = this.box(this.coreRegionGroup, 7, -.05, 0, 6, .18, 40, 0x48b8cf); this.water.receiveShadow = true;
+    this.water = this.box(this.coreRegionGroup, 7, -.05, 0, 6, .18, 40, 0x48b8cf);
+    this.water.castShadow = false;
+    this.water.receiveShadow = true;
+    this.freezeStatic(this.water);
+
+    this.rippleMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.025, 0.07), this.material(0xb5f4ed), 28);
+    this.rippleMesh.name = 'river_ripples_batch';
+    this.rippleMesh.castShadow = false;
+    this.rippleMesh.receiveShadow = false;
     for (let i = 0; i < 28; i++) {
-      const foam = this.box(this.coreRegionGroup, 4.7 + (i % 4) * 1.35, .05, -18 + (i * 2.17) % 37, .35 + (i % 3) * .2, .025, .07, 0xb5f4ed);
-      this.ripples.push(foam);
+      const slot = {
+        x: 4.7 + (i % 4) * 1.35,
+        z: -18 + (i * 2.17) % 37,
+        sx: 0.35 + (i % 3) * 0.2
+      };
+      this.rippleSlots.push(slot);
+      this.instDummy.position.set(slot.x, 0.05, slot.z);
+      this.instDummy.rotation.set(0, 0, 0);
+      this.instDummy.scale.set(slot.sx, 1, 1);
+      this.instDummy.updateMatrix();
+      this.rippleMesh.setMatrixAt(i, this.instDummy.matrix);
     }
+    this.rippleMesh.instanceMatrix.needsUpdate = true;
+    this.disposableInstancedMeshes.push(this.rippleMesh);
+    this.coreRegionGroup.add(this.rippleMesh);
     this.village();
     this.geom.attachEffects(this.scene);
     this.avatar = new PlayerAvatar({
@@ -435,6 +469,10 @@ export class World {
   private box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, color: number) { return this.geom.box(parent, x, y, z, w, h, d, color); }
   private sphere(parent: THREE.Object3D, x: number, y: number, z: number, r: number, color: number) { return this.geom.sphere(parent, x, y, z, r, color); }
   private cylinder(parent: THREE.Object3D, x: number, y: number, z: number, top: number, bottom: number, h: number, color: number, segments = 8) { return this.geom.cylinder(parent, x, y, z, top, bottom, h, color, segments); }
+  private freezeStatic(obj: THREE.Object3D) {
+    obj.updateMatrix();
+    obj.matrixAutoUpdate = false;
+  }
 
   private createStoneTrail(x1: number, z1: number, x2: number, z2: number, count = 12, parent: THREE.Object3D = this.scene) {
     for (let i = 0; i <= count; i++) {
@@ -443,6 +481,8 @@ export class World {
       const z = THREE.MathUtils.lerp(z1, z2, t);
       const stone = this.box(parent, x, .05, z, 1.8, .06, 1.8, 0xead5a3);
       stone.rotation.y = (i * 0.3) % Math.PI;
+      stone.castShadow = false;
+      this.freezeStatic(stone);
     }
   }
 
@@ -606,27 +646,44 @@ export class World {
       this.createLakeFallback(s.id, s.cx, s.cz, s.color, this.getOrCreateZoneGroup(s.id));
     }
 
-    // Paths in starter village
-    this.box(this.coreRegionGroup, -7, .055, 1, 21, .08, 3.2, 0xead5a3);
-    this.box(this.coreRegionGroup, -10, .055, -4, 3.1, .08, 20, 0xead5a3);
+    // Paths in starter village (flat terrain overlays don't cast shadows)
+    const p1 = this.box(this.coreRegionGroup, -7, .055, 1, 21, .08, 3.2, 0xead5a3);
+    p1.castShadow = false; this.freezeStatic(p1);
+    const p2 = this.box(this.coreRegionGroup, -10, .055, -4, 3.1, .08, 20, 0xead5a3);
+    p2.castShadow = false; this.freezeStatic(p2);
     const plaza = this.cylinder(this.coreRegionGroup, -6, .07, 5, 4.5, 4.5, .1, 0xead5a3, 24);
-    plaza.receiveShadow = true;
+    plaza.castShadow = false; plaza.receiveShadow = true; this.freezeStatic(plaza);
 
     // Paths in Vườn Hoa Tri Thức (new land)
-    this.box(this.coreRegionGroup, 21.5, .055, 0, 23, .08, 3.2, 0xead5a3);
-    this.box(this.coreRegionGroup, 22, .055, 0, 3.2, .08, 18, 0xead5a3);
+    const p3 = this.box(this.coreRegionGroup, 21.5, .055, 0, 23, .08, 3.2, 0xead5a3);
+    p3.castShadow = false; this.freezeStatic(p3);
+    const p4 = this.box(this.coreRegionGroup, 22, .055, 0, 3.2, .08, 18, 0xead5a3);
+    p4.castShadow = false; this.freezeStatic(p4);
     const gardenPlaza = this.cylinder(this.coreRegionGroup, 22, .07, 0, 4.5, 4.5, .1, 0xead5a3, 24);
-    gardenPlaza.receiveShadow = true;
+    gardenPlaza.castShadow = false; gardenPlaza.receiveShadow = true; this.freezeStatic(gardenPlaza);
 
+    const steppingMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.65, .08, .4), this.material(0xf5e9ca), 15);
+    steppingMesh.name = 'village_stepping_stones_batch';
+    steppingMesh.castShadow = false;
+    steppingMesh.receiveShadow = true;
     for (let i = 0; i < 15; i++) {
-      const stone = this.box(this.coreRegionGroup, -16 + i * 1.3, .12, 1 + Math.sin(i) * .8, .65, .08, .4, 0xf5e9ca);
-      stone.rotation.y = i;
+      this.instDummy.position.set(-16 + i * 1.3, .12, 1 + Math.sin(i) * .8);
+      this.instDummy.rotation.set(0, i, 0);
+      this.instDummy.scale.set(1, 1, 1);
+      this.instDummy.updateMatrix();
+      steppingMesh.setMatrixAt(i, this.instDummy.matrix);
     }
+    steppingMesh.instanceMatrix.needsUpdate = true;
+    steppingMesh.computeBoundingSphere();
+    this.freezeStatic(steppingMesh);
+    this.disposableInstancedMeshes.push(steppingMesh);
+    this.coreRegionGroup.add(steppingMesh);
 
     // Đền Cổng Archimedes (Gatehouse Hub at x: 60, z: 0)
     const hubPlaza = this.cylinder(this.hubRegionGroup, 60, .07, 0, 7.5, 7.5, .1, 0xdfd6c0, 24);
-    hubPlaza.receiveShadow = true;
-    this.cylinder(this.hubRegionGroup, 60, .14, 0, 5.5, 5.5, .06, 0x93a388, 8);
+    hubPlaza.castShadow = false; hubPlaza.receiveShadow = true; this.freezeStatic(hubPlaza);
+    const hubRing = this.cylinder(this.hubRegionGroup, 60, .14, 0, 5.5, 5.5, .06, 0x93a388, 8);
+    hubRing.castShadow = false; this.freezeStatic(hubRing);
 
     // Central Compass Monument at x: 60, z: 0
     const monument = new THREE.Group();
@@ -728,8 +785,7 @@ export class World {
     this.sanctuaryLandmarkGroups.set(5, z5Group);
     this.obstacles.push({ x: 190, z: 0, radius: 1.5 });
 
-    // Celestial Sea of Clouds under void around Hub
-    const cloudSea = new THREE.Group();
+    // Celestial Sea of Clouds under void around Hub (batched into 1 InstancedMesh)
     const sanctuaryFootprints = [
       { cx: 110, cz: -60 },
       { cx: 150, cz: -60 },
@@ -737,16 +793,34 @@ export class World {
       { cx: 150, cz: 60 },
       { cx: 190, cz: 0 }
     ];
+    const cloudPlacements: Array<{ x: number; y: number; z: number; r: number }> = [];
     for (let c = 0; c < 36; c++) {
       const cx = 35 + ((c * 19) % 170);
       const cz = -75 + ((c * 23) % 150);
       const insideSanctuary = sanctuaryFootprints.some((s) => Math.hypot(cx - s.cx, cz - s.cz) < 24);
       if (!this.spatial.isWithinLand(cx, cz) && !insideSanctuary) {
-        const cloud = this.sphere(cloudSea, cx, -1.8 + Math.sin(c) * 0.7, cz, 4.5 + (c % 4), 0xffffff);
-        cloud.scale.set(1.4, 0.6, 1.4);
+        cloudPlacements.push({ x: cx, y: -1.8 + Math.sin(c) * 0.7, z: cz, r: 4.5 + (c % 4) });
       }
     }
-    this.hubRegionGroup.add(cloudSea);
+    if (cloudPlacements.length > 0) {
+      const cloudSeaMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), this.material(0xffffff), cloudPlacements.length);
+      cloudSeaMesh.name = 'hub_cloud_sea_batch';
+      cloudSeaMesh.castShadow = false;
+      cloudSeaMesh.receiveShadow = false;
+      for (let i = 0; i < cloudPlacements.length; i++) {
+        const cp = cloudPlacements[i];
+        this.instDummy.position.set(cp.x, cp.y, cp.z);
+        this.instDummy.rotation.set(0, 0, 0);
+        this.instDummy.scale.set(1.4 * cp.r, 0.6 * cp.r, 1.4 * cp.r);
+        this.instDummy.updateMatrix();
+        cloudSeaMesh.setMatrixAt(i, this.instDummy.matrix);
+      }
+      cloudSeaMesh.instanceMatrix.needsUpdate = true;
+      cloudSeaMesh.computeBoundingSphere();
+      this.freezeStatic(cloudSeaMesh);
+      this.disposableInstancedMeshes.push(cloudSeaMesh);
+      this.hubRegionGroup.add(cloudSeaMesh);
+    }
   }
 
   public createSingleIsland(
@@ -772,7 +846,8 @@ export class World {
     // Bevel dày 0.2 ở hai đầu đẩy đỉnh khối lên +2.7 -> đặt y = -2.7 để mặt trên nằm đúng y = 0 bên dưới lớp cỏ
     soil.position.set(isl.cx, -2.7, isl.cz);
     soil.receiveShadow = true;
-    soil.castShadow = true;
+    soil.castShadow = false;
+    this.freezeStatic(soil);
     group.add(soil);
 
     const grass = new THREE.ShapeGeometry(shape);
@@ -780,6 +855,8 @@ export class World {
     const top = new THREE.Mesh(grass, this.material(isl.grassColor));
     top.position.set(isl.cx, .025, isl.cz);
     top.receiveShadow = true;
+    top.castShadow = false;
+    this.freezeStatic(top);
     group.add(top);
 
     parent.add(group);
@@ -833,8 +910,9 @@ export class World {
     parent.add(h); this.obstacles.push({ x, z, radius: 2.35 * size });
   }
 
-  private tree(x: number, z: number, size: number, variant = 0, parent: THREE.Object3D = this.coreRegionGroup) {
-    const tree = new THREE.Group(); tree.position.set(x, 0, z); tree.scale.setScalar(size);
+  private buildTreeTemplate(variant: number): THREE.Group {
+    const tree = new THREE.Group();
+    tree.name = `tree_tpl_${variant % 3}_${variant % 4 === 0 ? 'fruit' : 'plain'}`;
     this.cylinder(tree, 0, 1.1, 0, .18, .26, 2.2, 0x946b43);
     const greens = [0x3c9360, 0x56a45d, 0x76b351];
     if (variant % 3 === 0) {
@@ -843,7 +921,15 @@ export class World {
       this.sphere(tree, 0, 2.7, 0, 1.35, greens[variant % 3]); this.sphere(tree, -.7, 2.25, .25, .9, greens[(variant + 1) % 3]); this.sphere(tree, .6, 2.7, .3, .8, 0x81bf62);
       if (variant % 4 === 0) for (let i = 0; i < 4; i++) this.sphere(tree, Math.cos(i * 2) * .8, 2.4 + Math.sin(i) * .4, .85, .17, 0xf3a444);
     }
-    parent.add(tree); this.obstacles.push({ x, z, radius: .45 * size });
+    return tree;
+  }
+
+  private tree(x: number, z: number, size: number, variant = 0, parent: THREE.Object3D = this.coreRegionGroup) {
+    const tree = this.buildTreeTemplate(variant);
+    tree.position.set(x, 0, z);
+    tree.scale.setScalar(size);
+    parent.add(tree);
+    this.obstacles.push({ x, z, radius: .45 * size });
   }
 
   private village() {
@@ -854,11 +940,29 @@ export class World {
     for (let i = 0; i < 4; i++) { const sail = new THREE.Group(); sail.rotation.z = i * Math.PI / 2; this.box(sail, 0, 1.6, 0, .18, 3, .18, 0x8c7049); this.box(sail, .4, 1.85, 0, .75, 1.7, .12, 0xfff1cb); this.windmill.add(sail); }
     this.sphere(this.windmill, 0, 0, .1, .25, 0xeab65b); mill.add(this.windmill); this.coreRegionGroup.add(mill); this.obstacles.push({ x: -15, z: -14, radius: 1.8 });
 
-    // Trees encircling village and flower garden perimeter
-    [
+    // Trees encircling village and flower garden perimeter (batched via SceneBatchPool InstancedMesh)
+    const treeTemplates = new Map<string, THREE.Group>();
+    const treePlacements: StaticPlacement[] = [];
+    const treeCoords: Array<[number, number, number]> = [
       [-20,-14,1.3],[-20,-8,1],[-20,-3.8,1.1],[-20,3.8,1.1],[-20,13,1.3],[-14,14,1.1],[-7,16,1.4],[-2,13,1.1],[1,17,1.2],[0,-16,1.5],[1,-8,1],[-8,-17,1.2],
       [13,-15,1.3],[18,-17,1.5],[25,-16,1.2],[32,-12,1.3],[33,-5,1.1],[33,5,1.1],[32,12,1.3],[25,16,1.2],[18,17,1.5],[13,15,1.3]
-    ].forEach(([x,z,s],i)=>this.tree(x,z,s,i));
+    ];
+    for (let i = 0; i < treeCoords.length; i++) {
+      const [x, z, s] = treeCoords[i];
+      const tplKey = i % 3 === 0 ? 'conifer' : `${i % 3}_${i % 4 === 0 ? 'fruit' : 'plain'}`;
+      let tpl = treeTemplates.get(tplKey);
+      if (!tpl) {
+        tpl = this.buildTreeTemplate(i);
+        treeTemplates.set(tplKey, tpl);
+      }
+      treePlacements.push({ template: tpl, position: { x, y: 0, z }, rotationY: 0, scale: s });
+      this.obstacles.push({ x, z, radius: .45 * s });
+    }
+    this.geom.batchStaticTemplates(this.coreRegionGroup, treePlacements, {
+      namePrefix: 'village_tree',
+      castShadow: true,
+      receiveShadow: true
+    });
 
     // 1. Entrance Flower Arch at x = 11.2, z = 0
     const arch = new THREE.Group(); arch.position.set(11.2, 0, 0);
@@ -919,35 +1023,43 @@ export class World {
       group.position.set(x, 0, z);
 
       // Elevated flowerbed pedestal
-      this.cylinder(group, 0, .14, 0, 1.35, 1.45, .28, 0xd4c7a5, 16);
-      this.cylinder(group, 0, .26, 0, 1.2, 1.2, .08, 0x422f1d, 16);
+      const bedRim = this.cylinder(group, 0, .14, 0, 1.35, 1.45, .28, 0xd4c7a5, 16);
+      bedRim.castShadow = false;
+      const bedSoil = this.cylinder(group, 0, .26, 0, 1.2, 1.2, .08, 0x422f1d, 16);
+      bedSoil.castShadow = false;
 
       // Small stone path connecting to main walk
       const connZ = z < 0 ? 1.4 : -1.4;
-      this.box(group, 0, .05, connZ, 1.2, .08, 1.5, 0xead5a3);
+      const conn = this.box(group, 0, .05, connZ, 1.2, .08, 1.5, 0xead5a3);
+      conn.castShadow = false;
 
       // Wooden signpost beside the flower with number
       const sign = new THREE.Group();
       sign.position.set(.85, 0, .85);
       this.cylinder(sign, 0, .45, 0, .05, .05, .9, 0x8a623f, 6);
       this.box(sign, 0, .85, 0, .45, .32, .08, 0xfce9bf);
-      this.sphere(sign, 0, 1.1, 0, .1, flowerColor);
+      const signDot = this.sphere(sign, 0, 1.1, 0, .1, flowerColor);
+      signDot.castShadow = false;
       group.add(sign);
 
       // Stem & Leaves
       this.cylinder(group, 0, .95, 0, .09, .13, 1.5, 0x3d8e35, 8);
       const leaf1 = this.box(group, .32, .75, 0, .45, .06, .22, 0x5cb85c);
       leaf1.rotation.z = .45;
+      leaf1.castShadow = false;
       const leaf2 = this.box(group, -.32, 1.05, 0, .45, .06, .22, 0x5cb85c);
       leaf2.rotation.z = -.45;
+      leaf2.castShadow = false;
 
       // Bud (unbloomed state)
       const bud = new THREE.Group();
       bud.position.set(0, 1.75, 0);
-      this.cylinder(bud, 0, 0, 0, .22, .08, .3, 0x43a047, 6);
+      this.cylinder(bud, 0, 0, 0, .22, .08, .3, 0x43a047, 6).castShadow = false;
       const budBall = this.sphere(bud, 0, .18, 0, .28, flowerColor);
       budBall.scale.y = 1.3;
+      budBall.castShadow = false;
       const beacon = this.sphere(bud, 0, .75, 0, .13, 0xffd54f);
+      beacon.castShadow = false;
       beacon.userData.beacon = true;
       group.add(bud);
 
@@ -955,12 +1067,13 @@ export class World {
       const bloom = new THREE.Group();
       bloom.position.set(0, 1.8, 0);
       bloom.scale.setScalar(0.001);
-      this.sphere(bloom, 0, .06, 0, .32, 0xffd54f);
+      this.sphere(bloom, 0, .06, 0, .32, 0xffd54f).castShadow = false;
       for (let p = 0; p < 8; p++) {
         const angle = p * Math.PI / 4;
         const petal = this.box(bloom, Math.cos(angle) * .55, .02, Math.sin(angle) * .55, .36, .08, .55, flowerColor);
         petal.rotation.y = -angle;
         petal.rotation.x = .15;
+        petal.castShadow = false;
       }
       group.add(bloom);
 
@@ -1765,7 +1878,10 @@ export class World {
     for (const x of [-.16, .16]) this.sphere(this.milo, x, 1.6, .44, .045, 0x293d38);
     this.sphere(this.milo, 0, 1.28, .33, .22, 0xf6f0d9);
     this.box(this.milo, .7, .9, 0, .09, 1.8, .09, 0x9f7248); this.sphere(this.milo, .7, 1.9, 0, .19, 0xffd26a);
-    const beacon = this.sphere(this.milo, 0, 3.0, 0, .19, 0xffcf5d); beacon.userData.beacon = true;
+    const beacon = this.sphere(this.milo, 0, 3.0, 0, .19, 0xffcf5d);
+    beacon.castShadow = false;
+    beacon.userData.beacon = true;
+    this.miloBeacon = beacon;
   }
 
   // ─── Dispatch: delegate avatar changes to PlayerAvatar deep module ─────────
@@ -2161,6 +2277,7 @@ export class World {
     let seed = 48; const random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     const flowers = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.11, 0), this.material(0xffe1a1), 220);
     const stems = new THREE.InstancedMesh(new THREE.ConeGeometry(.1, .35, 3), this.material(0x61a450), 220);
+    flowers.castShadow = false; stems.castShadow = false;
     const dummy = new THREE.Object3D(); let n = 0;
     while (n < 220) {
       const x = random() * 52 - 21, z = random() * 37 - 18.5;
@@ -2169,13 +2286,57 @@ export class World {
       dummy.position.y = .39; dummy.updateMatrix(); flowers.setMatrixAt(n, dummy.matrix);
       flowers.setColorAt(n, new THREE.Color([0xffe4a3, 0xf5f0d7, 0xe9a98e, 0xbdabe0][n % 4])); n++;
     }
+    this.freezeStatic(flowers);
+    this.freezeStatic(stems);
     this.coreRegionGroup.add(flowers, stems);
+
+    this.cloudMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), this.material(0xf4fcf5), 40);
+    this.cloudMesh.name = 'village_clouds_batch';
+    this.cloudMesh.castShadow = false;
+    this.cloudMesh.receiveShadow = false;
+    let cIdx = 0;
     for (let i = 0; i < 10; i++) {
-      const cloud = new THREE.Group(); cloud.position.set(-36 + i * 8, 10 + (i % 3) * 2, -27 - (i % 2) * 7);
-      for (let j = 0; j < 4; j++) { const ball = this.sphere(cloud, j * 1.1, Math.sin(j) * .35, 0, .95 + (j % 2) * .4, 0xf4fcf5); ball.scale.set(1.4, .65, 1); ball.castShadow = false; }
-      this.coreRegionGroup.add(cloud); this.clouds.push(cloud);
+      this.cloudGroupX.push(-36 + i * 8);
+      for (let j = 0; j < 4; j++) {
+        const r = .95 + (j % 2) * .4;
+        const slot = {
+          groupIdx: i,
+          ox: j * 1.1,
+          oy: Math.sin(j) * .35,
+          oz: -27 - (i % 2) * 7,
+          sx: 1.4 * r,
+          sy: 0.65 * r,
+          sz: r
+        };
+        this.cloudSlots.push(slot);
+        this.instDummy.position.set(this.cloudGroupX[i] + slot.ox, 11 + (i % 3) * 2 + slot.oy, slot.oz);
+        this.instDummy.rotation.set(0, 0, 0);
+        this.instDummy.scale.set(slot.sx, slot.sy, slot.sz);
+        this.instDummy.updateMatrix();
+        this.cloudMesh.setMatrixAt(cIdx++, this.instDummy.matrix);
+      }
     }
-    for (let i = 0; i < 9; i++) { const rock = this.sphere(this.coreRegionGroup, -20 + i * 5, -2.4, 21, .8, 0xb9ac8e); rock.scale.set(1.3, .7, .9); }
+    this.cloudMesh.instanceMatrix.needsUpdate = true;
+    this.cloudMesh.frustumCulled = false;
+    this.disposableInstancedMeshes.push(this.cloudMesh);
+    this.coreRegionGroup.add(this.cloudMesh);
+
+    const rockMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(.8, 8, 6), this.material(0xb9ac8e), 9);
+    rockMesh.name = 'village_border_rocks_batch';
+    rockMesh.castShadow = false;
+    rockMesh.receiveShadow = true;
+    for (let i = 0; i < 9; i++) {
+      this.instDummy.position.set(-20 + i * 5, -2.4, 21);
+      this.instDummy.rotation.set(0, 0, 0);
+      this.instDummy.scale.set(1.3, .7, .9);
+      this.instDummy.updateMatrix();
+      rockMesh.setMatrixAt(i, this.instDummy.matrix);
+    }
+    rockMesh.instanceMatrix.needsUpdate = true;
+    rockMesh.computeBoundingSphere();
+    this.freezeStatic(rockMesh);
+    this.disposableInstancedMeshes.push(rockMesh);
+    this.coreRegionGroup.add(rockMesh);
   }
 
   private resize() {
@@ -2455,15 +2616,55 @@ export class World {
 
     if (this.activeRegionId === 'core') {
       this.windmill.rotation.z -= rawDt * .25;
-      this.bridge.children.forEach(p => p.position.y = Math.max(0, p.position.y - rawDt * 5));
-      this.clouds.forEach((c, i) => { c.position.x += rawDt * .12; if (c.position.x > 50) c.position.x = -50; c.position.y = 11 + (i % 3) * 2 + Math.sin(this.time * .2 + i) * .3; });
-      this.milo.children.forEach(o => { if (o.userData.beacon) o.position.y = 3 + Math.sin(this.time * 2) * .15; });
+      const bridgeParts = this.bridge.children;
+      for (let i = 0; i < bridgeParts.length; i++) {
+        if (bridgeParts[i].position.y > 0) {
+          bridgeParts[i].position.y = Math.max(0, bridgeParts[i].position.y - rawDt * 5);
+        }
+      }
 
-      // Animate the 10 flowers
-      this.flowers.forEach((f, i) => {
+      if (rawDt > 0) {
+        for (let i = 0; i < this.cloudGroupX.length; i++) {
+          let gx = this.cloudGroupX[i] + rawDt * .12;
+          if (gx > 50) gx = -50;
+          this.cloudGroupX[i] = gx;
+        }
+        for (let i = 0; i < this.cloudSlots.length; i++) {
+          const cs = this.cloudSlots[i];
+          const gy = 11 + (cs.groupIdx % 3) * 2 + Math.sin(this.time * .2 + cs.groupIdx) * .3;
+          this.instDummy.position.set(this.cloudGroupX[cs.groupIdx] + cs.ox, gy + cs.oy, cs.oz);
+          this.instDummy.rotation.set(0, 0, 0);
+          this.instDummy.scale.set(cs.sx, cs.sy, cs.sz);
+          this.instDummy.updateMatrix();
+          this.cloudMesh.setMatrixAt(i, this.instDummy.matrix);
+        }
+        this.cloudMesh.instanceMatrix.needsUpdate = true;
+
+        for (let i = 0; i < this.rippleSlots.length; i++) {
+          const rs = this.rippleSlots[i];
+          rs.z += rawDt * .25;
+          if (rs.z > 19) rs.z = -19;
+          this.instDummy.position.set(rs.x, 0.05, rs.z);
+          this.instDummy.rotation.set(0, 0, 0);
+          this.instDummy.scale.set(rs.sx, 1, 1);
+          this.instDummy.updateMatrix();
+          this.rippleMesh.setMatrixAt(i, this.instDummy.matrix);
+        }
+        this.rippleMesh.instanceMatrix.needsUpdate = true;
+      }
+
+      if (this.miloBeacon) {
+        this.miloBeacon.position.y = 3 + Math.sin(this.time * 2) * .15;
+      }
+
+      // Animate the 10 flowers (indexed loop, zero per-frame closure allocations)
+      for (let i = 0; i < this.flowers.length; i++) {
+        const f = this.flowers[i];
         if (f.beacon) {
-          f.beacon.position.y = .75 + Math.sin(this.time * 2.5 + i) * .12;
           f.beacon.visible = !f.bloomed;
+          if (f.beacon.visible) {
+            f.beacon.position.y = .75 + Math.sin(this.time * 2.5 + i) * .12;
+          }
         }
         if (f.animating) {
           f.bloomAnim = Math.min(1, f.bloomAnim + rawDt * 2.0);
@@ -2481,26 +2682,21 @@ export class World {
         if (f.bloomed) {
           f.bloom.rotation.y += rawDt * 0.35;
         }
-      });
+      }
 
       if (this.shopBeacon) {
         this.shopBeacon.rotation.z += rawDt * 1.5;
-      }
-
-      for (let i = 0; i < this.ripples.length; i++) {
-        const r = this.ripples[i];
-        r.position.z += rawDt * .25;
-        if (r.position.z > 19) r.position.z = -19;
       }
     }
 
     // Animate park tree beacons only when inside a park region
     if (this.activeRegionId.startsWith('zone:')) {
-      this.parkTrees.forEach((t) => {
+      for (let i = 0; i < this.parkTrees.length; i++) {
+        const t = this.parkTrees[i];
         if (t.beacon && t.beacon.visible) {
           t.beacon.position.y = t.topY + Math.sin(this.time * 2.5 + t.index) * 0.15;
         }
-      });
+      }
     }
 
     this.archimedes.updateAnimations(rawDt, this.time);
@@ -2514,7 +2710,8 @@ export class World {
       const farmX = this.farmSanctuary.group.position.x;
       const farmZ = this.farmSanctuary.group.position.z;
       const triggers = this.farmSanctuary.getInteractTriggers();
-      for (const t of triggers) {
+      for (let i = 0; i < triggers.length; i++) {
+        const t = triggers[i];
         if (
           t.isActive &&
           Math.hypot(px - (farmX + t.position.x), pz - (farmZ + t.position.z)) < t.radius &&
@@ -2530,19 +2727,22 @@ export class World {
 
     const nearPortal = this.spatial.getNearPortal();
     if (nearPortal) {
-      const targetRegion = (nearPortal as PortalLink).targetRegionId ?? this.spatial.resolveRegionForPoint(nearPortal.source.x, nearPortal.source.z);
-      let targetTemplate: string | undefined;
-      if (!nearPortal.requiresSelection && 'target' in nearPortal && (nearPortal as PortalLink).target) {
-        const destRegion =
-          (nearPortal as PortalLink).targetRegionId ??
-          this.spatial.resolveRegionForPoint((nearPortal as PortalLink).target.x, (nearPortal as PortalLink).target.z);
-        if (destRegion.startsWith('zone:')) {
-          const zId = Number(destRegion.slice(5));
-          targetTemplate = this.dynamicZoneById.get(zId)?.template ?? STATIC_LAKE_SANCTUARIES.find((s) => s.id === zId)?.template;
+      if (this.lastPrefetchedPortalKey !== nearPortal.id) {
+        this.lastPrefetchedPortalKey = nearPortal.id;
+        let targetTemplate: string | undefined;
+        if (!nearPortal.requiresSelection && 'target' in nearPortal && (nearPortal as PortalLink).target) {
+          const destRegion =
+            (nearPortal as PortalLink).targetRegionId ??
+            this.spatial.resolveRegionForPoint((nearPortal as PortalLink).target.x, (nearPortal as PortalLink).target.z);
+          if (destRegion.startsWith('zone:')) {
+            const zId = Number(destRegion.slice(5));
+            targetTemplate = this.dynamicZoneById.get(zId)?.template ?? STATIC_LAKE_SANCTUARIES.find((s) => s.id === zId)?.template;
+          }
         }
+        this.assets.prefetchForPortal(nearPortal.id, targetTemplate);
       }
-      void targetRegion;
-      this.assets.prefetchForPortal(nearPortal.id, targetTemplate);
+    } else if (this.lastPrefetchedPortalKey) {
+      this.lastPrefetchedPortalKey = '';
     }
 
     const transit = this.pendingPortalTransit;
@@ -2610,6 +2810,12 @@ export class World {
     this.zoneRegionGroups.clear();
     this.loadedZoneRegions.clear();
     this.pendingZoneLoads.clear();
+    for (let i = 0; i < this.disposableInstancedMeshes.length; i++) {
+      const m = this.disposableInstancedMeshes[i];
+      m.geometry.dispose();
+      m.dispose();
+    }
+    this.disposableInstancedMeshes = [];
     this.avatar.dispose();
     this.farmSanctuary?.dispose();
     this.geom.dispose();

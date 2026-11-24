@@ -48,6 +48,8 @@ export class FarmSanctuary {
   public interactTriggers: FarmInteractTrigger[] = [];
   private triggerByAnimalId = new Map<string, FarmInteractTrigger>();
   private readonly scratchLocalPlayerPos = new THREE.Vector3();
+  private readonly scratchSparklePos = new THREE.Vector3();
+  private readonly scratchFallbackAnchor = new THREE.Vector3();
   private focusedAnimalId: string | null = null;
   private focusRingMesh: THREE.Mesh | null = null;
   private focusHaloMesh: THREE.Mesh | null = null;
@@ -588,22 +590,22 @@ export class FarmSanctuary {
             animal.homewardStartDist > FARM_DIRECT_HOMEWARD_MAX_DIST &&
             animal.homewardElapsed >= FARM_REMOTE_HOMEWARD_WARP_SEC
           ) {
-            this.onHomewardSparkle?.(
-              new THREE.Vector3(
-                this.group.position.x + pos.x,
-                pos.y + 0.8,
-                this.group.position.z + pos.z
-              )
+            this.scratchSparklePos.set(
+              this.group.position.x + pos.x,
+              pos.y + 0.8,
+              this.group.position.z + pos.z
             );
+            this.onHomewardSparkle?.(this.scratchSparklePos);
             pos.copy(animal.shelterGate);
-            pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
-            this.onHomewardSparkle?.(
-              new THREE.Vector3(
-                this.group.position.x + pos.x,
-                pos.y + 0.8,
-                this.group.position.z + pos.z
-              )
+            if (animal.speed > 0 || animal.state === 'HOMEWARD') {
+          pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
+        }
+            this.scratchSparklePos.set(
+              this.group.position.x + pos.x,
+              pos.y + 0.8,
+              this.group.position.z + pos.z
             );
+            this.onHomewardSparkle?.(this.scratchSparklePos);
             animal.targetPos = animal.shelterPos ?? animal.shelterGate;
           }
         }
@@ -666,7 +668,9 @@ export class FarmSanctuary {
           animal.targetPos = this.getRandomRoamPos(animal.roamAnchor ?? pos);
         }
 
-        pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
+        if (animal.speed > 0 || animal.state === 'HOMEWARD') {
+          pos.y = this.sampleLocalGroundY(pos.x, pos.z, pos.y);
+        }
 
         if (animal.restTime > 0) {
           animal.restTime -= dt;
@@ -736,7 +740,7 @@ export class FarmSanctuary {
   private getRandomRoamPos(anchor?: THREE.Vector3): THREE.Vector3 {
     const base = anchor && (anchor.x !== 0 || anchor.z !== 0)
       ? anchor
-      : new THREE.Vector3(FARM_ANIMAL_ANCHORS_LOCAL[0].x, 0, FARM_ANIMAL_ANCHORS_LOCAL[0].z);
+      : this.scratchFallbackAnchor.set(FARM_ANIMAL_ANCHORS_LOCAL[0].x, 0, FARM_ANIMAL_ANCHORS_LOCAL[0].z);
 
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = Math.random() * Math.PI * 2;

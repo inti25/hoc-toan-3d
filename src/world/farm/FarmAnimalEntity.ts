@@ -8,6 +8,55 @@ export interface AnimalPart {
   originalY: number;
 }
 
+let sharedHitboxGeo: THREE.CylinderGeometry | null = null;
+let sharedHitboxMat: THREE.MeshBasicMaterial | null = null;
+let sharedBeaconOrbGeo: THREE.OctahedronGeometry | null = null;
+let sharedBeaconOrbMat: THREE.MeshBasicMaterial | null = null;
+let sharedBeaconRingGeo: THREE.RingGeometry | null = null;
+let sharedBeaconRingMat: THREE.MeshBasicMaterial | null = null;
+
+function getSharedAnimalHitbox(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  if (!sharedHitboxGeo) {
+    sharedHitboxGeo = new THREE.CylinderGeometry(0.95, 0.95, 1.4, 8);
+  }
+  if (!sharedHitboxMat) {
+    sharedHitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  }
+  return { geo: sharedHitboxGeo, mat: sharedHitboxMat };
+}
+
+function getSharedBeaconResources(): {
+  orbGeo: THREE.OctahedronGeometry;
+  orbMat: THREE.MeshBasicMaterial;
+  ringGeo: THREE.RingGeometry;
+  ringMat: THREE.MeshBasicMaterial;
+} {
+  if (!sharedBeaconOrbGeo) {
+    sharedBeaconOrbGeo = new THREE.OctahedronGeometry(0.24, 0);
+  }
+  if (!sharedBeaconOrbMat) {
+    sharedBeaconOrbMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+  }
+  if (!sharedBeaconRingGeo) {
+    sharedBeaconRingGeo = new THREE.RingGeometry(0.55, 0.78, 20);
+  }
+  if (!sharedBeaconRingMat) {
+    sharedBeaconRingMat = new THREE.MeshBasicMaterial({
+      color: 0x84cc16,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+  }
+  return {
+    orbGeo: sharedBeaconOrbGeo,
+    orbMat: sharedBeaconOrbMat,
+    ringGeo: sharedBeaconRingGeo,
+    ringMat: sharedBeaconRingMat
+  };
+}
+
 export class FarmAnimalEntity {
   public root: THREE.Group = new THREE.Group();
   public kind: AnimalKind;
@@ -72,11 +121,9 @@ export class FarmAnimalEntity {
       this.root.add(mesh);
     }
 
-    // Invisible hit box for convenient raycasting & tapping
-    const hitbox = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.95, 0.95, 1.4, 8),
-      new THREE.MeshBasicMaterial({ visible: false })
-    );
+    // Shared invisible hit box for convenient raycasting & tapping
+    const sharedHitbox = getSharedAnimalHitbox();
+    const hitbox = new THREE.Mesh(sharedHitbox.geo, sharedHitbox.mat);
     hitbox.name = `hitbox_${id}`;
     hitbox.position.y = 0.7;
     hitbox.userData = { animalId: id, isAnimalHitbox: true };
@@ -93,23 +140,12 @@ export class FarmAnimalEntity {
       ? (this.kind === 'calf' || this.kind === 'piglet' ? 1.85 : 2.25)
       : 1.7;
 
-    const orb = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.24, 0),
-      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
-    );
+    const shared = getSharedBeaconResources();
+    const orb = new THREE.Mesh(shared.orbGeo, shared.orbMat);
     orb.position.y = this.beaconBaseY;
     this.beaconOrb = orb;
 
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.55, 0.78, 20),
-      new THREE.MeshBasicMaterial({
-        color: 0x84cc16,
-        transparent: true,
-        opacity: 0.75,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      })
-    );
+    const ring = new THREE.Mesh(shared.ringGeo, shared.ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.1;
 

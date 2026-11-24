@@ -424,8 +424,17 @@ export class ArchimedesZoneBuilder {
   }
 
   updateAnimations(dt: number, time: number): void {
-    this.monoliths.forEach((m) => {
-      if (!this.isAttachedToScene(m.group)) return;
+    let lastParent: THREE.Object3D | null = null;
+    let lastParentAttached = false;
+
+    for (let i = 0; i < this.monoliths.length; i++) {
+      const m = this.monoliths[i];
+      const p = m.group.parent;
+      if (p !== lastParent) {
+        lastParent = p;
+        lastParentAttached = p ? this.isAttachedToScene(p) : false;
+      }
+      if (!lastParentAttached || !m.group.visible) continue;
       const phase = typeof m.id === 'number' ? m.id : (m.id.charCodeAt(0) || 0);
       if (m.activated) {
         m.crystal.rotation.y += dt * 2.8;
@@ -436,11 +445,21 @@ export class ArchimedesZoneBuilder {
       } else {
         m.crystal.rotation.y += dt * 0.8;
       }
-    });
+    }
 
-    this.portalGroups.forEach((pg) => {
-      if (!this.isAttachedToScene(pg)) return;
-      pg.children.forEach((o) => {
+    lastParent = null;
+    lastParentAttached = false;
+    for (let i = 0; i < this.portalGroups.length; i++) {
+      const pg = this.portalGroups[i];
+      const p = pg.parent;
+      if (p !== lastParent) {
+        lastParent = p;
+        lastParentAttached = p ? this.isAttachedToScene(p) : false;
+      }
+      if (!lastParentAttached || !pg.visible) continue;
+      const children = pg.children;
+      for (let c = 0; c < children.length; c++) {
+        const o = children[c];
         if (o.userData.portalCrystal) {
           o.rotation.y += dt * 1.5;
           o.position.y = 4.3 + Math.sin(time * 2.5) * 0.12;
@@ -448,7 +467,7 @@ export class ArchimedesZoneBuilder {
         if (o.userData.portalEnergy) {
           o.scale.z = 1.0 + Math.sin(time * 4) * 0.04;
         }
-      });
-    });
+      }
+    }
   }
 }

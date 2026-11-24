@@ -57,7 +57,10 @@ const audio = new AudioManager();
 const worldSession: WorldSession = new WorldSession({
   adventure,
   onSyncQueue: (isMilestone) => syncManager.queueSync(isMilestone),
-  onContentUpdated: () => updateHUD(),
+  onContentUpdated: () => {
+    cachedHudLocName = '';
+    updateHUD();
+  },
   onDeferredSpawn: (safe) => {
     lastSavedPos = safe;
   }
@@ -315,6 +318,9 @@ const screenStack = new ScreenStack(
 const farmTrackerHud = new FarmTrackerHud($('farm-tracker'), {
   onFocusChange: (animalId) => world?.setFocusedFarmAnimal?.(animalId)
 });
+
+let cachedHudLocName = '';
+let cachedHudSubLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
 
 function getActiveFarmZone(activeRegionId?: string): RemoteZoneConfig | null {
   if (!activeRegionId || !activeRegionId.startsWith('zone:')) return null;
@@ -2295,15 +2301,19 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
   if (!snapshot.hudPoses) return;
 
   const locName = snapshot.locationName;
-  let subLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
-  const dynZone = worldSession.zones.find((z) => z.name === locName);
-  if (dynZone) {
-    subLabel = classifyZoneTemplate(dynZone) === 'park'
-      ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
-      : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
-  } else if (locName === 'Vườn Hoa Tri Thức') subLabel = '10 THỬ THÁCH HOA NỞ';
-  else if (locName === 'Đền Cổng Archimedes') subLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
-  else if (snapshot.inArchimedes) subLabel = '40 BIA ĐÁ TRI THỨC';
+  if (locName !== cachedHudLocName) {
+    cachedHudLocName = locName;
+    cachedHudSubLabel = 'KHÁM PHÁ · HỌC HỎI · TRƯỞNG THÀNH';
+    const dynZone = worldSession.zones.find((z) => z.name === locName);
+    if (dynZone) {
+      cachedHudSubLabel = classifyZoneTemplate(dynZone) === 'park'
+        ? 'KHÔNG GIAN XANH · THƯ GIÃN · KHÁM PHÁ'
+        : `${dynZone.badge} · CHỦ ĐỀ ${dynZone.theme || 'KHÁM PHÁ'}`;
+    } else if (locName === 'Vườn Hoa Tri Thức') cachedHudSubLabel = '10 THỬ THÁCH HOA NỞ';
+    else if (locName === 'Đền Cổng Archimedes') cachedHudSubLabel = 'TRUNG TÂM CỔNG KHÔNG GIAN';
+    else if (snapshot.inArchimedes) cachedHudSubLabel = '40 BIA ĐÁ TRI THỨC';
+  }
+  const subLabel = cachedHudSubLabel;
 
   let interactTargetLabel: { html: string; visible: boolean } | undefined;
   if (nearShop) {

@@ -51,6 +51,7 @@ interface TrailPool {
   mesh: THREE.InstancedMesh;
   slots: TrailSlot[];
   cursor: number;
+  activeCount: number;
   dirty: boolean;
 }
 
@@ -76,6 +77,7 @@ export class SceneBatchPool {
   private sparkMesh: THREE.InstancedMesh | null = null;
   private sparkSlots: SparkSlot[] = [];
   private sparkCursor = 0;
+  private activeSparkCount = 0;
   private trailPools: Record<TrailPoolKey, TrailPool> | null = null;
   private effectGeometries: THREE.BufferGeometry[] = [];
   private effectMaterials: THREE.Material[] = [];
@@ -236,6 +238,9 @@ export class SceneBatchPool {
       const idx = this.sparkCursor;
       this.sparkCursor = (this.sparkCursor + 1) % SPARK_CAPACITY;
       const slot = this.sparkSlots[idx];
+      if (!slot.active) {
+        this.activeSparkCount++;
+      }
       slot.active = true;
       slot.x = x;
       slot.y = y;
@@ -283,6 +288,9 @@ export class SceneBatchPool {
 
       const col = palette[Math.floor(Math.random() * palette.length)];
       const maxLife = 0.8 + Math.random() * 0.4;
+      if (!slot.active) {
+        pool.activeCount++;
+      }
       slot.active = true;
       slot.x = x + (Math.random() - 0.5) * 0.45;
       slot.y = y + 0.08 + Math.random() * 0.06;
@@ -312,7 +320,7 @@ export class SceneBatchPool {
   }
 
   updateEffects(dt: number): void {
-    if (this.sparkMesh) {
+    if (this.sparkMesh && this.activeSparkCount > 0) {
       let anySparkDirty = false;
       for (let i = 0; i < SPARK_CAPACITY; i++) {
         const s = this.sparkSlots[i];
@@ -325,6 +333,7 @@ export class SceneBatchPool {
         s.z += s.vz * dt;
         if (s.life <= 0) {
           s.active = false;
+          this.activeSparkCount = Math.max(0, this.activeSparkCount - 1);
           this.writeHidden(this.sparkMesh, i);
         } else {
           this.writeTransform(this.sparkMesh, i, s.x, s.y, s.z, 0, 0, 0, s.life);
@@ -336,8 +345,10 @@ export class SceneBatchPool {
     }
 
     if (this.trailPools) {
-      for (const kind of ['flower', 'star', 'frost', 'rainbow'] as const) {
-        const pool = this.trailPools[kind];
+      const kinds: readonly TrailPoolKey[] = ['flower', 'star', 'frost', 'rainbow'];
+      for (let k = 0; k < kinds.length; k++) {
+        const pool = this.trailPools[kinds[k]];
+        if (pool.activeCount <= 0) continue;
         let anyTrailDirty = false;
         for (let i = 0; i < TRAIL_CAPACITY; i++) {
           const p = pool.slots[i];
@@ -352,6 +363,7 @@ export class SceneBatchPool {
           p.rz += p.vrz * dt;
           if (p.life <= 0) {
             p.active = false;
+            pool.activeCount = Math.max(0, pool.activeCount - 1);
             this.writeHidden(pool.mesh, i);
           } else {
             const progress = Math.max(0, p.life / p.maxLife);
@@ -406,6 +418,7 @@ export class SceneBatchPool {
     this.effectMaterials.forEach((m) => m.dispose());
     this.effectMaterials = [];
     this.sparkSlots = [];
+    this.activeSparkCount = 0;
     this.effectsScene = null;
   }
 
@@ -473,7 +486,7 @@ export class SceneBatchPool {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.effectsScene!.add(mesh);
 
-      return { kind, mesh, slots, cursor: 0, dirty: false };
+      return { kind, mesh, slots, cursor: 0, activeCount: 0, dirty: false };
     };
 
     this.trailPools = {
