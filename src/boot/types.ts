@@ -41,6 +41,7 @@ export interface WorldHandle {
     getInteractTriggers(): Array<{ animalId: string; isActive: boolean; problemData?: any }>;
     setFocusedAnimal?(animalId: string | null): void;
   } | null;
+  readonly farmRaceArenas?: Map<number, import('../world/farm/FarmRaceArena').FarmRaceArena>;
   readonly flowers: Array<{ position: { x: number; y: number; z: number } }>;
   readonly parkTrees: Array<{ position: { x: number; y: number; z: number } }>;
 
@@ -56,6 +57,8 @@ export interface WorldHandle {
   syncAwakenedParkTrees(awakenedList: boolean[]): void;
   setFarmRescued?(rescued: Record<string, boolean>): void;
   setFocusedFarmAnimal?(animalId: string | null): void;
+  getActiveFarmRaceArena?(): import('../world/farm/FarmRaceArena').FarmRaceArena | null;
+  snapCameraYaw?(yaw: number): void;
   setEquippedTrail(trailId: string): void;
   setInitialPosition(x: number, z: number, y?: number): void;
   teleport(x: number, z: number, y?: number, explicitRegionId?: string): void;
@@ -96,6 +99,9 @@ export interface WorldHandle {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onFarmRaceCheckpointTrigger?: (zoneId: number, checkpointIndex: number) => void;
+  onFarmRaceFinished?: (zoneId: number, result: import('../world/farm/FarmRaceLogic').FarmRaceFinishResult) => void;
+  onFarmRaceFinishBlocked?: (zoneId: number, missingCount: number) => void;
   onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
   isQhmjNodeSolved?: (progressKey: string) => boolean;
@@ -114,6 +120,9 @@ export interface WorldLaunchOptions {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onFarmRaceCheckpointTrigger?: (zoneId: number, checkpointIndex: number) => void;
+  onFarmRaceFinished?: (zoneId: number, result: import('../world/farm/FarmRaceLogic').FarmRaceFinishResult) => void;
+  onFarmRaceFinishBlocked?: (zoneId: number, missingCount: number) => void;
   onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   onFrame?: WorldHandle['onFrame'];
 }

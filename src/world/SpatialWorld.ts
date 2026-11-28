@@ -120,6 +120,8 @@ export interface FarmZoneState {
   cz: number;
   radius: number;
   spawn: { x: number; y: number; z: number };
+  baseSpeed?: number;
+  template?: 'FARM_SANCTUARY' | 'FARM_RACE';
   surface: RoadSurface | null;
   colliders: FarmColliderGrid | null;
 }
@@ -242,10 +244,24 @@ export class SpatialWorld {
   private lastRoadSafe: { x: number; y: number; z: number } | null = null;
   private farmZones: FarmZoneState[] = [];
   private lastFarmSafe: { x: number; y: number; z: number } | null = null;
+  private farmSpeedMultiplier = 1;
+
+  setFarmSpeedMultiplier(mult: number) {
+    this.farmSpeedMultiplier = Number.isFinite(mult) ? Math.max(0.5, Math.min(2.5, mult)) : 1;
+  }
 
   /** Đăng ký vùng Nông Trại (giữ lại địa hình 3D đã nạp nếu cùng mã vùng). */
   setFarmZones(
-    zones: { id: number; name: string; cx: number; cz: number; radius: number; spawn: { x: number; y: number; z: number } }[]
+    zones: {
+      id: number;
+      name: string;
+      cx: number;
+      cz: number;
+      radius: number;
+      spawn: { x: number; y: number; z: number };
+      baseSpeed?: number;
+      template?: 'FARM_SANCTUARY' | 'FARM_RACE';
+    }[]
   ) {
     const prev = new Map(this.farmZones.map((z) => [z.id, z]));
     this.farmZones = zones.map((z) => ({
@@ -451,7 +467,7 @@ export class SpatialWorld {
       const isStaticGarden =
         isl.id === 6 ||
         (isl.template === 'FLOWER_BEDS' && isl.cx >= 10 && isl.cx <= 34 && Math.abs(isl.cz) <= 19);
-      if (isStaticGarden || isl.template === 'QHMJ_SANCTUARY' || isl.template === 'FARM_SANCTUARY') continue;
+      if (isStaticGarden || isl.template === 'QHMJ_SANCTUARY' || isl.template === 'FARM_SANCTUARY' || isl.template === 'FARM_RACE') continue;
       if (isl.template === 'PARK_SANCTUARY') {
         if (Math.hypot(x - isl.cx, z - isl.cz) <= Math.max(20, Math.max(isl.w, isl.d) / 2 + 4)) {
           return `zone:${isl.id}`;
@@ -475,7 +491,7 @@ export class SpatialWorld {
     }
 
     for (const isl of this.dynamicIslands) {
-      if (isl.template !== 'FARM_SANCTUARY') continue;
+      if (isl.template !== 'FARM_SANCTUARY' && isl.template !== 'FARM_RACE') continue;
       const d = Math.hypot(x - isl.cx, z - isl.cz);
       if (d <= Math.max(FARM_REGION_RADIUS, Math.max(isl.w, isl.d) / 2 + 18) + 2.0) {
         return `zone:${isl.id}`;
@@ -534,7 +550,7 @@ export class SpatialWorld {
     // 6. Kiểm tra các hòn đảo động từ Google Sheets (Bản Mẫu Vùng Đất)
     for (const isl of this.dynamicIslands) {
       if (isl.template === 'QHMJ_SANCTUARY') continue;
-      if (isl.template === 'FARM_SANCTUARY') {
+      if (isl.template === 'FARM_SANCTUARY' || isl.template === 'FARM_RACE') {
         const matchedFarm = this.farmZones.find((f) => f.id === isl.id);
         if (matchedFarm?.surface) {
           const lx = x - matchedFarm.cx;
@@ -680,7 +696,7 @@ export class SpatialWorld {
     }
 
     for (const isl of this.dynamicIslands) {
-      if (isl.template === 'FARM_SANCTUARY') {
+      if (isl.template === 'FARM_SANCTUARY' || isl.template === 'FARM_RACE') {
         const farmRadius = Math.max(FARM_REGION_RADIUS, Math.max(isl.w, isl.d) / 2 + 18) + 1.5;
         if (Math.hypot(this.x - isl.cx, this.z - isl.cz) <= farmRadius) {
           return isl.name || 'Nông Trại';
@@ -1036,7 +1052,7 @@ export class SpatialWorld {
       moving = true;
       const vx = move.vx / move.length;
       const vz = move.vz / move.length;
-      speed = FARM_SPEED * dt;
+      speed = (fz.baseSpeed ?? FARM_SPEED) * this.farmSpeedMultiplier * dt;
       for (const a of ROAD_SLIDE_ANGLES) {
         const cos = Math.cos(a);
         const sin = Math.sin(a);

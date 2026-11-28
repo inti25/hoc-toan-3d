@@ -2,7 +2,7 @@ import type { RemoteProblem, RemoteZoneConfig } from '../data/remoteTypes';
 import type { Adventure } from '../core/adventure';
 import type { World } from '../world/World';
 
-export type ChallengeType = 'multiplication' | 'flower' | 'park_tree' | 'archimedes' | 'farm_animal' | 'qhmj_node';
+export type ChallengeType = 'multiplication' | 'flower' | 'park_tree' | 'archimedes' | 'farm_animal' | 'farm_race_checkpoint' | 'qhmj_node';
 
 export type ChallengeSpec =
   | {
@@ -41,6 +41,17 @@ export type ChallengeSpec =
       zoneName?: string;
       zoneId?: number;
       totalAnimals?: number;
+    }
+  | {
+      type: 'farm_race_checkpoint';
+      zoneId: number;
+      zoneName: string;
+      checkpointIndex: number;
+      totalCheckpoints: number;
+      progressKey: string;
+      animalName: string;
+      problem: RemoteProblem;
+      stepIndex?: number;
     }
   | {
       type: 'qhmj_node';

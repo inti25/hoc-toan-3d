@@ -175,6 +175,30 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     ...(local.solvedEntities || {})
   };
 
+  // Hợp nhất thành tích Cuộc Đua Thú Nông Trại (bestRank min, bestTimeMs min > 0, racesCompleted max)
+  const farmRaceRecords: Record<string, { bestRank: number; bestTimeMs: number; racesCompleted: number }> = {};
+  const allRaceKeys = new Set([
+    ...Object.keys(local.farmRaceRecords || {}),
+    ...Object.keys(remote.farmRaceRecords || {})
+  ]);
+  for (const key of allRaceKeys) {
+    const lRec = local.farmRaceRecords?.[key];
+    const rRec = remote.farmRaceRecords?.[key];
+    if (lRec && rRec) {
+      const bestTimeMs =
+        lRec.bestTimeMs > 0 && rRec.bestTimeMs > 0
+          ? Math.min(lRec.bestTimeMs, rRec.bestTimeMs)
+          : Math.max(lRec.bestTimeMs, rRec.bestTimeMs);
+      farmRaceRecords[key] = {
+        bestRank: Math.min(lRec.bestRank, rRec.bestRank),
+        bestTimeMs,
+        racesCompleted: Math.max(lRec.racesCompleted, rRec.racesCompleted)
+      };
+    } else if (lRec || rRec) {
+      farmRaceRecords[key] = { ...(lRec || rRec)! };
+    }
+  }
+
   const dailyDrill =
     local.dailyDrill?.date === remote.dailyDrill?.date
       ? {
@@ -202,6 +226,7 @@ export function mergeStates(local: SaveState, remote: SaveState): SaveState {
     zoneBadges,
     parkTrees,
     farmRescued: { ...local.farmRescued, ...remote.farmRescued },
+    farmRaceRecords,
     solvedProblems,
     solvedEntities,
     produceBag,

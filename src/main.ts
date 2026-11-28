@@ -7,6 +7,12 @@ import { Adventure, generateFarmMultiplicationProblem, getArchimedesSolvedCount 
 import { generateQhmjProblems } from './core/qhmjQuestions';
 import { qhmjZoneSpawn } from './data/qhmjMap';
 import { farmZoneSpawn } from './data/farmMap';
+import {
+  FARM_RACE_ANIMALS,
+  FARM_RACE_CAMERA_DEFAULTS,
+  farmRaceProgressKey,
+  farmRaceZoneSpawn
+} from './data/farmRaceMap';
 import { qhmjProgressKey } from './world/qhmj/QhmjLayout';
 import { BRIDGE_PARTS, LEVEL_XP, TABLES, getLevel, getLevelTitle, type Table } from './data/config';
 import { getProduceForAnimalKind } from './data/shopCatalog';
@@ -37,6 +43,8 @@ import { initPWA, isStandalone, canInstallPWA, promptInstallPWA } from './pwa';
 import { ShopModal } from './ui/ShopModal';
 import { ScreenStack } from './ui/ScreenStack';
 import { FarmTrackerHud } from './ui/FarmTrackerHud';
+import { FarmRaceHud, formatRaceTimeMs } from './ui/FarmRaceHud';
+import type { FarmRaceFinishResult } from './world/farm/FarmRaceLogic';
 import {
   getFarmAnimalEmoji,
   getFarmAnimalVietnameseName,
@@ -233,6 +241,60 @@ app.innerHTML = `
           </div>
         </div>
       </aside>
+      <section id="farm-race-hud" class="farm-race-hud" hidden aria-label="Giao diện Cuộc Đua Thú Nông Trại">
+        <div class="farm-race-bar" role="region" aria-label="Chỉ số đường đua">
+          <span id="farm-race-rank" class="farm-race-pill farm-race-rank">🥇 Hạng 1/5</span>
+          <span id="farm-race-checkpoints" class="farm-race-pill">🚩 Chặng 0/10</span>
+          <span id="farm-race-timer" class="farm-race-pill">⏱ 00:00</span>
+          <div class="farm-race-boost-wrap">
+            <span id="farm-race-boost-label" class="farm-race-boost-label">⚡ Chờ trạm</span>
+            <div id="farm-race-boost-track" class="farm-race-boost-track" role="progressbar" aria-label="Thanh tăng tốc Nitro" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <i id="farm-race-boost-fill" class="farm-race-boost-fill"></i>
+            </div>
+          </div>
+        </div>
+        <div id="farm-race-offtrack" class="farm-race-offtrack" role="alert" hidden>
+          <span>⚠️ Bạn đang chạy ra ngoài đường đua!</span>
+          <button id="farm-race-recover-btn" type="button" class="farm-race-recover-btn">🔄 Về đường đua (R)</button>
+        </div>
+        <div id="farm-race-gate-alert" class="farm-race-gate-alert" role="status" aria-live="polite" hidden>
+          <span id="farm-race-gate-alert-text">🔒 Bạn cần giải hết các trạm câu hỏi trước khi về đích!</span>
+          <button id="farm-race-gate-return-btn" type="button" class="farm-race-recover-btn">🚩 Về trạm còn thiếu (R)</button>
+        </div>
+        <aside id="farm-race-side" class="farm-race-side" aria-label="La bàn đường đua và bảng xếp hạng">
+          <div class="farm-tracker-top">
+            <button id="farm-race-side-toggle" type="button" class="farm-tracker-toggle" aria-expanded="true" title="Thu gọn / mở rộng bảng xếp hạng">
+              <div class="farm-compass-dial" aria-hidden="true">
+                <svg id="farm-race-compass-arrow" class="farm-compass-arrow" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2.5L18.5 19L12 15.6L5.5 19L12 2.5Z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="farm-tracker-target">
+                <div class="farm-tracker-target-line">
+                  <span id="farm-race-target-name" class="farm-target-name">🚩 Trạm kế tiếp</span>
+                </div>
+                <div class="farm-tracker-meta-line">
+                  <span id="farm-race-direction-cue" class="farm-direction-cue">Đi thẳng</span>
+                  <span class="farm-meta-sep" aria-hidden="true">·</span>
+                  <span id="farm-race-target-dist" class="farm-target-dist">0m</span>
+                  <span id="farm-race-progress-badge" class="farm-remaining-badge">0%</span>
+                </div>
+              </div>
+              <span class="farm-tracker-chevron" aria-hidden="true">▾</span>
+            </button>
+          </div>
+          <div id="farm-race-side-body" class="farm-race-side-body">
+            <div id="farm-race-leaderboard" class="farm-race-leaderboard" role="list" aria-label="Bảng xếp hạng hiện tại"></div>
+            <div class="farm-race-side-actions">
+              <button id="farm-race-side-recover-btn" type="button" class="farm-race-action-btn">🔄 Về đường đua (R)</button>
+              <button id="farm-race-lobby-btn" type="button" class="farm-race-action-btn primary-tint">🏁 Đổi thú / Đua lại</button>
+            </div>
+          </div>
+        </aside>
+        <div id="farm-race-countdown" class="farm-race-countdown" aria-live="assertive" hidden>
+          <span id="farm-race-countdown-value">3</span>
+        </div>
+      </section>
       <button id="quest-pill" class="active-objective-pill" type="button" title="Mở Nhật Ký Nhiệm Vụ (J)">
         <span>🚩</span>
         <span id="quest-pill-text">Gặp Milo bên bờ sông</span>
@@ -317,6 +379,44 @@ const screenStack = new ScreenStack(
 
 const farmTrackerHud = new FarmTrackerHud($('farm-tracker'), {
   onFocusChange: (animalId) => world?.setFocusedFarmAnimal?.(animalId)
+});
+
+let promptedRaceLobbyZoneId: number | null = null;
+let raceCheckpointInFlight = false;
+
+function getActiveFarmRaceZone(activeRegionId?: string): RemoteZoneConfig | null {
+  if (!activeRegionId || !activeRegionId.startsWith('zone:')) return null;
+  const zoneId = Number(activeRegionId.slice(5));
+  if (Number.isNaN(zoneId)) return null;
+  const zone = worldSession.zones.find((z) => z.id === zoneId);
+  if (!zone || classifyZoneTemplate(zone) !== 'farm_race') return null;
+  return zone;
+}
+
+function recoverPlayerToRaceTrack() {
+  const arena = world?.getActiveFarmRaceArena?.();
+  if (!world || !arena) return;
+  const firstUnsolved = arena.engine.getFirstUnsolvedCheckpoint();
+  const sentToMissedGate = Boolean((arena.engine.skippedCheckpointAhead || arena.engine.finishBlocked) && firstUnsolved);
+  const rec = arena.getRecoveryWorldPoint();
+  world.teleport(rec.x, rec.z, rec.y, `zone:${arena.zoneId}`);
+  world.snapCameraYaw?.(rec.heading + Math.PI);
+  audio.playCue('jump');
+  toast(
+    sentToMissedGate && firstUnsolved
+      ? `🚩 Đã đưa bạn về trước Trạm #${firstUnsolved.index + 1} chưa hoàn thành!`
+      : '🔄 Đã đưa bạn trở lại đúng đường đua!'
+  );
+}
+
+const farmRaceHud = new FarmRaceHud($('farm-race-hud'), {
+  onRecoverToTrack: () => recoverPlayerToRaceTrack(),
+  onOpenLobby: () => {
+    const activeRaceZone = getActiveFarmRaceZone(world?.getActiveRegionId?.());
+    if (activeRaceZone) {
+      openFarmRaceLobbyDialog(activeRaceZone);
+    }
+  }
 });
 
 let cachedHudLocName = '';
@@ -656,6 +756,8 @@ function menu() {
   $('menu-footer').hidden = false;
   document.body.classList.remove('playing');
   farmTrackerHud.hide();
+  farmRaceHud.hide();
+  promptedRaceLobbyZoneId = null;
   initWelcomeProfile();
   updateHUD();
   audio.music(false);
@@ -720,6 +822,14 @@ $('milo-label').onclick = talk;
 
 function interactAction() {
   if (!world || !world.active || world.paused) return;
+  const activeRaceArena = world.getActiveFarmRaceArena?.();
+  if (activeRaceArena && activeRaceArena.engine.phase === 'RACING' && !raceCheckpointInFlight) {
+    const nearCp = activeRaceArena.findNearUnsolvedCheckpointWorld(world.player.position);
+    if (nearCp && activeRaceArena.engine.openCheckpointManual(nearCp.index)) {
+      void handleFarmRaceCheckpointTrigger(activeRaceArena.zoneId, nearCp.index);
+      return;
+    }
+  }
   if (nearShop) {
     shopModal.open('shop', 'full');
   } else if (nearParkTree !== -1) {
@@ -940,6 +1050,226 @@ async function openFarmAnimalDialog(animalId: string) {
   }
 }
 
+function openFarmRaceLobbyDialog(zone: RemoteZoneConfig) {
+  const arena = world?.getActiveFarmRaceArena?.();
+  if (!arena || !world) return;
+
+  const qList = worldSession.getQuestionsForSheet(zone.sheetName);
+  const totalGates = qList.length > 0 ? qList.length : arena.engine.checkpoints.length;
+  const bestRec = adventure.getState().farmRaceRecords?.[String(zone.id)];
+  const recordLine = bestRec
+    ? `🏆 Thành tích tốt nhất: <b>Hạng ${bestRec.bestRank}</b> · <b>${formatRaceTimeMs(bestRec.bestTimeMs)}</b> (${bestRec.racesCompleted} lượt đua)`
+    : '🌟 Hãy chọn người bạn thú cưng đồng hành và về đích hạng Nhất nhé!';
+
+  const animalCardsHtml = FARM_RACE_ANIMALS.map((a) => {
+    const selected = arena.engine.selectedKind === a.kind;
+    return `
+      <button type="button" class="race-animal-card ${selected ? 'selected' : ''}" data-kind="${a.kind}" role="radio" aria-checked="${selected}">
+        <span class="race-animal-emoji" aria-hidden="true">${a.emoji}</span>
+        <strong class="race-animal-name">${a.name}</strong>
+        <small class="race-animal-trait">${a.trait}</small>
+      </button>
+    `;
+  }).join('');
+
+  openDialog(
+    `🏁 ${zone.name || 'Cuộc Đua Thú Nông Trại'}`,
+    `
+    <div class="dialog-eyebrow">CHỌN BẠN ĐỒNG HÀNH & BẮT ĐẦU ĐUA</div>
+    <p class="dialog-copy">
+      Đường đua vòng quanh nông trại có <b>${totalGates} trạm câu hỏi tăng tốc</b>. Khi đi qua cổng trạm, đồng hồ đua sẽ <b>tạm dừng</b> để bạn giải toán — trả lời đúng giúp thú của bạn kích hoạt <b>Nitro Tăng Tốc</b> bứt phá về đích!
+    </p>
+    <div class="race-lobby-record">${recordLine}</div>
+    <div class="race-animal-grid" role="radiogroup" aria-label="Chọn loài thú thi đấu">
+      ${animalCardsHtml}
+    </div>
+    <div class="race-lobby-actions">
+      <button id="farm-race-start-btn" class="primary wide">🏁 Xuất phát ngay! ${icon('arrow')}</button>
+      <button id="farm-race-browse-btn" class="secondary wide">Dạo quanh trước</button>
+    </div>
+    `,
+    'farmRaceLobby'
+  );
+
+  const cards = Array.from(document.querySelectorAll<HTMLButtonElement>('.race-animal-card'));
+  const selectCard = (kind: string) => {
+    arena.selectAnimal(kind as any);
+    cards.forEach((c) => {
+      const isMatch = c.dataset.kind === kind;
+      c.classList.toggle('selected', isMatch);
+      c.setAttribute('aria-checked', String(isMatch));
+    });
+  };
+
+  cards.forEach((btn, idx) => {
+    btn.onclick = () => {
+      if (btn.dataset.kind) selectCard(btn.dataset.kind);
+    };
+    btn.onkeydown = (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = cards[(idx + 1) % cards.length];
+        next.focus();
+        if (next.dataset.kind) selectCard(next.dataset.kind);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = cards[(idx - 1 + cards.length) % cards.length];
+        prev.focus();
+        if (prev.dataset.kind) selectCard(prev.dataset.kind);
+      }
+    };
+  });
+
+  $('farm-race-start-btn').onclick = () => {
+    const spawn = farmRaceZoneSpawn(zone);
+    closeDialog();
+    world?.teleport(spawn.x, spawn.z, spawn.y, `zone:${zone.id}`);
+    world?.snapCameraYaw?.(FARM_RACE_CAMERA_DEFAULTS.yaw);
+    arena.startCountdown();
+    audio.playCue('jump');
+    toast('🏁 Chuẩn bị xuất phát! Dùng WASD / Bánh xe để chạy trên đường đất!');
+  };
+
+  $('farm-race-browse-btn').onclick = () => {
+    closeDialog();
+  };
+}
+
+async function handleFarmRaceCheckpointTrigger(zoneId: number, checkpointIndex: number) {
+  if (raceCheckpointInFlight || !world) return;
+  const arena = world.farmRaceArenas?.get(zoneId) ?? world.getActiveFarmRaceArena?.();
+  if (!arena) return;
+
+  const cp = arena.engine.checkpoints[checkpointIndex];
+  if (!cp) return;
+
+  const zone = worldSession.zones.find((z) => z.id === zoneId);
+  const qList = zone ? worldSession.getQuestionsForSheet(zone.sheetName) : [];
+  const rawProb = qList[checkpointIndex] ?? arena.questions[checkpointIndex];
+  const problem = rawProb ?? {
+    id: `race_mul_${zoneId}_${checkpointIndex + 1}`,
+    title: `Trạm Tăng Tốc #${checkpointIndex + 1}`,
+    subtitle: 'Giải nhanh phép nhân để bứt tốc',
+    steps: (() => {
+      const g = generateFarmMultiplicationProblem(checkpointIndex, arena.engine.selectedKind);
+      const opts = String(g.Options || '').split('\n').filter(Boolean);
+      return [
+        {
+          stepId: `race_mul_${zoneId}_${checkpointIndex + 1}_1`,
+          prompt: g.Problem,
+          options: opts.map((o: string) => ({ label: o, value: o })),
+          answer: g.Answer,
+          hints: g.Hint ? [g.Hint] : [],
+          explanation: g.Explain || ''
+        }
+      ];
+    })()
+  };
+
+  const playerMeta =
+    FARM_RACE_ANIMALS.find((a) => a.kind === arena.engine.selectedKind) ?? FARM_RACE_ANIMALS[0];
+
+  raceCheckpointInFlight = true;
+  try {
+    const outcome = await challengeDialog.startChallenge({
+      type: 'farm_race_checkpoint',
+      zoneId,
+      zoneName: zone?.name || 'Đường Đua Nông Trại',
+      checkpointIndex,
+      totalCheckpoints: arena.engine.checkpoints.length,
+      progressKey: cp.progressKey,
+      animalName: playerMeta.name,
+      problem
+    });
+
+    const solved = outcome.status === 'solved' && outcome.isCorrect;
+    arena.resumeAfterQuiz(solved, outcome.attempts === 1, checkpointIndex);
+
+    if (solved) {
+      world.burstPlayer(1.3);
+      updateHUD();
+      toast(`⚡ Tăng tốc Nitro cho ${playerMeta.name}! Bứt phá nào!`);
+    } else {
+      toast('🐾 Đã quay lại đường đua! Bạn có thể quay lại trạm bất cứ lúc nào.');
+    }
+  } finally {
+    raceCheckpointInFlight = false;
+  }
+}
+
+function openFarmRaceFinishDialog(zoneId: number, result: FarmRaceFinishResult) {
+  const zone = worldSession.zones.find((z) => z.id === zoneId);
+  const arena = world?.farmRaceArenas?.get(zoneId) ?? world?.getActiveFarmRaceArena?.();
+  if (!zone || !arena) return;
+
+  const rewardDelta = adventure.completeFarmRace({
+    zoneId,
+    rank: result.rank,
+    elapsedMs: result.elapsedMs,
+    solvedCount: result.solvedCount,
+    totalCheckpoints: result.totalCheckpoints
+  });
+
+  audio.playCue('celebrate');
+  world?.burstPlayer(1.5);
+  updateHUD();
+
+  const medal = result.rank === 1 ? '🥇' : result.rank === 2 ? '🥈' : result.rank === 3 ? '🥉' : '🏅';
+  const headline =
+    result.rank === 1
+      ? 'QUÁN QUÂN ĐƯỜNG ĐUA!'
+      : result.rank <= 3
+        ? `XUẤT SẮC VỀ HẠNG ${result.rank}!`
+        : `HOÀN THÀNH ĐƯỜNG ĐUA (HẠNG ${result.rank})!`;
+
+  const podiumRowsHtml = result.leaderboard
+    .map(
+      (entry) => `
+      <div class="race-podium-row ${entry.isPlayer ? 'is-player' : ''}">
+        <span class="race-podium-rank">#${entry.rank}</span>
+        <span class="race-podium-name">${entry.emoji} ${entry.name}</span>
+        <span class="race-podium-time">${entry.finishTimeMs !== null ? formatRaceTimeMs(entry.finishTimeMs) : `${entry.progressPercent}%`}</span>
+      </div>
+    `
+    )
+    .join('');
+
+  const badgeNote = rewardDelta.zoneCompleted
+    ? `<div class="race-badge-unlocked">🏆 Mở khóa Huy Hiệu <b>${zone.name}</b>!</div>`
+    : '';
+
+  openDialog(
+    `${medal} ${headline}`,
+    `
+    <div class="completion-medal" style="font-size:44px;display:grid;place-items:center">${medal}</div>
+    <p class="dialog-copy centered">
+      Bạn cùng <b>${result.playerAnimal.emoji} ${result.playerAnimal.name}</b> đã cán đích sau <b>${formatRaceTimeMs(result.elapsedMs)}</b>!<br>
+      Giải đúng <b>${result.solvedCount}/${result.totalCheckpoints}</b> trạm · <b>${result.boostsEarned}</b> lần Nitro Tăng Tốc.
+    </p>
+    ${badgeNote}
+    <div class="completion-rewards">
+      <span>★ +${rewardDelta.xpGained} XP</span><span>◉ +${rewardDelta.coinsGained} xu</span>
+    </div>
+    <div class="race-podium-list" role="list" aria-label="Kết quả chung cuộc">${podiumRowsHtml}</div>
+    <div class="race-lobby-actions" style="margin-top:14px">
+      <button id="farm-race-replay-btn" class="primary wide">🏁 Đua lại ngay</button>
+      <button id="farm-race-home-btn" class="secondary wide">🏡 Về Làng Khởi Đầu</button>
+    </div>
+    `,
+    'farmRaceFinish'
+  );
+
+  $('farm-race-replay-btn').onclick = () => {
+    closeDialog();
+    openFarmRaceLobbyDialog(zone);
+  };
+
+  $('farm-race-home-btn').onclick = () => {
+    closeDialog();
+    void teleportWithRegionLoading(-3, 7, 'Làng Khởi Đầu', undefined, 'core');
+  };
+}
+
 function openArchimedesMapDialog(selectedZoneId = 0) {
   const state = adventure.getState();
   const zones: RemoteZoneConfig[] = worldSession.zones.length > 0 ? worldSession.zones : getBundledFallbackData().zones;
@@ -955,6 +1285,12 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       const qList = getQhmjProblemsForZone(z);
       const done = qList.filter((p) => adventure.isProblemSolved(qhmjProgressKey(z.id, p.id))).length;
       return { kind, total: qList.length, done };
+    }
+    if (kind === 'farm_race') {
+      const qList = worldSession.getQuestionsForSheet(z.sheetName);
+      const total = qList.length || 10;
+      const done = qList.filter((p) => adventure.isProblemSolved(farmRaceProgressKey(z.id, p.id), z.id)).length;
+      return { kind, total, done };
     }
     const qList = worldSession.getQuestionsForSheet(z.sheetName);
     const isFlowerZone = kind === 'flower';
@@ -1007,6 +1343,7 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
         const isFlowerZone = kind === 'flower';
         const isParkZone = kind === 'park';
         const isFarmZone = kind === 'farm';
+        const isFarmRaceZone = kind === 'farm_race';
         const isQhmjZone = kind === 'qhmj';
         const questSummary = isFlowerZone
           ? `${done}/${total} Cây hoa nở`
@@ -1014,15 +1351,18 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
             ? `${done}/${total} Cây đã thức tỉnh`
             : isFarmZone
               ? `${done}/${total} Thú cưng về chuồng`
-              : isQhmjZone
-                ? `${done}/${total} Trạm bậc thang`
-                : `${done}/${total} Bia đá tri thức`;
+              : isFarmRaceZone
+                ? `${done}/${total} Trạm tăng tốc`
+                : isQhmjZone
+                  ? `${done}/${total} Trạm bậc thang`
+                  : `${done}/${total} Bia đá tri thức`;
         const qhmjSpawn = isQhmjZone ? qhmjZoneSpawn(z) : null;
         const farmSpawn = isFarmZone ? farmZoneSpawn(z) : null;
-        const tpX = isQhmjZone ? qhmjSpawn!.x : isFarmZone ? farmSpawn!.x : (z.center.x - z.width / 2 + 4);
-        const tpY = isFarmZone ? farmSpawn!.y : undefined;
-        const tpZ = isQhmjZone ? qhmjSpawn!.z : isFarmZone ? farmSpawn!.z : z.center.z;
-        const tpRegionAttr = isFarmZone || isQhmjZone ? `data-region="zone:${z.id}"` : '';
+        const farmRaceSpawn = isFarmRaceZone ? farmRaceZoneSpawn(z) : null;
+        const tpX = isQhmjZone ? qhmjSpawn!.x : isFarmZone ? farmSpawn!.x : isFarmRaceZone ? farmRaceSpawn!.x : (z.center.x - z.width / 2 + 4);
+        const tpY = isFarmZone ? farmSpawn!.y : isFarmRaceZone ? farmRaceSpawn!.y : undefined;
+        const tpZ = isQhmjZone ? qhmjSpawn!.z : isFarmZone ? farmSpawn!.z : isFarmRaceZone ? farmRaceSpawn!.z : z.center.z;
+        const tpRegionAttr = isFarmZone || isFarmRaceZone || isQhmjZone ? `data-region="zone:${z.id}"` : '';
         const tpYAttr = tpY !== undefined ? `data-y="${tpY}"` : '';
         return `
         <div class="zone-overview-card">
@@ -1229,6 +1569,47 @@ function openArchimedesMapDialog(selectedZoneId = 0) {
       </div>
       <div class="archimedes-monolith-grid">
         ${animalCardsHtml}
+      </div>
+    `;
+  } else if (currentZone?.template === 'FARM_RACE') {
+    const qList = worldSession.getQuestionsForSheet(currentZone.sheetName);
+    const totalGates = Math.max(qList.length, 10);
+    const raceSpawn = farmRaceZoneSpawn(currentZone);
+    const bestRec = state.farmRaceRecords?.[String(currentZone.id)];
+    const bestSummary = bestRec
+      ? `Thành tích tốt nhất: Hạng ${bestRec.bestRank} · ${formatRaceTimeMs(bestRec.bestTimeMs)} (${bestRec.racesCompleted} lượt)`
+      : 'Chưa có lượt đua hoàn thành';
+
+    const gateCardsHtml = Array.from({ length: totalGates }, (_, i) => {
+      const qItem = qList[i] as any;
+      const pKey = farmRaceProgressKey(currentZone.id, qItem?.id ?? `race_cp_${i + 1}`);
+      const isSolved = adventure.isProblemSolved(pKey, currentZone.id);
+      const cardTitle = qItem?.title || `Trạm Tăng Tốc #${i + 1}`;
+      const cardPrompt = (qItem?.steps && qItem.steps[0] ? qItem.steps[0].prompt : '') || 'Vượt qua trạm để kích hoạt Nitro Tăng Tốc!';
+      return `
+        <div class="archimedes-monolith-card ${isSolved ? 'completed' : ''}">
+          <div class="archimedes-card-header">
+            <span class="archimedes-card-page">🚩 Trạm #${i + 1}</span>
+            <span class="archimedes-card-status">${isSolved ? '⚡ Đã chinh phục' : '🏁 Sẵn sàng'}</span>
+          </div>
+          <div class="archimedes-card-title">${cardTitle}</div>
+          <div class="archimedes-card-desc">${cardPrompt}</div>
+        </div>
+      `;
+    }).join('');
+
+    contentHtml = `
+      <div class="zone-banner" style="background:linear-gradient(135deg,#b45309,#f59e0b)">
+        <div class="zone-banner-info">
+          <h4>🏁 ${currentZone.name}</h4>
+          <p>${bestSummary} · ${totalGates} trạm câu hỏi tăng tốc</p>
+        </div>
+        <button class="zone-teleport-btn zone-banner-teleport" data-x="${raceSpawn.x}" data-y="${raceSpawn.y}" data-z="${raceSpawn.z}" data-region="zone:${currentZone.id}" data-name="${currentZone.name}">
+          🏁 Đến Vạch Xuất Phát
+        </button>
+      </div>
+      <div class="archimedes-monolith-grid">
+        ${gateCardsHtml}
       </div>
     `;
   } else if (currentZone?.template === 'QHMJ_SANCTUARY') {
@@ -2002,6 +2383,8 @@ function settings() {
       lastSavedPos = { x: -6, z: 6 };
       worldSession.clearDeferredSpawn();
       farmTrackerHud.resetState();
+      farmRaceHud.hide();
+      promptedRaceLobbyZoneId = null;
 
       menu();
       toast('Một hành trình mới đang chờ bạn!');
@@ -2116,6 +2499,10 @@ document.addEventListener('keydown', e => {
   if (key === 'j') {
     e.preventDefault();
     openQuestDialog();
+  }
+  if (key === 'r' && getActiveFarmRaceZone(world.getActiveRegionId?.())) {
+    e.preventDefault();
+    recoverPlayerToRaceTrack();
   }
   if (key === 'escape') {
     e.preventDefault();
@@ -2283,6 +2670,9 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
   }
 
   const activeFarmZone = snapshot.active ? getActiveFarmZone(snapshot.activeRegionId) : null;
+  const activeRaceZone = snapshot.active ? getActiveFarmRaceZone(snapshot.activeRegionId) : null;
+  const activeRaceArena = activeRaceZone ? world.getActiveFarmRaceArena?.() ?? null : null;
+
   let farmPlayerLocalPos: { x: number; z: number } | null = null;
   if (!activeFarmZone || !world.farmSanctuary) {
     farmTrackerHud.hide();
@@ -2296,6 +2686,22 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
       z: snapshot.playerPosition.z - farmOrigin.z
     };
     farmTrackerHud.updateCompass(farmPlayerLocalPos, snapshot.cameraYaw ?? 0);
+  }
+
+  if (!activeRaceZone || !activeRaceArena) {
+    farmRaceHud.hide();
+    promptedRaceLobbyZoneId = null;
+  } else {
+    farmRaceHud.sync(activeRaceArena.getHudSnapshot(snapshot.playerPosition, snapshot.cameraYaw ?? 0));
+    if (
+      activeRaceArena.engine.phase === 'LOBBY' &&
+      promptedRaceLobbyZoneId !== activeRaceZone.id &&
+      !snapshot.paused &&
+      !$<HTMLDialogElement>('dialog').open
+    ) {
+      promptedRaceLobbyZoneId = activeRaceZone.id;
+      openFarmRaceLobbyDialog(activeRaceZone);
+    }
   }
 
   if (!snapshot.hudPoses) return;
@@ -2316,7 +2722,16 @@ function onWorldFrame(snapshot: WorldFrameSnapshot) {
   const subLabel = cachedHudSubLabel;
 
   let interactTargetLabel: { html: string; visible: boolean } | undefined;
-  if (nearShop) {
+  const nearRaceCheckpoint =
+    activeRaceArena?.engine.phase === 'RACING'
+      ? activeRaceArena.findNearUnsolvedCheckpointWorld(snapshot.playerPosition)
+      : null;
+  if (nearRaceCheckpoint) {
+    interactTargetLabel = {
+      html: `🚩 <b>Trạm #${nearRaceCheckpoint.index + 1}: ${nearRaceCheckpoint.title}</b> (Bấm E để giải câu hỏi) ${icon('arrow')}`,
+      visible: !snapshot.paused
+    };
+  } else if (nearShop) {
     interactTargetLabel = {
       html: `🛍️ <b>Tiệm Tạp Hóa Vương Quốc</b> (Bấm E để vào tiệm) ${icon('arrow')}`,
       visible: !snapshot.paused
@@ -2429,6 +2844,16 @@ async function ensureWorld(): Promise<WorldHandle> {
     onPortalClick: handlePortalAction,
     onShopClick: () => shopModal.open('shop', 'full'),
     onFarmAnimalClick: (animalId) => openFarmAnimalDialog(animalId),
+    onFarmRaceCheckpointTrigger: (zoneId, checkpointIndex) => {
+      void handleFarmRaceCheckpointTrigger(zoneId, checkpointIndex);
+    },
+    onFarmRaceFinishBlocked: (_zoneId, missingCount) => {
+      audio.playCue('hint');
+      toast(`🔒 Vạch đích đang khóa! Bạn còn ${missingCount} trạm câu hỏi chưa hoàn thành.`, 4500);
+    },
+    onFarmRaceFinished: (zoneId, result) => {
+      openFarmRaceFinishDialog(zoneId, result);
+    },
     onQhmjNodeClick: (zoneId, nodeIndex) => { void openQhmjNodeDialog(zoneId, nodeIndex); },
     onFrame: onWorldFrame
   });

@@ -1,5 +1,4 @@
 {
-  "1": "Challenge Dialog & Sessions",
   "4": "Farm Sanctuary & Terrain",
   "5": "Farm Guidance & Tracker HUD",
   "7": "Bao Chau 3D Model Builder",
@@ -7,7 +6,6 @@
   "12": "Vite PWA & Build Config",
   "13": "Google Sheets Client & Cache",
   "15": "3D Primitives & Park Loading",
-  "16": "Explorer Profile & Passcodes",
   "17": "SpatialWorld Kinematics & Collision",
   "18": "WorldSession Handle & Sync",
   "20": "HUD Frame Presentation",

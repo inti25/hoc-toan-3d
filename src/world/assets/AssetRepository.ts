@@ -216,7 +216,7 @@ export class AssetRepository implements AssetRepositorySeam {
       return;
     }
 
-    if (tpl === 'FARM_SANCTUARY' || (!tpl && (id.includes('to_farm') || id.includes('to_multi_farm')))) {
+    if (tpl === 'FARM_SANCTUARY' || tpl === 'FARM_RACE' || (!tpl && (id.includes('to_farm') || id.includes('to_multi_farm')))) {
       const farmKeys: AssetKey[] = ['map:farm_world', 'map:farm'];
       for (const key of farmKeys) {
         if (!this.has(key)) {

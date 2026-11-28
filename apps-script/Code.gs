@@ -15,28 +15,27 @@
 const CONFIG_HEADERS = [
   'ZoneId', 'Name', 'Title', 'Description', 'Template', 'Theme', 'DecorDensity',
   'SheetName', 'CenterX', 'CenterZ', 'Width', 'Depth', 'ColorHex', 'Badge',
-  'Active', 'StartAt', 'QuestionCount', 'UnlockRule', 'RewardXP', 'RewardCoins'
+  'Active', 'StartAt', 'QuestionCount'
 ];
 
 // Tiêu đề các cột cho Bảng Thử Thách (Zone Quest Sheets)
 const QUEST_HEADERS = [
   'ProblemId', 'StepId', 'Title', 'Subtitle', 'Prompt', 'ImageUrl',
   'OptionA', 'OptionB', 'OptionC', 'OptionD', 'Answer',
-  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ',
-  'EntityKind', 'Difficulty'
+  'Hints', 'Explanation', 'ExplanationImageUrl', 'PosX', 'PosZ'
 ];
 
 // Tiêu đề các cột cho sheet LOGS
 const LOG_HEADERS = [
   'Timestamp', 'ExplorerName', 'ClassName', 'ZoneId',
-  'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details', 'DurationMs'
+  'ProblemId', 'StepId', 'IsCorrect', 'Score', 'Details'
 ];
 
 // Tiêu đề các cột cho sheet PLAYERS (Sổ Theo Dõi Người Chơi & Lưu Trữ Đám Mây)
 const PLAYER_HEADERS = [
   'ExplorerId', 'Passcode', 'Nickname', 'ClassName', 'Avatar',
   'Level', 'TotalXP', 'TotalCoins', 'BridgeParts', 'FlowersBloomed',
-  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson', 'SolvedCount'
+  'MonolithsActivated', 'TreesAwakened', 'LastActiveAt', 'SaveDataJson'
 ];
 
 /**
@@ -155,11 +154,12 @@ const ZONE_TEMPLATES = {
   PARK_SANCTUARY: { label: 'Công viên cây tri thức', theme: 'FOREST', questionCount: 20, width: 30, depth: 30, colorHex: '#10b981' },
   PROCEDURAL_SANCTUARY: { label: 'Vùng đất cảnh quan tự dựng', theme: 'FOREST', questionCount: 8, width: 28, depth: 28, colorHex: '#f59e0b' },
   FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 220, depth: 165, colorHex: '#84cc16' },
+  FARM_RACE: { label: 'Cuộc đua thú nông trại', theme: 'VILLAGE', questionCount: 10, width: 220, depth: 165, colorHex: '#f59e0b' },
   QHMJ_SANCTUARY: { label: 'Con đường bậc thang & Bệ bật nhảy', theme: 'RUINS', questionCount: 12, width: 152, depth: 109, colorHex: '#e74c3c' }
 };
 const ZONE_TEMPLATE_ORDER = [
   'GRID_SANCTUARY', 'CIRCLE_SANCTUARY', 'FLOWER_BEDS',
-  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'QHMJ_SANCTUARY'
+  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'FARM_RACE', 'QHMJ_SANCTUARY'
 ];
 
 /**
@@ -285,9 +285,7 @@ function generateMultiplicationRows(zoneId, count) {
       escapeSheetsText(a + ' × ' + b + ' = ' + answer),
       '',
       '',
-      '',
-      '',
-      '1'
+      ''
     ]);
   }
   return rows;
@@ -320,13 +318,15 @@ function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
 
   let centerX = 0;
   let centerZ = 0;
-  if (template === 'FARM_SANCTUARY') {
-    const farmCoords = [[400, 400], [-400, 400], [400, -400]];
+  if (template === 'FARM_SANCTUARY' || template === 'FARM_RACE') {
+    const farmCoords = template === 'FARM_RACE'
+      ? [[400, -400], [-400, 400], [400, 400]]
+      : [[400, 400], [-400, 400], [400, -400]];
     const tplCol = headers.indexOf('Template');
     let farmCount = 0;
     if (tplCol !== -1 && lastRow >= 2) {
       configSheet.getRange(2, tplCol + 1, lastRow - 1, 1).getValues().forEach(function(row) {
-        if (String(row[0] || '').trim().toUpperCase() === 'FARM_SANCTUARY') {
+        if (String(row[0] || '').trim().toUpperCase() === template) {
           farmCount++;
         }
       });
@@ -648,10 +648,7 @@ function fetchZonesFromSheet(ss) {
       colorHex: String(rowObj.ColorHex || '#38bdf8'),
       badge: String(rowObj.Badge || '🏆 Huy Chương Thám Hiểm'),
       active: parseActiveFlag(rowObj.Active),
-      startAt: normalizeStartAt(rowObj.StartAt),
-      unlockRule: String(rowObj.UnlockRule || '').trim(),
-      rewardXp: Number(rowObj.RewardXP) || 0,
-      rewardCoins: Number(rowObj.RewardCoins) || 0
+      startAt: normalizeStartAt(rowObj.StartAt)
     });
   }
 
@@ -771,8 +768,6 @@ function fetchQuestionsFromSheet(ss, sheetName) {
         id: isNaN(Number(probId)) ? probId : Number(probId),
         title: String(rowObj.Title || 'Bài ' + probId).trim(),
         subtitle: String(rowObj.Subtitle || '').trim(),
-        entityKind: String(rowObj.EntityKind || '').trim().toLowerCase(),
-        difficulty: Number(rowObj.Difficulty) || 1,
         position: (posX !== null && posZ !== null)
           ? (posY !== null && !isNaN(posY) ? { x: posX, y: posY, z: posZ } : { x: posX, z: posZ })
           : null,

@@ -31,6 +31,8 @@ import {
 } from '../data/lakeLand';
 import { proceduralLandBuilder } from './procedural/ProceduralLandBuilder';
 import { FarmSanctuary } from './farm/FarmSanctuary';
+import { FarmRaceArena } from './farm/FarmRaceArena';
+import type { FarmRaceFinishResult } from './farm/FarmRaceLogic';
 import type { PortalSummary, WorldFrameSnapshot } from './loop/types';
 import { buildQhmjRegion, syncQhmjSolvedState, updateQhmjAnimation, type QhmjRegionBuild } from './qhmj/QhmjRegion';
 import type { QhmjNodeSpec } from './qhmj/QhmjLayout';
@@ -44,10 +46,19 @@ import {
 import {
   FARM_CAMERA_DEFAULTS,
   FARM_REGION_RADIUS,
+  FARM_SPEED,
   FARM_VILLAGE_PORTAL,
   FARM_VILLAGE_RETURN_TARGET,
   computeFarmAnchors
 } from '../data/farmMap';
+import {
+  FARM_RACE_BASE_SPEED,
+  FARM_RACE_CAMERA_DEFAULTS,
+  FARM_RACE_REGION_RADIUS,
+  FARM_RACE_VILLAGE_PORTAL,
+  FARM_RACE_VILLAGE_RETURN_TARGET,
+  computeFarmRaceAnchors
+} from '../data/farmRaceMap';
 import {
   PinchOrbitController,
   computePinchZoomDistance,
@@ -127,6 +138,38 @@ export function buildFarmPortalLinks(farmZones: RemoteZoneConfig[]): PortalLink[
   return portals;
 }
 
+/**
+ * Builds portal links connecting Starter Village to dynamic FARM_RACE zones.
+ */
+export function buildFarmRacePortalLinks(raceZones: RemoteZoneConfig[]): PortalLink[] {
+  if (raceZones.length === 0) return [];
+  const portals: PortalLink[] = [];
+  const firstAnchors = computeFarmRaceAnchors(raceZones[0].center);
+
+  portals.push({
+    id: raceZones.length === 1 ? 'village_to_farm_race' : 'village_to_multi_farm_race',
+    name: raceZones.length === 1 && raceZones[0].name ? `Đến ${raceZones[0].name}` : 'Cổng Đua Thú Nông Trại',
+    source: { ...FARM_RACE_VILLAGE_PORTAL },
+    target: { x: firstAnchors.spawn.x, z: firstAnchors.spawn.z },
+    triggerRadius: 1.85,
+    targetRegionId: `zone:${raceZones[0].id}`
+  });
+
+  for (const z of raceZones) {
+    const anchors = computeFarmRaceAnchors(z.center);
+    portals.push({
+      id: `z${z.id}_to_village_farm_race`,
+      name: 'Về Làng Khởi Đầu',
+      source: { x: anchors.returnPortal.x, z: anchors.returnPortal.z },
+      target: { ...FARM_RACE_VILLAGE_RETURN_TARGET },
+      triggerRadius: 1.85,
+      targetRegionId: 'core'
+    });
+  }
+
+  return portals;
+}
+
 export interface FlowerItem {
   id: number;
   position: THREE.Vector3;
@@ -165,6 +208,7 @@ export class World {
   readonly flowers: FlowerItem[] = [];
   readonly archimedes: ArchimedesZoneBuilder;
   public farmSanctuary: FarmSanctuary | null = null;
+  public farmRaceArenas = new Map<number, FarmRaceArena>();
   private farmRescued: Record<string, boolean> = {};
   private latestFarmQuestions?: RemoteProblem[];
   readonly goal = new THREE.Vector3(16, 0, 0);
@@ -216,6 +260,9 @@ export class World {
   onPortalClick?: () => void;
   onShopClick?: () => void;
   onFarmAnimalClick?: (animalId: string) => void;
+  onFarmRaceCheckpointTrigger?: (zoneId: number, checkpointIndex: number) => void;
+  onFarmRaceFinished?: (zoneId: number, result: FarmRaceFinishResult) => void;
+  onFarmRaceFinishBlocked?: (zoneId: number, missingCount: number) => void;
   onQhmjNodeClick?: (zoneId: number, nodeIndex: number) => void;
   onTeleport?: (x: number, z: number) => void;
   isParkTreeAwakened?: (index: number) => boolean;
@@ -238,6 +285,7 @@ export class World {
   private accumulator = 0;
   private villageParkPortalArch?: THREE.Group;
   private villageFarmPortalArch?: THREE.Group;
+  private villageFarmRacePortalArch?: THREE.Group;
   readonly portalPos = new THREE.Vector3(32, 0, 0);
   private readonly coreRegionGroup = new THREE.Group();
   private readonly hubRegionGroup = new THREE.Group();
@@ -254,7 +302,7 @@ export class World {
   private dynamicHubPortalCount = 0;
   private readonly qhmjBuilds = new Map<number, QhmjRegionBuild>();
   private villageQhmjPortalArch?: THREE.Group;
-  private cameraMode: 'isometric' | 'qhmj' | 'farm' = 'isometric';
+  private cameraMode: 'isometric' | 'qhmj' | 'farm' | 'farm_race' = 'isometric';
   private readonly pointerController = new PinchOrbitController();
   private sun: THREE.DirectionalLight;
 
@@ -521,10 +569,11 @@ export class World {
     return this.cameraMode !== 'isometric';
   }
 
-  private resolveCameraModeForRegion(regionId: string): 'isometric' | 'qhmj' | 'farm' {
+  private resolveCameraModeForRegion(regionId: string): 'isometric' | 'qhmj' | 'farm' | 'farm_race' {
     if (!regionId.startsWith('zone:')) return 'isometric';
     const tpl = this.dynamicZoneById.get(Number(regionId.slice(5)))?.template;
     if (tpl === 'QHMJ_SANCTUARY') return 'qhmj';
+    if (tpl === 'FARM_RACE') return 'farm_race';
     if (tpl === 'FARM_SANCTUARY') return 'farm';
     return 'isometric';
   }
@@ -546,15 +595,16 @@ export class World {
         fog.near = 170;
         fog.far = 560;
       }
-    } else if (nextMode === 'farm') {
-      this.yaw = FARM_CAMERA_DEFAULTS.yaw;
-      this.pitch = FARM_CAMERA_DEFAULTS.pitch;
-      this.distance = FARM_CAMERA_DEFAULTS.distance;
-      this.camera.fov = FARM_CAMERA_DEFAULTS.fov;
-      this.camera.far = FARM_CAMERA_DEFAULTS.far;
+    } else if (nextMode === 'farm' || nextMode === 'farm_race') {
+      const defaults = nextMode === 'farm_race' ? FARM_RACE_CAMERA_DEFAULTS : FARM_CAMERA_DEFAULTS;
+      this.yaw = defaults.yaw;
+      this.pitch = defaults.pitch;
+      this.distance = defaults.distance;
+      this.camera.fov = defaults.fov;
+      this.camera.far = defaults.far;
       if (fog) {
-        fog.near = FARM_CAMERA_DEFAULTS.fogNear;
-        fog.far = FARM_CAMERA_DEFAULTS.fogFar;
+        fog.near = defaults.fogNear;
+        fog.far = defaults.fogFar;
       }
     } else {
       this.yaw = 0.57;
@@ -591,10 +641,11 @@ export class World {
       if (dynZone) {
         cx = dynZone.center.x;
         cz = dynZone.center.z;
-        const radius = dynZone.template === 'FARM_SANCTUARY' ? 90 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
+        const isFarmLike = dynZone.template === 'FARM_SANCTUARY' || dynZone.template === 'FARM_RACE';
+        const radius = isFarmLike ? 90 : Math.max(28, Math.max(dynZone.width, dynZone.depth) * 0.75);
         halfW = radius;
         halfH = radius;
-        if (dynZone.template === 'FARM_SANCTUARY') {
+        if (isFarmLike) {
           sunHeight = 90;
           shadowFar = 280;
         } else if (dynZone.template === 'QHMJ_SANCTUARY') {
@@ -1333,6 +1384,21 @@ export class World {
         const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0x38bdf8, 0, zoneGroup);
         retArch.position.y = retY;
         zoneObs.push(...computePortalPillarObstacles(anchors.returnPortal.x, anchors.returnPortal.z, 0));
+      } else if (dynZone?.template === 'FARM_RACE') {
+        const raceQuestions = this.dynamicQuestionsBySheet[dynZone.sheetName];
+        const obs = await this.loadFarmRaceMap(dynZone, raceQuestions, zoneGroup);
+        zoneObs.push(...obs);
+        const anchors = computeFarmRaceAnchors(dynZone.center);
+        const arena = this.farmRaceArenas.get(dynZone.id);
+        const retY =
+          arena?.terrainSurface?.sampleNearest(
+            anchors.returnPortal.x,
+            anchors.returnPortal.z,
+            anchors.returnPortal.y
+          )?.y ?? anchors.returnPortal.y;
+        const retArch = this.createPortalArch(anchors.returnPortal.x, anchors.returnPortal.z, 0xf59e0b, 0, zoneGroup);
+        retArch.position.y = retY;
+        zoneObs.push(...computePortalPillarObstacles(anchors.returnPortal.x, anchors.returnPortal.z, 0));
       } else if (dynZone?.template === 'QHMJ_SANCTUARY') {
         const sheetProblems = this.dynamicQuestionsBySheet[dynZone.sheetName];
         const qhmjProblems = Array.isArray(sheetProblems) && sheetProblems.length > 0
@@ -1610,25 +1676,45 @@ export class World {
       });
     }
 
-    // 1b. Đăng ký các vùng đất Nông Trại (FARM_SANCTUARY) kết nối từ bờ sông Làng Khởi Đầu
+    // 1b. Đăng ký các vùng đất Nông Trại (FARM_SANCTUARY) & Cuộc Đua Thú (FARM_RACE) kết nối từ Làng Khởi Đầu
     const farmZones = zones.filter((z) => z.template === 'FARM_SANCTUARY');
+    const farmRaceZones = zones.filter((z) => z.template === 'FARM_RACE');
     const hasFarm = farmZones.length > 0;
+    const hasFarmRace = farmRaceZones.length > 0;
     if (this.villageFarmPortalArch) {
       this.villageFarmPortalArch.visible = hasFarm;
+    }
+    if (this.villageFarmRacePortalArch) {
+      this.villageFarmRacePortalArch.visible = hasFarmRace;
     }
     if (this.farmSanctuary) {
       this.farmSanctuary.group.visible = hasFarm;
     }
-    this.spatial.setFarmZones(
-      farmZones.map((z) => ({
+    this.farmRaceArenas.forEach((arena, id) => {
+      arena.group.visible = activeZoneIds.has(id);
+    });
+    this.spatial.setFarmZones([
+      ...farmZones.map((z) => ({
         id: z.id,
         name: z.name,
         cx: z.center.x,
         cz: z.center.z,
         radius: FARM_REGION_RADIUS,
-        spawn: computeFarmAnchors(z.center).spawn
+        spawn: computeFarmAnchors(z.center).spawn,
+        baseSpeed: FARM_SPEED,
+        template: 'FARM_SANCTUARY' as const
+      })),
+      ...farmRaceZones.map((z) => ({
+        id: z.id,
+        name: z.name,
+        cx: z.center.x,
+        cz: z.center.z,
+        radius: FARM_RACE_REGION_RADIUS,
+        spawn: computeFarmRaceAnchors(z.center).spawn,
+        baseSpeed: FARM_RACE_BASE_SPEED,
+        template: 'FARM_RACE' as const
       }))
-    );
+    ]);
 
     if (farmZones.length > 0) {
       if (!this.villageFarmPortalArch) {
@@ -1649,6 +1735,29 @@ export class World {
         this.latestFarmQuestions = farmQuestions;
         if (this.loadedZoneRegions.has(z.id) && this.farmSanctuary && farmQuestions && farmQuestions.length > 0) {
           this.farmSanctuary.syncQuestions(farmQuestions);
+        }
+      });
+    }
+
+    if (farmRaceZones.length > 0) {
+      if (!this.villageFarmRacePortalArch) {
+        this.villageFarmRacePortalArch = this.createPortalArch(
+          FARM_RACE_VILLAGE_PORTAL.x,
+          FARM_RACE_VILLAGE_PORTAL.z,
+          farmRaceZones.length === 1 ? (farmRaceZones[0].color || 0xf59e0b) : 0xf59e0b,
+          0,
+          this.coreRegionGroup
+        );
+        this.spatial.addRegionObstacles('core', computePortalPillarObstacles(FARM_RACE_VILLAGE_PORTAL.x, FARM_RACE_VILLAGE_PORTAL.z, 0));
+      }
+
+      customPortals.push(...buildFarmRacePortalLinks(farmRaceZones));
+
+      farmRaceZones.forEach((z) => {
+        const raceQuestions = questionsBySheet?.[z.sheetName];
+        const arena = this.farmRaceArenas.get(z.id);
+        if (this.loadedZoneRegions.has(z.id) && arena && raceQuestions && raceQuestions.length > 0) {
+          arena.syncQuestions(raceQuestions);
         }
       });
     }
@@ -1709,7 +1818,7 @@ export class World {
     }
 
     // 2. Đăng ký metadata cổng cho các hòn đảo động khác (chỉ dựng đảo 3D khi người chơi dịch chuyển tới)
-    const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY' && z.template !== 'FARM_SANCTUARY' && z.template !== 'QHMJ_SANCTUARY');
+    const otherZones = zones.filter((z) => z.id > 5 && z.id !== 6 && z.template !== 'PARK_SANCTUARY' && z.template !== 'FARM_SANCTUARY' && z.template !== 'FARM_RACE' && z.template !== 'QHMJ_SANCTUARY');
     otherZones.forEach((z) => {
       if (!this.dynamicIslandIds.has(z.id)) {
         this.dynamicIslandIds.add(z.id);
@@ -2053,6 +2162,43 @@ export class World {
     }
   }
 
+  private async loadFarmRaceMap(
+    zone: RemoteZoneConfig,
+    questions?: RemoteProblem[],
+    parent: THREE.Object3D = this.getOrCreateZoneGroup(zone.id)
+  ): Promise<Obstacle[]> {
+    try {
+      let arena = this.farmRaceArenas.get(zone.id);
+      if (!arena) {
+        arena = new FarmRaceArena(zone.id, this.assets);
+        this.farmRaceArenas.set(zone.id, arena);
+      }
+
+      arena.group.position.set(zone.center.x, 0, zone.center.z);
+      parent.add(arena.group);
+      if (this.activeZoneIds && !this.activeZoneIds.has(zone.id)) {
+        arena.group.visible = false;
+      }
+
+      await arena.load(questions);
+      const latest = this.dynamicQuestionsBySheet[zone.sheetName];
+      if (latest && latest.length > 0 && latest !== questions) {
+        arena.syncQuestions(latest);
+      }
+
+      this.spatial.setFarmTerrain(
+        zone.id,
+        arena.terrainSurface,
+        arena.colliderGrid
+      );
+
+      return arena.getObstacles(zone.center);
+    } catch (err) {
+      console.error('[World] Failed to load farm race map:', err);
+      return [];
+    }
+  }
+
   private async loadParkMap(
     zone: RemoteZoneConfig,
     questions?: RemoteProblem[],
@@ -2356,10 +2502,11 @@ export class World {
       this.distance = 2.4;
       return;
     }
-    if (this.cameraMode === 'farm') {
-      this.yaw = FARM_CAMERA_DEFAULTS.yaw;
-      this.pitch = FARM_CAMERA_DEFAULTS.pitch;
-      this.distance = FARM_CAMERA_DEFAULTS.distance;
+    if (this.cameraMode === 'farm' || this.cameraMode === 'farm_race') {
+      const defaults = this.cameraMode === 'farm_race' ? FARM_RACE_CAMERA_DEFAULTS : FARM_CAMERA_DEFAULTS;
+      this.yaw = defaults.yaw;
+      this.pitch = defaults.pitch;
+      this.distance = defaults.distance;
       return;
     }
     this.yaw = .57;
@@ -2559,15 +2706,59 @@ export class World {
     this.time += rawDt;
 
     const isFarmRegionActive = Boolean(this.farmSanctuary && this.farmSanctuary.group.parent === this.activeMountedGroup && this.farmSanctuary.group.visible);
+    const activeRaceArena = this.getActiveFarmRaceArena();
+    let triggeredCheckpoint: { zoneId: number; checkpointIndex: number } | null = null;
+    let finishedRace: { zoneId: number; result: FarmRaceFinishResult } | null = null;
+    let finishBlockedInfo: { zoneId: number; missingCount: number } | null = null;
+
+    if (!activeRaceArena) {
+      this.spatial.setFarmSpeedMultiplier(1);
+    }
 
     // Fixed-step simulation: physics & movement update at a constant 60Hz rate
     this.accumulator += rawDt;
     let steps = 0;
     while (this.accumulator >= this.FIXED_DT && steps < this.MAX_SUB_STEPS) {
       if (this._active && !this._paused) {
-        this.movement(this.FIXED_DT);
-        if (isFarmRegionActive && this.farmSanctuary) {
-          this.farmSanctuary.update(this.FIXED_DT, this.player.position);
+        if (activeRaceArena && activeRaceArena.engine.phase === 'COUNTDOWN') {
+          const tickRes = activeRaceArena.update(
+            this.FIXED_DT,
+            this.player.position,
+            this.player.rotation.y,
+            false
+          );
+          this.spatial.setFarmSpeedMultiplier(tickRes.speedMultiplier);
+        } else {
+          this.movement(this.FIXED_DT);
+          if (isFarmRegionActive && this.farmSanctuary) {
+            this.farmSanctuary.update(this.FIXED_DT, this.player.position);
+          }
+          if (activeRaceArena) {
+            const isMoving =
+              this.keys.size > 0 ||
+              Math.abs(this.joystick.x) > 0.05 ||
+              Math.abs(this.joystick.y) > 0.05;
+            const tickRes = activeRaceArena.update(
+              this.FIXED_DT,
+              this.player.position,
+              this.player.rotation.y,
+              isMoving
+            );
+            this.spatial.setFarmSpeedMultiplier(tickRes.speedMultiplier);
+            if (tickRes.boostActive && isMoving && Math.random() < 0.35) {
+              this.geom.emitBurst(this.player.position.x, this.player.position.y + 0.6, this.player.position.z);
+            }
+            if (tickRes.triggeredCheckpointIndex !== null && !triggeredCheckpoint) {
+              triggeredCheckpoint = { zoneId: activeRaceArena.zoneId, checkpointIndex: tickRes.triggeredCheckpointIndex };
+            }
+            if (tickRes.finishBlockedTriggered && !finishBlockedInfo) {
+              const missingCount = activeRaceArena.engine.checkpoints.filter((c) => c.status !== 'solved').length;
+              finishBlockedInfo = { zoneId: activeRaceArena.zoneId, missingCount };
+            }
+            if (tickRes.finishedResult && !finishedRace) {
+              finishedRace = { zoneId: activeRaceArena.zoneId, result: tickRes.finishedResult };
+            }
+          }
         }
       }
       this.accumulator -= this.FIXED_DT;
@@ -2575,6 +2766,16 @@ export class World {
     }
     if (this.accumulator >= this.FIXED_DT) {
       this.accumulator = 0; // prevent spiral of death
+    }
+
+    if (triggeredCheckpoint) {
+      this.onFarmRaceCheckpointTrigger?.(triggeredCheckpoint.zoneId, triggeredCheckpoint.checkpointIndex);
+    }
+    if (finishBlockedInfo) {
+      this.onFarmRaceFinishBlocked?.(finishBlockedInfo.zoneId, finishBlockedInfo.missingCount);
+    }
+    if (finishedRace) {
+      this.onFarmRaceFinished?.(finishedRace.zoneId, finishedRace.result);
     }
 
     // Presentation tick: unified third-person camera lerp & procedural animations using rawDt
@@ -2797,6 +2998,20 @@ export class World {
     this.farmSanctuary?.setFocusedAnimal(animalId);
   }
 
+  getActiveFarmRaceArena(): FarmRaceArena | null {
+    if (!this.activeRegionId.startsWith('zone:')) return null;
+    const zoneId = Number(this.activeRegionId.slice(5));
+    const arena = this.farmRaceArenas.get(zoneId);
+    if (arena && arena.group.parent === this.activeMountedGroup && arena.group.visible) {
+      return arena;
+    }
+    return null;
+  }
+
+  snapCameraYaw(yaw: number) {
+    this.yaw = yaw;
+  }
+
   dispose() {
     this.pointerController.reset();
     cancelAnimationFrame(this.frame);
@@ -2818,6 +3033,8 @@ export class World {
     this.disposableInstancedMeshes = [];
     this.avatar.dispose();
     this.farmSanctuary?.dispose();
+    this.farmRaceArenas.forEach((arena) => arena.dispose());
+    this.farmRaceArenas.clear();
     this.geom.dispose();
     this.assets.dispose();
     this.renderer.dispose();

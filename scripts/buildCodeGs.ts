@@ -159,11 +159,12 @@ const ZONE_TEMPLATES = {
   PARK_SANCTUARY: { label: 'Công viên cây tri thức', theme: 'FOREST', questionCount: 20, width: 30, depth: 30, colorHex: '#10b981' },
   PROCEDURAL_SANCTUARY: { label: 'Vùng đất cảnh quan tự dựng', theme: 'FOREST', questionCount: 8, width: 28, depth: 28, colorHex: '#f59e0b' },
   FARM_SANCTUARY: { label: 'Nông trại giải cứu thú cưng', theme: 'VILLAGE', questionCount: 10, width: 220, depth: 165, colorHex: '#84cc16' },
+  FARM_RACE: { label: 'Cuộc đua thú nông trại', theme: 'VILLAGE', questionCount: 10, width: 220, depth: 165, colorHex: '#f59e0b' },
   QHMJ_SANCTUARY: { label: 'Con đường bậc thang & Bệ bật nhảy', theme: 'RUINS', questionCount: 12, width: 152, depth: 109, colorHex: '#e74c3c' }
 };
 const ZONE_TEMPLATE_ORDER = [
   'GRID_SANCTUARY', 'CIRCLE_SANCTUARY', 'FLOWER_BEDS',
-  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'QHMJ_SANCTUARY'
+  'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'FARM_SANCTUARY', 'FARM_RACE', 'QHMJ_SANCTUARY'
 ];
 
 /**
@@ -322,13 +323,15 @@ function createZoneFromTemplate(ss, zoneName, templateKey, questionCount) {
 
   let centerX = 0;
   let centerZ = 0;
-  if (template === 'FARM_SANCTUARY') {
-    const farmCoords = [[400, 400], [-400, 400], [400, -400]];
+  if (template === 'FARM_SANCTUARY' || template === 'FARM_RACE') {
+    const farmCoords = template === 'FARM_RACE'
+      ? [[400, -400], [-400, 400], [400, 400]]
+      : [[400, 400], [-400, 400], [400, -400]];
     const tplCol = headers.indexOf('Template');
     let farmCount = 0;
     if (tplCol !== -1 && lastRow >= 2) {
       configSheet.getRange(2, tplCol + 1, lastRow - 1, 1).getValues().forEach(function(row) {
-        if (String(row[0] || '').trim().toUpperCase() === 'FARM_SANCTUARY') {
+        if (String(row[0] || '').trim().toUpperCase() === template) {
           farmCount++;
         }
       });

@@ -3,6 +3,7 @@ import type { AvatarId } from '../data/characters';
 import { ARCHIMEDES_MONOLITHS, getMonolithsByZone } from '../data/archimedesTrialMap';
 import { entityKey, freshState, parseSave, todayDateKey, type SaveState } from './state';
 import { getShopItem, type ShopItem } from '../data/shopCatalog';
+import { farmRaceProgressKey } from '../data/farmRaceMap';
 
 export interface StorageAdapter {
   getItem(key: string): string | null;
@@ -666,6 +667,15 @@ export class Adventure {
           this.state.zoneBadges[z.id - 1] = true;
           changed = true;
         }
+      } else if ((z as { template?: string }).template === 'FARM_RACE' && Array.isArray(qList) && qList.length > 0) {
+        const allSolved = qList.every((q) => this.isProblemSolved(farmRaceProgressKey(z.id, q.id), z.id));
+        if (allSolved && !this.state.zoneBadges[z.id - 1]) {
+          while (this.state.zoneBadges.length < z.id) {
+            this.state.zoneBadges.push(false);
+          }
+          this.state.zoneBadges[z.id - 1] = true;
+          changed = true;
+        }
       }
     }
 
@@ -807,6 +817,145 @@ export class Adventure {
       newLevel,
       zoneCompleted,
       doubleXpApplied: doubled.applied
+    };
+  }
+
+  /**
+   * Records a solved FARM_RACE checkpoint gate without duplicating rewards on replay.
+   */
+  solveFarmRaceCheckpoint(options: {
+    zoneId: number;
+    progressKey: string;
+    firstTry?: boolean;
+  }): {
+    alreadySolved: boolean;
+    xpGained: number;
+    coinsGained: number;
+    leveledUp: boolean;
+    newLevel: number;
+    doubleXpApplied: boolean;
+  } {
+    const eKey = entityKey(options.zoneId, options.progressKey);
+    const alreadySolved =
+      this.state.solvedProblems[options.progressKey] === true ||
+      this.state.solvedEntities?.[eKey] !== undefined;
+
+    if (alreadySolved) {
+      return {
+        alreadySolved: true,
+        xpGained: 0,
+        coinsGained: 0,
+        leveledUp: false,
+        newLevel: getLevel(this.state.xp),
+        doubleXpApplied: false
+      };
+    }
+
+    const oldLevel = getLevel(this.state.xp);
+    this.state.solvedProblems[options.progressKey] = true;
+    if (!this.state.solvedEntities) this.state.solvedEntities = {};
+    this.state.solvedEntities[eKey] = {
+      solvedAt: new Date().toISOString(),
+      attempts: options.firstTry === false ? 2 : 1
+    };
+
+    const baseXp = 20 + (options.firstTry !== false ? 5 : 0);
+    const doubled = this.applyDoubleXpCharm(baseXp);
+    const xpGained = doubled.xp;
+    const coinsGained = 8;
+
+    this.state.xp += xpGained;
+    this.state.coins += coinsGained;
+    const newLevel = getLevel(this.state.xp);
+    this.save();
+
+    return {
+      alreadySolved: false,
+      xpGained,
+      coinsGained,
+      leveledUp: newLevel > oldLevel,
+      newLevel,
+      doubleXpApplied: doubled.applied
+    };
+  }
+
+  /**
+   * Records completion of a FARM_RACE run, awards podium rewards, and unlocks zone badge when all checkpoints are solved.
+   */
+  completeFarmRace(options: {
+    zoneId: number;
+    rank: number;
+    elapsedMs: number;
+    solvedCount: number;
+    totalCheckpoints: number;
+  }): {
+    xpGained: number;
+    coinsGained: number;
+    leveledUp: boolean;
+    newLevel: number;
+    zoneCompleted: boolean;
+    isNewBestRank: boolean;
+    isNewBestTime: boolean;
+  } {
+    const oldLevel = getLevel(this.state.xp);
+    if (!this.state.farmRaceRecords) this.state.farmRaceRecords = {};
+
+    const key = String(options.zoneId);
+    const prev = this.state.farmRaceRecords[key];
+    const cleanRank = Math.max(1, Math.min(5, Math.floor(options.rank)));
+    const cleanTimeMs = Math.max(0, Math.round(options.elapsedMs));
+    const isNewBestRank = !prev || cleanRank < prev.bestRank;
+    const isNewBestTime = !prev || prev.bestTimeMs === 0 || (cleanTimeMs > 0 && cleanTimeMs < prev.bestTimeMs);
+
+    this.state.farmRaceRecords[key] = {
+      bestRank: prev ? Math.min(prev.bestRank, cleanRank) : cleanRank,
+      bestTimeMs:
+        prev && prev.bestTimeMs > 0 && cleanTimeMs > 0
+          ? Math.min(prev.bestTimeMs, cleanTimeMs)
+          : (prev?.bestTimeMs || cleanTimeMs),
+      racesCompleted: (prev?.racesCompleted || 0) + 1
+    };
+
+    const podiumTable: Record<number, { xp: number; coins: number }> = {
+      1: { xp: 60, coins: 30 },
+      2: { xp: 40, coins: 20 },
+      3: { xp: 25, coins: 15 },
+      4: { xp: 15, coins: 10 },
+      5: { xp: 15, coins: 10 }
+    };
+    const podium = podiumTable[cleanRank] ?? podiumTable[5];
+    let xpGained = podium.xp;
+    let coinsGained = podium.coins;
+
+    let zoneCompleted = false;
+    if (
+      options.totalCheckpoints > 0 &&
+      options.solvedCount >= options.totalCheckpoints &&
+      options.zoneId >= 1 &&
+      !this.state.zoneBadges[options.zoneId - 1]
+    ) {
+      while (this.state.zoneBadges.length < options.zoneId) {
+        this.state.zoneBadges.push(false);
+      }
+      this.state.zoneBadges[options.zoneId - 1] = true;
+      zoneCompleted = true;
+      xpGained += 80;
+      coinsGained += 40;
+    }
+
+    this.state.xp += xpGained;
+    this.state.coins += coinsGained;
+    const newLevel = getLevel(this.state.xp);
+    this.save();
+
+    return {
+      xpGained,
+      coinsGained,
+      leveledUp: newLevel > oldLevel,
+      newLevel,
+      zoneCompleted,
+      isNewBestRank,
+      isNewBestTime
     };
   }
 

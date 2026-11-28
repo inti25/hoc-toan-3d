@@ -28,9 +28,21 @@ export function formatPortalOverlay(
     };
   }
 
-  const isFarmPortal = nearPortalObj.id.includes('farm');
+  const isFarmRacePortal = nearPortalObj.id.includes('farm_race');
+  const isFarmPortal = !isFarmRacePortal && nearPortalObj.id.includes('farm');
   const isQhmjPortal = nearPortalObj.id.includes('qhmj');
-  const isParkPortal = !isFarmPortal && !isQhmjPortal && (nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village'));
+  const isParkPortal = !isFarmRacePortal && !isFarmPortal && !isQhmjPortal && (nearPortalObj.id.includes('park') || nearPortalObj.id.includes('village'));
+
+  if (isFarmRacePortal) {
+    const isReturnToVillage = nearPortalObj.id.includes('_to_village');
+    const portalTitle = nearPortalObj.name || 'Cổng Đua Thú Nông Trại';
+    return {
+      interactHtml: `🏁 <b>${portalTitle}</b> (Bấm E để bước qua cổng) ${arrowHtml}`,
+      portalLabelHtml: isReturnToVillage
+        ? `<span class="milo-dot">🏡</span><strong>Cổng dịch chuyển</strong><small>Về Làng Khởi Đầu</small>`
+        : `<span class="milo-dot">🏁</span><strong>${portalTitle}</strong><small>Đường Đua Thú 3D</small>`
+    };
+  }
 
   if (isQhmjPortal) {
     const isReturnToVillage = nearPortalObj.id.includes('_to_village');

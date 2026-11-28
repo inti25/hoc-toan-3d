@@ -88,10 +88,10 @@ test('generateMultiplicationRows sinh câu cửu chương hợp lệ, đáp án 
   }
 });
 
-test('createZoneFromTemplate hỗ trợ cả 7 template và ghi CONFIG + tab câu hỏi', () => {
+test('createZoneFromTemplate hỗ trợ cả 8 template và ghi CONFIG + tab câu hỏi', () => {
   const gs = loadScript();
   assert.deepEqual([...gs.ZONE_TEMPLATE_ORDER].sort(), [
-    'CIRCLE_SANCTUARY', 'FARM_SANCTUARY', 'FLOWER_BEDS', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'QHMJ_SANCTUARY'
+    'CIRCLE_SANCTUARY', 'FARM_RACE', 'FARM_SANCTUARY', 'FLOWER_BEDS', 'GRID_SANCTUARY', 'PARK_SANCTUARY', 'PROCEDURAL_SANCTUARY', 'QHMJ_SANCTUARY'
   ]);
   const ss = new FakeSpreadsheet();
   gs.handleSeedDatabase(ss, null);

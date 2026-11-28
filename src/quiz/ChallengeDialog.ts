@@ -239,6 +239,9 @@ export class ChallengeDialog implements ChallengeSessionPort {
         case 'farm_animal':
           this.openFarmAnimal(spec.animalId, spec.animalName, spec.problemData, spec.stepIndex ?? 0, spec.zoneName, spec.zoneId, spec.totalAnimals);
           break;
+        case 'farm_race_checkpoint':
+          this.openFarmRaceCheckpoint(spec, spec.stepIndex ?? 0);
+          break;
         case 'qhmj_node':
           this.openQhmjNode(spec, spec.stepIndex ?? 0);
           break;
@@ -1291,6 +1294,125 @@ export class ChallengeDialog implements ChallengeSessionPort {
         });
         return {
           feedbackText: `✓ Tuyệt vời! Bé ${animalName} đang vui vẻ chạy về chuồng! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
+          rewards: { xp: delta.xpGained, coins: delta.coinsGained }
+        };
+      }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // 3b. Farm Race Checkpoint Boost
+  // -------------------------------------------------------------
+  openFarmRaceCheckpoint(
+    spec: Extract<ChallengeSpec, { type: 'farm_race_checkpoint' }>,
+    stepIndex = 0
+  ): void {
+    const { zoneId, zoneName, checkpointIndex, totalCheckpoints, progressKey, animalName, problem } = spec;
+    const steps: RemoteStep[] =
+      problem.steps && problem.steps.length > 0
+        ? problem.steps
+        : [
+            {
+              stepId: `${progressKey}_1`,
+              prompt: problem.title || `Trạm #${checkpointIndex + 1}: Giải phép tính để tăng tốc!`,
+              options: [
+                { label: '10', value: '10' },
+                { label: '20', value: '20' }
+              ],
+              answer: '10',
+              hints: ['Hãy tính thật cẩn thận nhé!'],
+              explanation: 'Lời giải chi tiết.'
+            }
+          ];
+
+    const totalSteps = steps.length;
+    const currentStepIndex = Math.min(Math.max(0, stepIndex), totalSteps - 1);
+    const step = steps[currentStepIndex] || steps[0];
+
+    const title = problem.title || `Trạm Tăng Tốc #${checkpointIndex + 1}`;
+    const subtitle = problem.subtitle && problem.subtitle !== title ? problem.subtitle : '';
+    const badge = problem.badge || `🏁 Trạm ${checkpointIndex + 1}/${totalCheckpoints}`;
+
+    const challenge: FlowerChallenge = {
+      id: `${progressKey}_step_${currentStepIndex}`,
+      kind: 'flower',
+      index: checkpointIndex,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      title,
+      subtitle,
+      badge,
+      color: problem.color || 0xf59e0b,
+      prompt: step.prompt,
+      imageUrl: step.imageUrl,
+      options: step.options.map((o) => ({ value: o.value, label: o.label })),
+      answer: step.answer,
+      hints: step.hints,
+      explanation: step.explanation,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      flowerQuestion: {
+        id: checkpointIndex + 1,
+        title,
+        subtitle,
+        question: step.prompt,
+        imageUrl: step.imageUrl,
+        options: step.options,
+        answer: step.answer,
+        hints: step.hints,
+        explanation: step.explanation,
+        explanationImageUrl: step.explanationImageUrl,
+        badge,
+        color: problem.color || 0xf59e0b
+      }
+    };
+
+    const alreadySolved = this.host.adventure.isProblemSolved(progressKey, zoneId);
+
+    this.renderStepChallenge({
+      dialogTitle: `Trạm ${checkpointIndex + 1}/${totalCheckpoints} · Cùng ${animalName} bứt tốc!`,
+      dialogKind: 'farmRaceCheckpoint',
+      eyebrow: `${(zoneName || 'Đường Đua Nông Trại').toUpperCase()} · TRẠM ${checkpointIndex + 1}/${totalCheckpoints}${totalSteps > 1 ? ` · BƯỚC ${currentStepIndex + 1}/${totalSteps}` : ''}`,
+      bannerText: alreadySolved
+        ? `⚡ Trạm này bạn đã vượt qua trước đó! Giải đúng lại vẫn kích hoạt Tăng Tốc Nitro!`
+        : `🏁 Giải đúng bài toán để kích hoạt Tăng Tốc Nitro cho ${animalName} bứt phá về đích!`,
+      isCompleted: alreadySolved,
+      title,
+      subtitle,
+      prompt: step.prompt,
+      imageUrl: challenge.imageUrl,
+      explanationImageUrl: step.explanationImageUrl,
+      diagramSvg: step.diagramSvg,
+      explanation: step.explanation,
+      answer: step.answer,
+      options: step.options,
+      challenge,
+      stepIndex: currentStepIndex,
+      totalSteps,
+      finishButtonLabel: '⚡ Tăng tốc & Đua tiếp!',
+      wrongPromptText: "↻ Chưa đúng rồi. Đồng hồ đang tạm dừng, bạn hãy kiểm tra lại hoặc bấm 'Gợi ý cho mình' nhé!",
+      onLogAnswer: (isCorrect, isLast) => {
+        if (!isCorrect) return;
+        void this.host.logRemoteProgress({
+          zoneId,
+          problemId: problem.id ?? progressKey,
+          stepId: step.stepId || `${progressKey}_${currentStepIndex + 1}`,
+          isCorrect: true,
+          score: isLast ? 25 : 10
+        });
+      },
+      onNextStep: () => this.openFarmRaceCheckpoint(spec, currentStepIndex + 1),
+      onCompleteFinal: ({ attempts }) => {
+        this.host.playCue('celebrate');
+        const delta = this.host.adventure.solveFarmRaceCheckpoint({
+          zoneId,
+          progressKey,
+          firstTry: attempts === 1
+        });
+        return {
+          feedbackText: delta.alreadySolved
+            ? `⚡ Tăng tốc Nitro! ${animalName} đang bứt phá mạnh mẽ!`
+            : `⚡ Tăng tốc Nitro! +${delta.xpGained} XP · +${delta.coinsGained} xu${delta.doubleXpApplied ? ' (x2 XP)' : ''}`,
           rewards: { xp: delta.xpGained, coins: delta.coinsGained }
         };
       }

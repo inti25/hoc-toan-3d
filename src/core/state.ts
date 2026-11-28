@@ -40,6 +40,7 @@ export interface SaveState {
   zoneBadges: boolean[];
   parkTrees: boolean[];
   farmRescued: Record<string, boolean>;
+  farmRaceRecords?: Record<string, { bestRank: number; bestTimeMs: number; racesCompleted: number }>;
   solvedProblems: Record<string, boolean>;
   solvedEntities: Record<string, SolvedEntityMeta>;
   produceBag: Record<string, number>;
@@ -72,6 +73,7 @@ export const freshState = (): SaveState => ({
   zoneBadges: Array(5).fill(false),
   parkTrees: Array(20).fill(false),
   farmRescued: {},
+  farmRaceRecords: {},
   solvedProblems: {},
   solvedEntities: {},
   produceBag: {},
@@ -152,6 +154,20 @@ export function parseSave(raw: string | null): SaveState {
     if (d.farmRescued && typeof d.farmRescued === 'object') {
       for (const [k, val] of Object.entries(d.farmRescued as Record<string, unknown>)) {
         if (val === true) base.farmRescued[String(k)] = true;
+      }
+    }
+
+    if (d.farmRaceRecords && typeof d.farmRaceRecords === 'object') {
+      base.farmRaceRecords = {};
+      for (const [k, val] of Object.entries(d.farmRaceRecords as Record<string, unknown>)) {
+        if (!val || typeof val !== 'object') continue;
+        const rec = val as Record<string, unknown>;
+        const bestRank = Math.max(1, Math.min(5, positive(rec.bestRank, 5) || 5));
+        const bestTimeMs = positive(rec.bestTimeMs, 36000000);
+        const racesCompleted = positive(rec.racesCompleted, 100000);
+        if (racesCompleted > 0 || bestTimeMs > 0) {
+          base.farmRaceRecords[String(k)] = { bestRank, bestTimeMs, racesCompleted };
+        }
       }
     }
 

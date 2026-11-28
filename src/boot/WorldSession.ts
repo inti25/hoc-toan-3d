@@ -15,7 +15,7 @@ import type {
   WorldSessionPorts
 } from './types';
 
-export type ZoneTemplateKind = 'flower' | 'park' | 'farm' | 'qhmj' | 'monolith';
+export type ZoneTemplateKind = 'flower' | 'park' | 'farm' | 'farm_race' | 'qhmj' | 'monolith';
 
 /**
  * Single source of truth classifying how a zone renders its challenges.
@@ -26,6 +26,9 @@ export function classifyZoneTemplate(zone: Pick<RemoteZoneConfig, 'id' | 'templa
   }
   if (zone.template === 'PARK_SANCTUARY' || zone.id === 7 || zone.sheetName === 'CongVienXanh') {
     return 'park';
+  }
+  if (zone.template === 'FARM_RACE') {
+    return 'farm_race';
   }
   if (zone.template === 'FARM_SANCTUARY') {
     return 'farm';
@@ -262,6 +265,9 @@ export class WorldSession {
     if (options.onPortalClick) world.onPortalClick = options.onPortalClick;
     if (options.onShopClick) world.onShopClick = options.onShopClick;
     if (options.onFarmAnimalClick) world.onFarmAnimalClick = options.onFarmAnimalClick;
+    if (options.onFarmRaceCheckpointTrigger) world.onFarmRaceCheckpointTrigger = options.onFarmRaceCheckpointTrigger;
+    if (options.onFarmRaceFinished) world.onFarmRaceFinished = options.onFarmRaceFinished;
+    if (options.onFarmRaceFinishBlocked) world.onFarmRaceFinishBlocked = options.onFarmRaceFinishBlocked;
     if (options.onQhmjNodeClick) world.onQhmjNodeClick = options.onQhmjNodeClick;
     if (options.onFrame) world.onFrame = options.onFrame;
 
